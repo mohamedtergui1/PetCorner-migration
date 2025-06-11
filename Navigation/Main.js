@@ -82,26 +82,31 @@ export default function Main() {
     }, [])
   );
 
-  // Dynamic drawer screen options based on theme
+  // Dynamic drawer screen options based on theme with better spacing
   const getDrawerScreenOptions = () => ({
     headerShown: false,
     drawerStyle: {
       backgroundColor: BACKGROUND_COLOR,
-      width: 280,
+      width: 300, // Increased width for better spacing
+      paddingTop: 20,
     },
     drawerActiveBackgroundColor: PRIMARY_COLOR,
     drawerActiveTintColor: WHITE,
     drawerInactiveTintColor: SECONDARY_TEXT,
     drawerLabelStyle: {
-      marginLeft: -25,
+      marginLeft: -15, // Reduced negative margin
       fontSize: 16,
       fontWeight: '500',
+      fontFamily: 'System',
     },
     drawerItemStyle: {
       borderLeftWidth: 0,
-      marginHorizontal: 8,
-      marginVertical: 2,
-      borderRadius: 8,
+      marginHorizontal: 12, // Increased horizontal margin
+      marginVertical: 4, // Increased vertical margin
+      borderRadius: 12,
+      paddingHorizontal: 8, // Added horizontal padding
+      paddingVertical: 4, // Added vertical padding
+      minHeight: 50, // Minimum height for touch targets
     },
     sceneContainerStyle: {
       backgroundColor: BACKGROUND_COLOR,
@@ -133,11 +138,13 @@ export default function Main() {
           component={Tabs}
           options={{
             drawerIcon: ({ focused }) => (
-              <Ionicons
-                name={focused ? "home" : "home-outline"}
-                size={24}
-                color={getIconColor(focused)}
-              />
+              <View style={styles.iconContainer}>
+                <Ionicons
+                  name={focused ? "home" : "home-outline"}
+                  size={22}
+                  color={getIconColor(focused)}
+                />
+              </View>
             ),
             drawerLabel: "Accueil",
           }}
@@ -148,18 +155,20 @@ export default function Main() {
           component={ProductsScreen}
           options={{
             drawerIcon: ({ focused }) => (
-              <Image
-                source={require('../src/assets/images/store.png')}
-                style={[
-                  styles.drawerIcon,
-                  {
-                    opacity: focused ? 1 : 0.7,
-                    tintColor: isDarkMode || focused
-                      ? getIconColor(focused)
-                      : SECONDARY_TEXT
-                  }
-                ]}
-              />
+              <View style={styles.iconContainer}>
+                <Image
+                  source={require('../src/assets/images/store.png')}
+                  style={[
+                    styles.drawerIcon,
+                    {
+                      opacity: focused ? 1 : 0.7,
+                      tintColor: isDarkMode || focused
+                        ? getIconColor(focused)
+                        : SECONDARY_TEXT
+                    }
+                  ]}
+                />
+              </View>
             ),
             drawerLabel: "Produits",
           }}
@@ -170,12 +179,14 @@ export default function Main() {
           component={WishListScreen}
           options={{
             drawerIcon: ({ focused }) => (
-              <FontAwsome5Icon
-                name={focused ? "heart" : "heart"}
-                size={22}
-                color={getIconColor(focused)}
-                solid={focused}
-              />
+              <View style={styles.iconContainer}>
+                <FontAwsome5Icon
+                  name={focused ? "heart" : "heart"}
+                  size={20}
+                  color={getIconColor(focused)}
+                  solid={focused}
+                />
+              </View>
             ),
             drawerLabel: "Favoris",
           }}
@@ -186,11 +197,13 @@ export default function Main() {
           component={CartScreen}
           options={{
             drawerIcon: ({ focused }) => (
-              <FontAwsome5Icon
-                name="shopping-cart"
-                size={22}
-                color={getIconColor(focused)}
-              />
+              <View style={styles.iconContainer}>
+                <FontAwsome5Icon
+                  name="shopping-cart"
+                  size={20}
+                  color={getIconColor(focused)}
+                />
+              </View>
             ),
             drawerLabel: "Panier",
           }}
@@ -201,11 +214,13 @@ export default function Main() {
           component={OrderScreen}
           options={{
             drawerIcon: ({ focused }) => (
-              <FontAwsome5Icon
-                name={focused ? "clipboard-list" : "clipboard-list"}
-                size={22}
-                color={getIconColor(focused)}
-              />
+              <View style={styles.iconContainer}>
+                <FontAwsome5Icon
+                  name={focused ? "clipboard-list" : "clipboard-list"}
+                  size={20}
+                  color={getIconColor(focused)}
+                />
+              </View>
             ),
             drawerLabel: "Mes commandes",
           }}
@@ -216,12 +231,14 @@ export default function Main() {
           component={ProfileScreen}
           options={{
             drawerIcon: ({ focused }) => (
-              <FontAwsome5Icon
-                name={focused ? "user-circle" : "user-circle"}
-                size={22}
-                color={getIconColor(focused)}
-                solid={focused}
-              />
+              <View style={styles.iconContainer}>
+                <FontAwsome5Icon
+                  name={focused ? "user-circle" : "user-circle"}
+                  size={20}
+                  color={getIconColor(focused)}
+                  solid={focused}
+                />
+              </View>
             ),
             drawerLabel: "Mon compte",
           }}
@@ -242,11 +259,18 @@ export default function Main() {
 
 const styles = StyleSheet.create({
   drawerIcon: {
-    width: 24,
-    height: 24,
+    width: 22,
+    height: 22,
     resizeMode: "contain"
   },
   safeAreaContainer: {
     flex: 1,
+  },
+  iconContainer: {
+    width: 30,
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 5,
   }
 })
