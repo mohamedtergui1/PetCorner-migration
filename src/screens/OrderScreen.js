@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Feather from 'react-native-vector-icons/Feather';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import API_BASE_URL from '../../config/Api';
@@ -238,7 +237,7 @@ export default function OrderScreen({ navigation }) {
   };
   
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: BACKGROUND_COLOR }]}>
+    <View style={[styles.container, { backgroundColor: BACKGROUND_COLOR }]}>
       <StatusBar 
         barStyle={isDarkMode ? 'light-content' : 'dark-content'} 
         backgroundColor={isDarkMode ? '#000000' : '#ffffff'} 
@@ -307,7 +306,7 @@ export default function OrderScreen({ navigation }) {
           </View>
         )
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -343,7 +342,6 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
-    paddingTop: 12,
     paddingBottom: 24,
   },
   centerContent: {
