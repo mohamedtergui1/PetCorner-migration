@@ -1,6 +1,7 @@
 import { Image, StyleSheet, Text, View, useColorScheme } from 'react-native'
 import React, { useEffect, useState } from 'react'
 import { createDrawerNavigator } from '@react-navigation/drawer'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import DrawerItems from '../src/components/layout/DrawerItems';
 import Tabs from './Tabs';
@@ -111,21 +112,66 @@ export default function Main() {
   // Helper function to get icon color based on focus state
   const getIconColor = (focused) => focused ? WHITE : SECONDARY_TEXT;
 
+  // Wrap each screen component with SafeAreaView
+  const SafeTabsScreen = (props) => (
+    <SafeAreaView style={styles.safeAreaContainer}>
+      <Tabs {...props} />
+    </SafeAreaView>
+  );
+
+  const SafeProductsScreen = (props) => (
+    <SafeAreaView style={styles.safeAreaContainer}>
+      <ProductsScreen {...props} />
+    </SafeAreaView>
+  );
+
+  const SafeWishListScreen = (props) => (
+    <SafeAreaView style={styles.safeAreaContainer}>
+      <WishListScreen {...props} />
+    </SafeAreaView>
+  );
+
+  const SafeCartScreen = (props) => (
+    <SafeAreaView style={styles.safeAreaContainer}>
+      <CartScreen {...props} />
+    </SafeAreaView>
+  );
+
+  const SafeOrderScreen = (props) => (
+    <SafeAreaView style={styles.safeAreaContainer}>
+      <OrderScreen {...props} />
+    </SafeAreaView>
+  );
+
+  const SafeProfileScreen = (props) => (
+    <SafeAreaView style={styles.safeAreaContainer}>
+      <ProfileScreen {...props} />
+    </SafeAreaView>
+  );
+
+  const SafeUserDetailsScreen = (props) => (
+    <SafeAreaView style={styles.safeAreaContainer}>
+      <UserDetailsScreen {...props} />
+    </SafeAreaView>
+  );
+
   return (
     <Drawer.Navigator
       initialRouteName="Accueil"
       screenOptions={getDrawerScreenOptions()}
       drawerContent={(props) => (
-        <DrawerItems
-          {...props}
-          wishlistItem={wishlistCount}
-          cartItem={cartCount}
-        />
+        <SafeAreaView style={styles.drawerContainer}>
+          <DrawerItems
+            {...props}
+            wishlistItem={wishlistCount}
+            cartItem={cartCount}
+          />
+        </SafeAreaView>
       )}
     >
       <Drawer.Screen
         name="Accueil"
-        component={Tabs}
+        component={SafeTabsScreen}
         options={{
           drawerIcon: ({ focused }) => (
             <Ionicons
@@ -140,7 +186,7 @@ export default function Main() {
 
       <Drawer.Screen
         name="Produits"
-        component={ProductsScreen}
+        component={SafeProductsScreen}
         options={{
           drawerIcon: ({ focused }) => (
             <Image
@@ -162,7 +208,7 @@ export default function Main() {
 
       <Drawer.Screen
         name="Favoris"
-        component={WishListScreen}
+        component={SafeWishListScreen}
         options={{
           drawerIcon: ({ focused }) => (
             <FontAwsome5Icon
@@ -178,7 +224,7 @@ export default function Main() {
 
       <Drawer.Screen
         name="Panier"
-        component={CartScreen}
+        component={SafeCartScreen}
         options={{
           drawerIcon: ({ focused }) => (
             <FontAwsome5Icon
@@ -193,7 +239,7 @@ export default function Main() {
 
       <Drawer.Screen
         name="Mes commandes"
-        component={OrderScreen}
+        component={SafeOrderScreen}
         options={{
           drawerIcon: ({ focused }) => (
             <FontAwsome5Icon
@@ -208,7 +254,7 @@ export default function Main() {
 
       <Drawer.Screen
         name="Mon compte"
-        component={ProfileScreen}
+        component={SafeProfileScreen}
         options={{
           drawerIcon: ({ focused }) => (
             <FontAwsome5Icon
@@ -225,7 +271,7 @@ export default function Main() {
       {/* Add UserDetailsScreen as a hidden drawer screen */}
       <Drawer.Screen
         name="UserDetails"
-        component={UserDetailsScreen}
+        component={SafeUserDetailsScreen}
         options={{
           drawerItemStyle: { display: 'none' }, // Hide from drawer menu
         }}
@@ -239,5 +285,11 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     resizeMode: "contain"
+  },
+  safeAreaContainer: {
+    flex: 1,
+  },
+  drawerContainer: {
+    flex: 1,
   }
 })
