@@ -117,3 +117,6 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+// Add this line at the very end to enable vector icons on Android
+apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
