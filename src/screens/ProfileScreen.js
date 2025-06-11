@@ -15,6 +15,8 @@ import {
 } from 'react-native';
 import FeatherIcon from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
 import Token from '../../config/TokenDolibar';
 import { useFocusEffect } from '@react-navigation/native';
 import API_BASE_URL from '../../config/Api';
@@ -88,7 +90,7 @@ export default function ProfileScreen({navigation}) {
           style={styles.backButton}
           onPress={handleGoBack}
         >
-          <FeatherIcon name="arrow-left" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Mon Profil</Text>
         <View style={{ width: 40 }} />
@@ -107,7 +109,7 @@ export default function ProfileScreen({navigation}) {
                   style={styles.profileAvatar} />
                 <TouchableOpacity>
                   <View style={[styles.profileAction, { backgroundColor: SECONDARY_COLOR }]}>
-                    <FeatherIcon color="#fff" name="edit-3" size={15} />
+                    <FontAwesome5 color="#fff" name="edit" size={14} />
                   </View>
                 </TouchableOpacity>
               </View>
@@ -146,13 +148,13 @@ export default function ProfileScreen({navigation}) {
             }}
           >
             <View style={[styles.rowIcon, { backgroundColor: PRIMARY_COLOR }]}>
-              <MaterialCommunityIcons color="#fff" name="account-edit" size={20} />
+              <FontAwesome5 color="#fff" name="user-edit" size={18} />
             </View>
             <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Mes Informations</Text>
             <View style={styles.rowSpacer} />
-            <FeatherIcon
+            <Ionicons
               color={TEXT_COLOR_SECONDARY}
-              name="chevron-right"
+              name="chevron-forward"
               size={20} />
           </TouchableOpacity>
 
@@ -162,13 +164,13 @@ export default function ProfileScreen({navigation}) {
             borderLeftColor: '#32c759'
           }]}>
             <View style={[styles.rowIcon, { backgroundColor: '#32c759' }]}>
-              <MaterialCommunityIcons color="#fff" name="security" size={20} />
+              <Ionicons color="#fff" name="shield-checkmark" size={20} />
             </View>
             <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Sécurité</Text>
             <View style={styles.rowSpacer} />
-            <FeatherIcon
+            <Ionicons
               color={TEXT_COLOR_SECONDARY}
-              name="chevron-right"
+              name="chevron-forward"
               size={20} />
           </TouchableOpacity>
         </View>
@@ -182,13 +184,13 @@ export default function ProfileScreen({navigation}) {
             borderLeftColor: '#fe9400'
           }]}>
             <View style={[styles.rowIcon, { backgroundColor: '#fe9400' }]}>
-              <FeatherIcon color="#fff" name="globe" size={20} />
+              <Ionicons color="#fff" name="globe" size={20} />
             </View>
             <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Langue</Text>
             <View style={styles.rowSpacer} />
-            <FeatherIcon
+            <Ionicons
               color={TEXT_COLOR_SECONDARY}
-              name="chevron-right"
+              name="chevron-forward"
               size={20} />
           </TouchableOpacity>
           
@@ -198,7 +200,7 @@ export default function ProfileScreen({navigation}) {
             borderLeftColor: '#007afe'
           }]}>
             <View style={[styles.rowIcon, { backgroundColor: '#007afe' }]}>
-              <FeatherIcon color="#fff" name="moon" size={20} />
+              <Ionicons color="#fff" name={isDarkMode ? "sunny" : "moon"} size={20} />
             </View>
             <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Mode Sombre</Text>
             <View style={styles.rowSpacer} />
@@ -217,7 +219,7 @@ export default function ProfileScreen({navigation}) {
             borderLeftColor: colorTheme === 'orange' ? '#fe9400' : '#007afe'
           }]}>
             <View style={[styles.rowIcon, { backgroundColor: colorTheme === 'orange' ? '#fe9400' : '#007afe' }]}>
-              <FeatherIcon color="#fff" name="droplet" size={20} />
+              <Ionicons color="#fff" name="color-palette" size={20} />
             </View>
             <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>
               {colorTheme === 'orange' ? 'Thème Orange' : 'Thème Bleu'}
@@ -238,16 +240,16 @@ export default function ProfileScreen({navigation}) {
               borderLeftColor: '#32c759'
             }]}>
             <View style={[styles.rowIcon, { backgroundColor: '#32c759' }]}>
-              <FeatherIcon
+              <Ionicons
                 color="#fff"
-                name="navigation"
+                name="location"
                 size={20} />
             </View>
             <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Localisation</Text>
             <View style={styles.rowSpacer} />
-            <FeatherIcon
+            <Ionicons
               color={TEXT_COLOR_SECONDARY}
-              name="chevron-right"
+              name="chevron-forward"
               size={20} />
           </TouchableOpacity>
           
@@ -257,7 +259,7 @@ export default function ProfileScreen({navigation}) {
             borderLeftColor: '#38C959'
           }]}>
             <View style={[styles.rowIcon, { backgroundColor: '#38C959' }]}>
-              <FeatherIcon color="#fff" name="at-sign" size={20} />
+              <Ionicons color="#fff" name="mail" size={20} />
             </View>
             <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Notifications Email</Text>
             <View style={styles.rowSpacer} />
@@ -277,7 +279,7 @@ export default function ProfileScreen({navigation}) {
             borderLeftColor: '#38C959'
           }]}>
             <View style={[styles.rowIcon, { backgroundColor: '#38C959' }]}>
-              <FeatherIcon color="#fff" name="bell" size={20} />
+              <Ionicons color="#fff" name="notifications" size={20} />
             </View>
             <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Notifications Push</Text>
             <View style={styles.rowSpacer} />
@@ -302,13 +304,13 @@ export default function ProfileScreen({navigation}) {
               borderLeftColor: '#8e8d91'
             }]}>
             <View style={[styles.rowIcon, { backgroundColor: '#8e8d91' }]}>
-              <FeatherIcon color="#fff" name="flag" size={20} />
+              <Ionicons color="#fff" name="bug" size={20} />
             </View>
             <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Signaler un bug</Text>
             <View style={styles.rowSpacer} />
-            <FeatherIcon
+            <Ionicons
               color={TEXT_COLOR_SECONDARY}
-              name="chevron-right"
+              name="chevron-forward"
               size={20} />
           </TouchableOpacity>
           
@@ -319,13 +321,13 @@ export default function ProfileScreen({navigation}) {
               borderLeftColor: '#007afe'
             }]}>
             <View style={[styles.rowIcon, { backgroundColor: '#007afe' }]}>
-              <FeatherIcon color="#fff" name="mail" size={20} />
+              <Ionicons color="#fff" name="chatbubble-ellipses" size={20} />
             </View>
             <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Contactez-nous</Text>
             <View style={styles.rowSpacer} />
-            <FeatherIcon
+            <Ionicons
               color={TEXT_COLOR_SECONDARY}
-              name="chevron-right"
+              name="chevron-forward"
               size={20} />
           </TouchableOpacity>
           
@@ -336,13 +338,13 @@ export default function ProfileScreen({navigation}) {
               borderLeftColor: '#32c759'
             }]}>
             <View style={[styles.rowIcon, { backgroundColor: '#32c759' }]}>
-              <FeatherIcon color="#fff" name="star" size={20} />
+              <Ionicons color="#fff" name="star" size={20} />
             </View>
             <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Notez l'application</Text>
             <View style={styles.rowSpacer} />
-            <FeatherIcon
+            <Ionicons
               color={TEXT_COLOR_SECONDARY}
-              name="chevron-right"
+              name="chevron-forward"
               size={20} />
           </TouchableOpacity>
         </View>
@@ -363,7 +365,7 @@ export default function ProfileScreen({navigation}) {
             });
           }}
         >
-          <FeatherIcon name="log-out" size={20} color="#fff" />
+          <Ionicons name="log-out-outline" size={20} color="#fff" />
           <Text style={styles.logoutText}>Se déconnecter</Text>
         </TouchableOpacity>
       </ScrollView>

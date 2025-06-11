@@ -1,6 +1,7 @@
 import { Image, StyleSheet, Text, View, useColorScheme } from 'react-native'
 import React, { useEffect, useState } from 'react'
 import { createDrawerNavigator } from '@react-navigation/drawer'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import DrawerItems from '../src/components/layout/DrawerItems';
 import Tabs from './Tabs';
@@ -81,26 +82,31 @@ export default function Main() {
     }, [])
   );
 
-  // Dynamic drawer screen options based on theme
+  // Dynamic drawer screen options based on theme with better spacing
   const getDrawerScreenOptions = () => ({
     headerShown: false,
     drawerStyle: {
       backgroundColor: BACKGROUND_COLOR,
-      width: 280,
+      width: 300, // Increased width for better spacing
+      paddingTop: 20,
     },
     drawerActiveBackgroundColor: PRIMARY_COLOR,
     drawerActiveTintColor: WHITE,
     drawerInactiveTintColor: SECONDARY_TEXT,
     drawerLabelStyle: {
-      marginLeft: -25,
+      marginLeft: -15, // Reduced negative margin
       fontSize: 16,
       fontWeight: '500',
+      fontFamily: 'System',
     },
     drawerItemStyle: {
       borderLeftWidth: 0,
-      marginHorizontal: 8,
-      marginVertical: 2,
-      borderRadius: 8,
+      marginHorizontal: 12, // Increased horizontal margin
+      marginVertical: 4, // Increased vertical margin
+      borderRadius: 12,
+      paddingHorizontal: 8, // Added horizontal padding
+      paddingVertical: 4, // Added vertical padding
+      minHeight: 50, // Minimum height for touch targets
     },
     sceneContainerStyle: {
       backgroundColor: BACKGROUND_COLOR,
@@ -111,133 +117,160 @@ export default function Main() {
   // Helper function to get icon color based on focus state
   const getIconColor = (focused) => focused ? WHITE : SECONDARY_TEXT;
 
+  // Safe area color based on theme
+  const SAFE_AREA_COLOR = isDarkMode ? DARK_PRIMARY : PRIMARY_COLOR;
+
   return (
-    <Drawer.Navigator
-      initialRouteName="Accueil"
-      screenOptions={getDrawerScreenOptions()}
-      drawerContent={(props) => (
-        <DrawerItems
-          {...props}
-          wishlistItem={wishlistCount}
-          cartItem={cartCount}
+    <SafeAreaView style={[styles.safeAreaContainer, { backgroundColor: SAFE_AREA_COLOR }]}>
+      <Drawer.Navigator
+        initialRouteName="Accueil"
+        screenOptions={getDrawerScreenOptions()}
+        drawerContent={(props) => (
+          <DrawerItems
+            {...props}
+            wishlistItem={wishlistCount}
+            cartItem={cartCount}
+          />
+        )}
+      >
+        <Drawer.Screen
+          name="Accueil"
+          component={Tabs}
+          options={{
+            drawerIcon: ({ focused }) => (
+              <View style={styles.iconContainer}>
+                <Ionicons
+                  name={focused ? "home" : "home-outline"}
+                  size={22}
+                  color={getIconColor(focused)}
+                />
+              </View>
+            ),
+            drawerLabel: "Accueil",
+          }}
         />
-      )}
-    >
-      <Drawer.Screen
-        name="Accueil"
-        component={Tabs}
-        options={{
-          drawerIcon: ({ focused }) => (
-            <Ionicons
-              name={focused ? "home" : "home-outline"}
-              size={24}
-              color={getIconColor(focused)}
-            />
-          ),
-          drawerLabel: "Accueil",
-        }}
-      />
 
-      <Drawer.Screen
-        name="Produits"
-        component={ProductsScreen}
-        options={{
-          drawerIcon: ({ focused }) => (
-            <Image
-              source={require('../src/assets/images/store.png')}
-              style={[
-                styles.drawerIcon,
-                {
-                  opacity: focused ? 1 : 0.7,
-                  tintColor: isDarkMode || focused
-                    ? getIconColor(focused)
-                    : SECONDARY_TEXT
-                }
-              ]}
-            />
-          ),
-          drawerLabel: "Produits",
-        }}
-      />
+        <Drawer.Screen
+          name="Produits"
+          component={ProductsScreen}
+          options={{
+            drawerIcon: ({ focused }) => (
+              <View style={styles.iconContainer}>
+                <Image
+                  source={require('../src/assets/images/store.png')}
+                  style={[
+                    styles.drawerIcon,
+                    {
+                      opacity: focused ? 1 : 0.7,
+                      tintColor: isDarkMode || focused
+                        ? getIconColor(focused)
+                        : SECONDARY_TEXT
+                    }
+                  ]}
+                />
+              </View>
+            ),
+            drawerLabel: "Produits",
+          }}
+        />
 
-      <Drawer.Screen
-        name="Favoris"
-        component={WishListScreen}
-        options={{
-          drawerIcon: ({ focused }) => (
-            <FontAwsome5Icon
-              name={focused ? "heart" : "heart"}
-              size={22}
-              color={getIconColor(focused)}
-              solid={focused}
-            />
-          ),
-          drawerLabel: "Favoris",
-        }}
-      />
+        <Drawer.Screen
+          name="Favoris"
+          component={WishListScreen}
+          options={{
+            drawerIcon: ({ focused }) => (
+              <View style={styles.iconContainer}>
+                <FontAwsome5Icon
+                  name={focused ? "heart" : "heart"}
+                  size={20}
+                  color={getIconColor(focused)}
+                  solid={focused}
+                />
+              </View>
+            ),
+            drawerLabel: "Favoris",
+          }}
+        />
 
-      <Drawer.Screen
-        name="Panier"
-        component={CartScreen}
-        options={{
-          drawerIcon: ({ focused }) => (
-            <FontAwsome5Icon
-              name="shopping-cart"
-              size={22}
-              color={getIconColor(focused)}
-            />
-          ),
-          drawerLabel: "Panier",
-        }}
-      />
+        <Drawer.Screen
+          name="Panier"
+          component={CartScreen}
+          options={{
+            drawerIcon: ({ focused }) => (
+              <View style={styles.iconContainer}>
+                <FontAwsome5Icon
+                  name="shopping-cart"
+                  size={20}
+                  color={getIconColor(focused)}
+                />
+              </View>
+            ),
+            drawerLabel: "Panier",
+          }}
+        />
 
-      <Drawer.Screen
-        name="Mes commandes"
-        component={OrderScreen}
-        options={{
-          drawerIcon: ({ focused }) => (
-            <FontAwsome5Icon
-              name={focused ? "clipboard-list" : "clipboard-list"}
-              size={22}
-              color={getIconColor(focused)}
-            />
-          ),
-          drawerLabel: "Mes commandes",
-        }}
-      />
+        <Drawer.Screen
+          name="Mes commandes"
+          component={OrderScreen}
+          options={{
+            drawerIcon: ({ focused }) => (
+              <View style={styles.iconContainer}>
+                <FontAwsome5Icon
+                  name={focused ? "clipboard-list" : "clipboard-list"}
+                  size={20}
+                  color={getIconColor(focused)}
+                />
+              </View>
+            ),
+            drawerLabel: "Mes commandes",
+          }}
+        />
 
-      <Drawer.Screen
-        name="Mon compte"
-        component={ProfileScreen}
-        options={{
-          drawerIcon: ({ focused }) => (
-            <FontAwsome5Icon
-              name={focused ? "user-circle" : "user-circle"}
-              size={22}
-              color={getIconColor(focused)}
-              solid={focused}
-            />
-          ),
-          drawerLabel: "Mon compte",
-        }}
-      />
+        <Drawer.Screen
+          name="Mon compte"
+          component={ProfileScreen}
+          options={{
+            drawerIcon: ({ focused }) => (
+              <View style={styles.iconContainer}>
+                <FontAwsome5Icon
+                  name={focused ? "user-circle" : "user-circle"}
+                  size={20}
+                  color={getIconColor(focused)}
+                  solid={focused}
+                />
+              </View>
+            ),
+            drawerLabel: "Mon compte",
+          }}
+        />
 
-      {/* Add UserDetailsScreen as a hidden drawer screen */}
-      <Drawer.Screen
-        name="UserDetails"
-        component={UserDetailsScreen}
-        options={{
-          drawerItemStyle: { display: 'none' }, // Hide from drawer menu
-        }}
-      />
-    </Drawer.Navigator>
+        {/* Add UserDetailsScreen as a hidden drawer screen */}
+        <Drawer.Screen
+          name="UserDetails"
+          component={UserDetailsScreen}
+          options={{
+            drawerItemStyle: { display: 'none' }, // Hide from drawer menu
+          }}
+        />
+      </Drawer.Navigator>
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
   drawerIcon: {
-    width: 24,
-    height: 24,
+    width: 22,
+    height: 22,
     resizeMode: "contain"
+  },
+  safeAreaContainer: {
+    flex: 1,
+  },
+  iconContainer: {
+    width: 30,
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 5,
   }
 })
