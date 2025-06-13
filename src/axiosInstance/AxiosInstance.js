@@ -20,7 +20,7 @@ apiClient.interceptors.response.use(
     return response;
   },
   (error) => {
-    console.error('Standard API Error:', error.response?.data || error.message);
+    console.error('Standard API Error:', error);
     return Promise.reject(error);
   }
 );

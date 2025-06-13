@@ -76,7 +76,7 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
   const isAvailable = productStock !== null ? productStock > 0 : false;
   
   // Extract price information
-  const productPrice = data?.price_ttc || data?.price || data?.price_min;
+  const productPrice = data?.price_ttc;
   const formattedPrice = productPrice ? parseFloat(String(productPrice)).toFixed(2) : null;
   
   // Extract description

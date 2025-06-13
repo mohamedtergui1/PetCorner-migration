@@ -1,4 +1,4 @@
-// ProductScreen.tsx - Fallback Version Using Existing Services
+// ProductScreen.tsx - Updated to use new ProductService
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
@@ -22,8 +22,13 @@ import Feather from 'react-native-vector-icons/Feather';
 import FilterModal from '../components/filter/FilterModal';
 import ProductCard2 from '../components/Product/ProductCard2';
 
-// Import your existing services - replace with your actual service imports
-import { getProductsOnlyWithPagination, getProductCategories } from '../service/ProductService';
+// Import the new ProductService
+import ProductService, { 
+  Product, 
+  PaginatedProductResponse, 
+  ProductListResponse,
+  FilteredProductsParams 
+} from '../service/CustomProductApiService';
 
 const { width } = Dimensions.get('window');
 
@@ -32,9 +37,9 @@ const { width } = Dimensions.get('window');
 // =====================================
 
 interface FilterOptions {
-  animal?: string;
+  animal_category?: number;
   brand?: string;
-  category?: string;
+  category?: number;
   priceMin?: number;
   priceMax?: number;
 }
@@ -42,20 +47,6 @@ interface FilterOptions {
 interface ProductScreenProps {
   navigation: any;
   route: any;
-}
-
-interface Product {
-  id: number;
-  ref?: string;
-  label?: string;
-  description?: string;
-  price?: number;
-  price_ttc?: number;
-  price_min?: number;
-  image_link?: string;
-  date_creation?: number;
-  stock_reel?: number;
-  [key: string]: any; // ✅ FIXED: Allow additional properties for flexibility
 }
 
 interface PaginationData {
@@ -80,7 +71,6 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
   
   // Main data states
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -164,11 +154,8 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
         has_more: false
       });
       
-      // Load categories and products in parallel
-      const categoriesPromise = loadCategories();
-      const productsPromise = loadProducts(true);
-      
-      await Promise.all([categoriesPromise, productsPromise]);
+      // Load products
+      await loadProducts(true);
       
     } catch (error) {
       console.error('Erreur lors du chargement initial:', error);
@@ -184,19 +171,7 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
     }
   };
 
-  // Load categories
-  const loadCategories = async () => {
-    try {
-      const categoriesData = await getProductCategories();
-      setCategories(categoriesData || []);
-      console.log(`✅ ${categoriesData?.length || 0} catégories chargées`);
-    } catch (error) {
-      console.warn('⚠️ Impossible de charger les catégories:', error);
-      setCategories([]);
-    }
-  };
-
-  // Load products with filtering simulation
+  // Load products using the new service
   const loadProducts = async (resetPagination = false, filters: FilterOptions = {}, search = '') => {
     try {
       if (resetPagination) {
@@ -212,89 +187,105 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
       console.log('📦 Chargement des produits - Page:', pageToLoad);
       console.log('🔍 Filtres:', filters, 'Recherche:', search);
       
-      // Use your existing service - adjust parameters as needed
-      const result = await getProductsOnlyWithPagination(
-        pageSize,
-        pageToLoad,
-        filters, // Pass filters as-is, your service should handle them
-        search
-      );
+      // Prepare parameters for the new service
+      const params: FilteredProductsParams = {
+        limit: pageSize,
+        page: pageToLoad,
+        pagination_data: true,
+        includestockdata: 0,
+        sortfield: getSortField(sortBy),
+        sortorder: getSortOrder(sortBy),
+      };
+
+      // Add filters
+      if (filters.animal_category) params.animal_category = filters.animal_category;
+      if (filters.category) params.category = filters.category;
+      if (filters.brand) params.brand = filters.brand;
+      if (filters.priceMin !== undefined) params.price_min = filters.priceMin;
+      if (filters.priceMax !== undefined) params.price_max = filters.priceMax;
+      if (search && search.trim()) params.search = search.trim();
+
+      // Use the appropriate service method
+      let result: PaginatedProductResponse | ProductListResponse;
       
-      console.log('📊 Résultat pagination:', result.pagination);
+      if (search && search.trim()) {
+        // Use search method for text search
+        result = await ProductService.searchProducts({
+          search_name: search.trim(),
+          limit: pageSize,
+          page: pageToLoad,
+          pagination_data: true,
+          sortfield: getSortField(sortBy),
+          sortorder: getSortOrder(sortBy),
+          ...(filters.animal_category && { categories: filters.animal_category.toString() }),
+          ...(filters.brand && { brand: filters.brand }),
+        });
+      } else {
+        // Use filtered products method
+        result = await ProductService.getFilteredProducts(params);
+      }
       
-      // Extract products and pagination
-      const newProducts = result.data || [];
-      const newPaginationData = result.pagination || {
+      // Handle response
+      let newProducts: Product[] = [];
+      let newPaginationData: PaginationData = {
         total: 0,
         page: pageToLoad,
         page_count: 0,
         limit: pageSize,
-        current_count: newProducts.length,
+        current_count: 0,
         has_more: false
       };
-      
-      // Apply client-side filtering if needed (temporary solution)
-      let filteredProducts = newProducts;
-      
-      // Filter by search query
-      if (search && search.trim().length > 0) {
-        const searchLower = search.toLowerCase();
-        filteredProducts = filteredProducts.filter((product: any) => {
-          const name = (product.label || product.name || '').toLowerCase();
-          const ref = (product.ref || '').toLowerCase();
-          const description = (product.description || '').toLowerCase();
-          
-          return name.includes(searchLower) || 
-                 ref.includes(searchLower) || 
-                 description.includes(searchLower);
-        });
+
+      if ('pagination' in result) {
+        // Paginated response
+        newProducts = result.data || [];
+        newPaginationData = {
+          total: result.pagination.total || 0,
+          page: result.pagination.page || pageToLoad,
+          page_count: result.pagination.page_count || 0,
+          limit: result.pagination.limit || pageSize,
+          current_count: newProducts.length,
+          has_more: (result.pagination.page || 0) < (result.pagination.page_count || 0) - 1
+        };
+      } else {
+        // Simple array response
+        newProducts = result as Product[];
+        newPaginationData = {
+          total: newProducts.length,
+          page: 0,
+          page_count: 1,
+          limit: pageSize,
+          current_count: newProducts.length,
+          has_more: false
+        };
       }
       
-      // Apply additional filters if needed
-      if (filters.priceMin !== undefined) {
-        filteredProducts = filteredProducts.filter((product: any) => {
-          const price = parseFloat(String(product.price_ttc || product.price || product.price_min || 0));
-          return price >= (filters.priceMin || 0);
-        });
-      }
-      
-      if (filters.priceMax !== undefined) {
-        filteredProducts = filteredProducts.filter((product: any) => {
-          const price = parseFloat(String(product.price_ttc || product.price || product.price_min || 0));
-          return price <= (filters.priceMax || 999999);
-        });
-      }
-      
-      // Sort products
-      const sortedProducts = sortProducts(filteredProducts, sortBy);
+      console.log('📊 Résultat pagination:', newPaginationData);
       
       if (resetPagination) {
-        setProducts(sortedProducts);
+        setProducts(newProducts);
         setCurrentPage(0);
-        setPaginationData({
-          ...newPaginationData,
-          current_count: sortedProducts.length
-        });
+        setPaginationData(newPaginationData);
       } else {
-        setProducts(prevProducts => [...prevProducts, ...sortedProducts]);
+        setProducts(prevProducts => [...prevProducts, ...newProducts]);
         setCurrentPage(pageToLoad + 1);
         setPaginationData(prev => ({
           ...newPaginationData,
-          current_count: prev.current_count + sortedProducts.length
+          current_count: prev.current_count + newProducts.length
         }));
       }
       
       setActiveFilters(filters);
       
       console.log('✅ Produits chargés:', {
-        nouveaux: sortedProducts.length,
-        total_affichés: resetPagination ? sortedProducts.length : products.length + sortedProducts.length,
+        nouveaux: newProducts.length,
+        total_affichés: resetPagination ? newProducts.length : products.length + newProducts.length,
         total_disponible: newPaginationData.total,
         page_actuelle: newPaginationData.page,
         total_pages: newPaginationData.page_count
       });
       
-      if (sortedProducts.length === 0) {
+      if (newProducts.length === 0) {
         console.log('ℹ️ Aucun produit trouvé pour cette recherche/filtre');
       }
       
@@ -339,7 +330,32 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
   // UTILITY FUNCTIONS
   // =====================================
 
-  // Sort products
+  // Get sort field for API
+  const getSortField = (sortType: string): string => {
+    switch (sortType) {
+      case 'price':
+        return 'price_ttc';
+      case 'name':
+        return 'label';
+      case 'date':
+      default:
+        return 'date_creation';
+    }
+  };
+
+  // Get sort order for API
+  const getSortOrder = (sortType: string): 'ASC' | 'DESC' => {
+    switch (sortType) {
+      case 'price':
+      case 'name':
+        return 'ASC';
+      case 'date':
+      default:
+        return 'DESC';
+    }
+  };
+
+  // Sort products locally (for immediate UI feedback)
   const sortProducts = (productsList: Product[], sortType: string) => {
     if (!Array.isArray(productsList)) return [];
     
@@ -348,8 +364,8 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
     switch (sortType) {
       case 'price':
         return sorted.sort((a, b) => {
-          const priceA = parseFloat(String(a.price_ttc || a.price || a.price_min || 0));
-          const priceB = parseFloat(String(b.price_ttc || b.price || b.price_min || 0));
+          const priceA = parseFloat(String(a.price_ttc || a.price || 0));
+          const priceB = parseFloat(String(b.price_ttc || b.price || 0));
           return priceA - priceB;
         });
       case 'name':
@@ -421,11 +437,21 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
     loadProducts(true, activeFilters, '');
   };
 
-  // Apply filters
-  const handleApplyFilters = (filters: FilterOptions) => {
+  // Apply filters - Updated to use new filter structure
+  const handleApplyFilters = (filters: any) => {
     console.log('✅ Filtres appliqués:', filters);
+    
+    // Convert the filter format to match our internal structure
+    const convertedFilters: FilterOptions = {};
+    
+    if (filters.animal) convertedFilters.animal_category = parseInt(filters.animal);
+    if (filters.brand) convertedFilters.brand = filters.brand;
+    if (filters.category) convertedFilters.category = parseInt(filters.category);
+    if (filters.priceMin !== undefined) convertedFilters.priceMin = filters.priceMin;
+    if (filters.priceMax !== undefined) convertedFilters.priceMax = filters.priceMax;
+    
     setShowFilterModal(false);
-    loadProducts(true, filters, searchQuery);
+    loadProducts(true, convertedFilters, searchQuery);
   };
 
   // Clear filters
@@ -450,8 +476,8 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
   // Change sort
   const handleSortChange = (newSortBy: 'date' | 'price' | 'name') => {
     setSortBy(newSortBy);
-    const sortedProducts = sortProducts(products, newSortBy);
-    setProducts(sortedProducts);
+    // Reload products with new sort
+    loadProducts(true, activeFilters, searchQuery);
   };
 
   // Check active filters
@@ -496,9 +522,9 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
     
     return (
       <ProductCard2
-        navigation={navigation} // ✅ FIXED: Pass navigation prop explicitly
+        navigation={navigation}
         product={item}
-        onPress={navigateToProductDetails} // ✅ Also provide onPress as fallback
+        onPress={navigateToProductDetails}
         viewMode={viewMode}
         isDarkMode={isDarkMode}
         colorTheme={colorTheme}

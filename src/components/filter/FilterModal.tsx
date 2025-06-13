@@ -1,4 +1,4 @@
-// components/FilterModal.tsx - Complete TypeScript FilterModal Component
+// components/FilterModal.tsx - Updated to use new ProductService
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -20,6 +20,14 @@ import {
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Feather from 'react-native-vector-icons/Feather';
+
+// Import the new ProductService
+import ProductService, { 
+  Brand, 
+  Category, 
+  AnimalCategory, 
+  FilterData 
+} from '../../service/CustomProductApiService';
 
 // Types
 interface AppliedFilters {
@@ -65,24 +73,6 @@ interface PriceRange {
   max: number | null;
   icon: string;
 }
-
-interface Category {
-  id: number | string;
-  label: string;
-  name: string;
-  description?: string;
-  parent?: number | string;
-}
-
-interface Brand {
-  id: string;
-  name: string;
-  label: string;
-  productCount: number;
-}
-
-// Service functions (you'll need to implement these)
-import { getFilterData } from '../../service/DolibarrBrandService';
 
 // Theme context
 interface ThemeContextType {
@@ -149,9 +139,10 @@ const FilterModal: React.FC<FilterModalProps> = ({
   const [filterData, setFilterData] = useState({
     brands: [] as Brand[],
     categories: [] as Category[],
-    animals: [] as any[],
+    animals: [] as AnimalCategory[],
     loadingBrands: false,
     loadingCategories: false,
+    loadingAnimals: false,
   });
 
   const [showBrandModal, setShowBrandModal] = useState(false);
@@ -175,9 +166,15 @@ const FilterModal: React.FC<FilterModalProps> = ({
 
   useEffect(() => {
     if (visible) {
+      loadInitialData();
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (filterState.selectedAnimal) {
       loadFilterDataForAnimal(filterState.selectedAnimal);
     }
-  }, [visible, filterState.selectedAnimal]);
+  }, [filterState.selectedAnimal]);
 
   useEffect(() => {
     setFilterState(prev => ({
@@ -212,10 +209,31 @@ const FilterModal: React.FC<FilterModalProps> = ({
   }, [initialFilters]);
 
   // =====================================
-  // DATA LOADING
+  // DATA LOADING FUNCTIONS
   // =====================================
 
+  const loadInitialData = useCallback(async () => {
+    try {
+      setFilterData(prev => ({ ...prev, loadingAnimals: true }));
+      
+      // Load animals first
+      const animals = await ProductService.getAnimals();
+      setFilterData(prev => ({
+        ...prev,
+        animals,
+        loadingAnimals: false
+      }));
+      
+      console.log('✅ Animals loaded:', animals.length);
+    } catch (error) {
+      console.error('❌ Error loading initial data:', error);
+      setFilterData(prev => ({ ...prev, loadingAnimals: false }));
+    }
+  }, []);
+
   const loadFilterDataForAnimal = useCallback(async (animalId?: string) => {
+    if (!animalId) return;
+
     setFilterData(prev => ({
       ...prev,
       loadingBrands: true,
@@ -225,38 +243,46 @@ const FilterModal: React.FC<FilterModalProps> = ({
     try {
       console.log('🔄 Loading filter data for animal:', animalId);
       
-      const data = await getFilterData(animalId ? Number(animalId) : undefined);
+      // Load filter data for the specific animal
+      const data = await ProductService.getFilterData(Number(animalId));
       
-      if (data.success) {
-        setFilterData({
-          categories: data.categories,
-          brands: data.brands,
-          animals: data.animals,
-          loadingBrands: false,
-          loadingCategories: false,
-        });
-        
-        if (filterState.selectedCategoryId) {
-          const category = data.categories.find(cat => cat.id == filterState.selectedCategoryId);
-          if (category) {
-            setFilterState(prev => ({
-              ...prev,
-              selectedCategoryName: category.label || category.name,
-            }));
-          } else {
-            console.log('🚫 Current category not valid for selected animal, clearing...');
-            setFilterState(prev => ({
-              ...prev,
-              selectedCategoryId: '',
-              selectedCategoryName: '',
-            }));
-          }
+      // Load categories for the specific animal
+      const categories = await ProductService.getCategoriesByAnimal(Number(animalId));
+      
+      // Load brands for the specific animal  
+      const brands = await ProductService.getBrands(Number(animalId));
+      
+      setFilterData(prev => ({
+        ...prev,
+        categories,
+        brands,
+        loadingBrands: false,
+        loadingCategories: false,
+      }));
+      
+      // Update category name if category is selected
+      if (filterState.selectedCategoryId) {
+        const category = categories.find(cat => cat.id == filterState.selectedCategoryId);
+        if (category) {
+          setFilterState(prev => ({
+            ...prev,
+            selectedCategoryName: category.label || category.name,
+          }));
+        } else {
+          console.log('🚫 Current category not valid for selected animal, clearing...');
+          setFilterState(prev => ({
+            ...prev,
+            selectedCategoryId: '',
+            selectedCategoryName: '',
+          }));
         }
-        
-        console.log('✅ Filter data loaded successfully');
-      } else {
-        throw new Error(data.error || 'Failed to load filter data');
       }
+      
+      console.log('✅ Filter data loaded successfully:', {
+        categories: categories.length,
+        brands: brands.length
+      });
+      
     } catch (error) {
       console.error('❌ Error loading filter data:', error);
       setFilterData(prev => ({
@@ -441,6 +467,11 @@ const FilterModal: React.FC<FilterModalProps> = ({
           <Ionicons name="paw" size={18} color={PRIMARY_COLOR} />
         </View>
         <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>Animal</Text>
+        {filterData.loadingAnimals && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color={PRIMARY_COLOR} />
+          </View>
+        )}
       </View>
       <View style={styles.animalGrid}>
         {ANIMAL_TYPES.map((animal: AnimalType) => (
