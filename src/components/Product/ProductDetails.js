@@ -28,7 +28,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useCart } from '../../context/CartContext';
 import { StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import ProductService from '../../service/CustomProductApiService'; // Using TypeScript ProductService
+import ProductService from '../../service/CustomProductApiService';
 
 export default function ProductDetails({ route, navigation }) {
   const { width, height } = Dimensions.get('window');
@@ -36,9 +36,8 @@ export default function ProductDetails({ route, navigation }) {
   const { addToCart } = useCart();
   const insets = useSafeAreaInsets();
   
-  // Get product ID from route params
-  const { productId, product: legacyProduct } = route.params;
-  const productIdToLoad = productId || legacyProduct?.id;
+  // Get product ID from route params - simplified approach
+  const { productId } = route.params;
 
   // State management
   const [product, setProduct] = useState(null);
@@ -64,7 +63,6 @@ export default function ProductDetails({ route, navigation }) {
   const formatPrice = (product) => {
     if (!product) return '0,00 DH';
     
-    // Use price_ttc (TTC = Tax included price)
     const price = parseFloat(product.price_ttc || product.price || 0);
     return `${price.toFixed(2).replace('.', ',')} DH`;
   };
@@ -130,7 +128,7 @@ export default function ProductDetails({ route, navigation }) {
     return null;
   };
 
-  // Function to load product data using ProductService
+  // Function to load product data using ProductService.getProductById
   const loadProductData = async (id) => {
     if (!id) {
       setError('ID produit manquant');
@@ -144,8 +142,8 @@ export default function ProductDetails({ route, navigation }) {
       
       console.log('Loading product with ID:', id);
       
-      // Load product using ProductService
-      const productData = await ProductService.getEnhancedProduct(id, {
+      // Load product using ProductService.getProductById with stock data
+      const productData = await ProductService.getProductById(id, {
         includestockdata: 1,
         includesubproducts: false,
         includeparentid: false,
@@ -190,7 +188,7 @@ export default function ProductDetails({ route, navigation }) {
       
       console.log('Loading similar products with IDs:', similarIds);
       
-      // Load similar products using ProductService
+      // Load similar products using ProductService.getMultipleProducts
       const similarProductsResponse = await ProductService.getMultipleProducts(similarIds, {
         includestockdata: 0,
         pagination_data: false
@@ -203,7 +201,7 @@ export default function ProductDetails({ route, navigation }) {
       
       // Filter out current product if present
       const filteredSimilar = similarProductsData.filter(
-        item => item && item.id.toString() !== productIdToLoad.toString()
+        item => item && item.id.toString() !== productId.toString()
       );
       
       setSimilarProducts(filteredSimilar);
@@ -218,15 +216,15 @@ export default function ProductDetails({ route, navigation }) {
 
   // Load product data on component mount
   useEffect(() => {
-    if (productIdToLoad) {
-      loadProductData(productIdToLoad);
+    if (productId) {
+      loadProductData(productId);
       loadWishlist();
       getUserData();
     } else {
       setError('ID produit manquant');
       setLoadingProduct(false);
     }
-  }, [productIdToLoad]);
+  }, [productId]);
 
   // Calculate derived values
   const isAvailable = product ? isProductInStock(product) : false;
@@ -316,13 +314,13 @@ export default function ProductDetails({ route, navigation }) {
 
   // Function to check if product is in wishlist
   const loadWishlist = async () => {
-    if (!productIdToLoad) return;
+    if (!productId) return;
     
     try {
       const getWishlist = await AsyncStorage.getItem("wishlistItem");
       const parsedWishlist = JSON.parse(getWishlist);
 
-      if (Array.isArray(parsedWishlist) && parsedWishlist.includes(parseInt(productIdToLoad))) {
+      if (Array.isArray(parsedWishlist) && parsedWishlist.includes(parseInt(productId))) {
         setInSaved(true);
       } else {
         setInSaved(false);
@@ -427,14 +425,17 @@ export default function ProductDetails({ route, navigation }) {
   };
 
   // Function to navigate to similar product
-  const handleSimilarProductPress = (similarProduct) => {
-    navigation.push('ProductDetails', { productId: similarProduct.id });
-  };
+const handleSimilarProductPress = (similarProduct) => {
+  navigation.reset({
+    index: 0,
+    routes: [{ name: 'ProductDetails', params: { productId: similarProduct.id } }],
+  });
+};
 
   // Function to retry loading product
   const retryLoadProduct = () => {
-    if (productIdToLoad) {
-      loadProductData(productIdToLoad);
+    if (productId) {
+      loadProductData(productId);
     }
   };
 
@@ -656,7 +657,7 @@ export default function ProductDetails({ route, navigation }) {
             <View style={[styles.categoryBadge, { backgroundColor: theme.primary + '20' }]}>
               <Entypo name="shopping-cart" size={16} color={theme.primary} style={styles.categoryIcon} />
               <Text style={[styles.categoryText, { color: theme.primary }]}>
-                {product.category_label || 'Produit'}
+                Produit
               </Text>
             </View>
             
@@ -705,7 +706,7 @@ export default function ProductDetails({ route, navigation }) {
             </View>
           </View>
 
-          {/* Price Section - Updated to use price_ttc */}
+          {/* Price Section */}
           <View style={[styles.priceContainer, { borderColor: theme.border }]}>
             <View>
               <Text style={[styles.price, { color: theme.textColor }]}>
@@ -749,7 +750,6 @@ export default function ProductDetails({ route, navigation }) {
                 </View>
               )}
               
-             
               {product.array_options?.options_ages && (
                 <View style={styles.specItem}>
                   <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Âge:</Text>

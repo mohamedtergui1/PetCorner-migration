@@ -8,6 +8,7 @@ import Tabs from './Tabs';
 import ProfileScreen from '../src/screens/ProfileScreen';
 import UserDetailsScreen from '../src/screens/UserDetailsScreen'; // Add this import
 import ProductsScreen from '../src/screens/ProductsScreen';
+import ProductDetails from '../src/components/Product/ProductDetails'; // ✅ ADD THIS LINE
 import WishListScreen from '../src/screens/WishListScreen';
 import CartScreen from '../src/screens/CartScreen';
 import OrderScreen from '../src/screens/OrderScreen';
@@ -248,6 +249,15 @@ export default function Main() {
         <Drawer.Screen
           name="UserDetails"
           component={UserDetailsScreen}
+          options={{
+            drawerItemStyle: { display: 'none' }, // Hide from drawer menu
+          }}
+        />
+
+        {/* ✅ ADD THIS BLOCK - ProductDetails Screen */}
+        <Drawer.Screen
+          name="ProductDetails"
+          component={ProductDetails}
           options={{
             drawerItemStyle: { display: 'none' }, // Hide from drawer menu
           }}

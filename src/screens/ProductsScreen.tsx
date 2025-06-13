@@ -1,4 +1,4 @@
-// ProductScreen.js - Fixed search functionality - No modal/toast on empty results
+// ProductScreen.tsx - Fallback Version Using Existing Services
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
@@ -21,35 +21,85 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import Feather from 'react-native-vector-icons/Feather';
 import FilterModal from '../components/filter/FilterModal';
 import ProductCard2 from '../components/Product/ProductCard2';
+
+// Import your existing services - replace with your actual service imports
 import { getProductsOnlyWithPagination, getProductCategories } from '../service/ProductService';
 
 const { width } = Dimensions.get('window');
 
-export default function ProductScreen({ navigation, route }) {
+// =====================================
+// TYPES AND INTERFACES
+// =====================================
+
+interface FilterOptions {
+  animal?: string;
+  brand?: string;
+  category?: string;
+  priceMin?: number;
+  priceMax?: number;
+}
+
+interface ProductScreenProps {
+  navigation: any;
+  route: any;
+}
+
+interface Product {
+  id: number;
+  ref?: string;
+  label?: string;
+  description?: string;
+  price?: number;
+  price_ttc?: number;
+  price_min?: number;
+  image_link?: string;
+  date_creation?: number;
+  stock_reel?: number;
+  [key: string]: any; // ✅ FIXED: Allow additional properties for flexibility
+}
+
+interface PaginationData {
+  total: number;
+  page: number;
+  page_count: number;
+  limit: number;
+  current_count: number;
+  has_more: boolean;
+}
+
+// =====================================
+// MAIN COMPONENT
+// =====================================
+
+export default function ProductScreen({ navigation, route }: ProductScreenProps) {
   const { isDarkMode, colorTheme } = useTheme();
   
-  // États principaux
-  const [products, setProducts] = useState([]);
+  // =====================================
+  // STATE MANAGEMENT
+  // =====================================
+  
+  // Main data states
+  const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
-  const [activeFilters, setActiveFilters] = useState({});
+  const [activeFilters, setActiveFilters] = useState<FilterOptions>({});
   
-  // États de recherche - FIXED
+  // Search states
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchInputValue, setSearchInputValue] = useState(''); // Separate state for input display
+  const [searchInputValue, setSearchInputValue] = useState('');
   const [showSearchBar, setShowSearchBar] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
-  const searchTimeoutRef = useRef(null);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  // États d'affichage
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' ou 'list'
-  const [sortBy, setSortBy] = useState('date'); // 'date', 'price', 'name'
+  // Display states
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [sortBy, setSortBy] = useState<'date' | 'price' | 'name'>('date');
 
-  // États de pagination - Updated to use Dolibarr's pagination
+  // Pagination states
   const [currentPage, setCurrentPage] = useState(0);
-  const [paginationData, setPaginationData] = useState({
+  const [paginationData, setPaginationData] = useState<PaginationData>({
     total: 0,
     page: 0,
     page_count: 0,
@@ -58,9 +108,12 @@ export default function ProductScreen({ navigation, route }) {
     has_more: false
   });
   const [loadingMore, setLoadingMore] = useState(false);
-  const [pageSize] = useState(20); // Nombre de produits par page
+  const [pageSize] = useState(20);
 
-  // Couleurs dynamiques
+  // =====================================
+  // THEME COLORS
+  // =====================================
+  
   const PRIMARY_COLOR = colorTheme === 'blue' ? '#007afe' : '#fe9400';
   const SECONDARY_COLOR = colorTheme === 'blue' ? '#fe9400' : '#007afe';
   const BACKGROUND_COLOR = isDarkMode ? '#0a0a0a' : '#f8f9fa';
@@ -68,17 +121,32 @@ export default function ProductScreen({ navigation, route }) {
   const TEXT_COLOR = isDarkMode ? '#ffffff' : '#1a1a1a';
   const TEXT_COLOR_SECONDARY = isDarkMode ? '#a0a0a0' : '#6c757d';
   const BORDER_COLOR = isDarkMode ? '#2a2a2a' : '#e9ecef';
-  const SUCCESS_COLOR = '#28a745';
-  const WARNING_COLOR = '#ffc107';
 
-  // Charger les produits au focus de l'écran
+  // =====================================
+  // EFFECTS
+  // =====================================
+
+  // Load products when screen is focused
   useFocusEffect(
     useCallback(() => {
       loadInitialData();
     }, [])
   );
 
-  // Charger les données initiales (produits et catégories)
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // =====================================
+  // DATA LOADING FUNCTIONS
+  // =====================================
+
+  // Load initial data
   const loadInitialData = async () => {
     try {
       setLoading(true);
@@ -96,16 +164,15 @@ export default function ProductScreen({ navigation, route }) {
         has_more: false
       });
       
-      // Charger les catégories en parallèle
+      // Load categories and products in parallel
       const categoriesPromise = loadCategories();
-      const productsPromise = loadProducts(true); // true = reset data
+      const productsPromise = loadProducts(true);
       
       await Promise.all([categoriesPromise, productsPromise]);
       
     } catch (error) {
       console.error('Erreur lors du chargement initial:', error);
-      // Only show alert for critical connection errors, not empty results
-      if (error.message && !error.message.includes('404') && !error.message.includes('empty')) {
+      if (error instanceof Error && error.message && !error.message.includes('404') && !error.message.includes('empty')) {
         Alert.alert(
           'Erreur de chargement',
           'Impossible de charger les données. Vérifiez votre connexion.',
@@ -117,7 +184,7 @@ export default function ProductScreen({ navigation, route }) {
     }
   };
 
-  // Charger les catégories
+  // Load categories
   const loadCategories = async () => {
     try {
       const categoriesData = await getProductCategories();
@@ -129,8 +196,8 @@ export default function ProductScreen({ navigation, route }) {
     }
   };
 
-  // FIXED: Charger les produits avec pagination Dolibarr - No modal on empty results
-  const loadProducts = async (resetPagination = false, filters = {}, search = '') => {
+  // Load products with filtering simulation
+  const loadProducts = async (resetPagination = false, filters: FilterOptions = {}, search = '') => {
     try {
       if (resetPagination) {
         setLoading(true);
@@ -145,17 +212,17 @@ export default function ProductScreen({ navigation, route }) {
       console.log('📦 Chargement des produits - Page:', pageToLoad);
       console.log('🔍 Filtres:', filters, 'Recherche:', search);
       
-      // Use getProductsOnlyWithPagination which filters by type = "0" (products only)
+      // Use your existing service - adjust parameters as needed
       const result = await getProductsOnlyWithPagination(
         pageSize,
         pageToLoad,
-        filters,
+        filters, // Pass filters as-is, your service should handle them
         search
       );
       
       console.log('📊 Résultat pagination:', result.pagination);
       
-      // Extract products and pagination from Dolibarr response
+      // Extract products and pagination
       const newProducts = result.data || [];
       const newPaginationData = result.pagination || {
         total: 0,
@@ -166,51 +233,78 @@ export default function ProductScreen({ navigation, route }) {
         has_more: false
       };
       
-      // Tri des produits
-      const sortedProducts = sortProducts(newProducts, sortBy);
+      // Apply client-side filtering if needed (temporary solution)
+      let filteredProducts = newProducts;
+      
+      // Filter by search query
+      if (search && search.trim().length > 0) {
+        const searchLower = search.toLowerCase();
+        filteredProducts = filteredProducts.filter((product: any) => {
+          const name = (product.label || product.name || '').toLowerCase();
+          const ref = (product.ref || '').toLowerCase();
+          const description = (product.description || '').toLowerCase();
+          
+          return name.includes(searchLower) || 
+                 ref.includes(searchLower) || 
+                 description.includes(searchLower);
+        });
+      }
+      
+      // Apply additional filters if needed
+      if (filters.priceMin !== undefined) {
+        filteredProducts = filteredProducts.filter((product: any) => {
+          const price = parseFloat(String(product.price_ttc || product.price || product.price_min || 0));
+          return price >= (filters.priceMin || 0);
+        });
+      }
+      
+      if (filters.priceMax !== undefined) {
+        filteredProducts = filteredProducts.filter((product: any) => {
+          const price = parseFloat(String(product.price_ttc || product.price || product.price_min || 0));
+          return price <= (filters.priceMax || 999999);
+        });
+      }
+      
+      // Sort products
+      const sortedProducts = sortProducts(filteredProducts, sortBy);
       
       if (resetPagination) {
-        // Première page ou reset complet
         setProducts(sortedProducts);
         setCurrentPage(0);
-        setPaginationData(newPaginationData);
-      } else {
-        // Pages suivantes - ajouter aux produits existants
-        setProducts(prevProducts => {
-          const combinedProducts = [...prevProducts, ...sortedProducts];
-          return combinedProducts;
+        setPaginationData({
+          ...newPaginationData,
+          current_count: sortedProducts.length
         });
+      } else {
+        setProducts(prevProducts => [...prevProducts, ...sortedProducts]);
         setCurrentPage(pageToLoad + 1);
         setPaginationData(prev => ({
           ...newPaginationData,
-          current_count: prev.current_count + newProducts.length
+          current_count: prev.current_count + sortedProducts.length
         }));
       }
       
       setActiveFilters(filters);
       
       console.log('✅ Produits chargés:', {
-        nouveaux: newProducts.length,
+        nouveaux: sortedProducts.length,
         total_affichés: resetPagination ? sortedProducts.length : products.length + sortedProducts.length,
         total_disponible: newPaginationData.total,
         page_actuelle: newPaginationData.page,
         total_pages: newPaginationData.page_count
       });
       
-      // Log empty results but don't show modal/alert
-      if (newProducts.length === 0) {
+      if (sortedProducts.length === 0) {
         console.log('ℹ️ Aucun produit trouvé pour cette recherche/filtre');
       }
       
     } catch (error) {
       console.error('Erreur lors du chargement des produits:', error);
       
-      // FIXED: Only show alert for actual network/server errors, not for empty results
-      // Check if it's a real error vs just no results found
-      const isRealError = error.response?.status >= 500 || 
-                         error.code === 'NETWORK_ERROR' || 
-                         error.message?.includes('Network') ||
-                         error.message?.includes('timeout');
+      const isRealError = (error as any).response?.status >= 500 || 
+                         (error as any).code === 'NETWORK_ERROR' || 
+                         (error as Error).message?.includes('Network') ||
+                         (error as Error).message?.includes('timeout');
       
       if (isRealError) {
         Alert.alert(
@@ -219,10 +313,8 @@ export default function ProductScreen({ navigation, route }) {
           [{ text: 'OK' }]
         );
       } else {
-        // For other errors (like 404, empty results), just log them
-        console.log('ℹ️ Pas de produits trouvés ou erreur mineure:', error.message);
+        console.log('ℹ️ Pas de produits trouvés ou erreur mineure:', (error as Error).message);
         
-        // Set empty state gracefully
         if (resetPagination) {
           setProducts([]);
           setPaginationData({
@@ -243,7 +335,40 @@ export default function ProductScreen({ navigation, route }) {
     }
   };
 
-  // Charger plus de produits (pagination infinie)
+  // =====================================
+  // UTILITY FUNCTIONS
+  // =====================================
+
+  // Sort products
+  const sortProducts = (productsList: Product[], sortType: string) => {
+    if (!Array.isArray(productsList)) return [];
+    
+    const sorted = [...productsList];
+    
+    switch (sortType) {
+      case 'price':
+        return sorted.sort((a, b) => {
+          const priceA = parseFloat(String(a.price_ttc || a.price || a.price_min || 0));
+          const priceB = parseFloat(String(b.price_ttc || b.price || b.price_min || 0));
+          return priceA - priceB;
+        });
+      case 'name':
+        return sorted.sort((a, b) => {
+          const nameA = (a.label || '').toLowerCase();
+          const nameB = (b.label || '').toLowerCase();
+          return nameA.localeCompare(nameB);
+        });
+      case 'date':
+      default:
+        return sorted.sort((a, b) => {
+          const dateA = new Date(a.date_creation || 0);
+          const dateB = new Date(b.date_creation || 0);
+          return dateB.getTime() - dateA.getTime();
+        });
+    }
+  };
+
+  // Load more products
   const loadMoreProducts = () => {
     const hasMore = (currentPage + 1) < paginationData.page_count;
     
@@ -253,58 +378,31 @@ export default function ProductScreen({ navigation, route }) {
     }
   };
 
-  // Trier les produits
-  const sortProducts = (productsList, sortType) => {
-    if (!Array.isArray(productsList)) return [];
-    
-    const sorted = [...productsList];
-    
-    switch (sortType) {
-      case 'price':
-        return sorted.sort((a, b) => {
-          const priceA = parseFloat(a.price_ttc || a.price || a.price_min || 0);
-          const priceB = parseFloat(b.price_ttc || b.price || b.price_min || 0);
-          return priceA - priceB;
-        });
-      case 'name':
-        return sorted.sort((a, b) => {
-          const nameA = (a.name || a.label || '').toLowerCase();
-          const nameB = (b.name || b.label || '').toLowerCase();
-          return nameA.localeCompare(nameB);
-        });
-      case 'date':
-      default:
-        return sorted.sort((a, b) => {
-          const dateA = new Date(a.date_creation || a.datec || 0);
-          const dateB = new Date(b.date_creation || b.datec || 0);
-          return dateB - dateA; // Plus récent en premier
-        });
-    }
-  };
+  // =====================================
+  // EVENT HANDLERS
+  // =====================================
 
-  // Rafraîchir les produits
+  // Refresh products
   const onRefresh = () => {
     setRefreshing(true);
     loadProducts(true, activeFilters, searchQuery);
   };
 
-  // FIXED: Handle search input change
-  const handleSearchInputChange = (text) => {
+  // Handle search input change
+  const handleSearchInputChange = (text: string) => {
     setSearchInputValue(text);
     
-    // Clear previous timeout
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
     
-    // Set new timeout
     searchTimeoutRef.current = setTimeout(() => {
       performSearch(text);
     }, 500);
   };
 
-  // FIXED: Perform actual search - No modal on empty results
-  const performSearch = async (query) => {
+  // Perform search
+  const performSearch = async (query: string) => {
     setSearchQuery(query);
     
     if (query.trim().length > 2) {
@@ -314,25 +412,23 @@ export default function ProductScreen({ navigation, route }) {
       setSearchLoading(true);
       await loadProducts(true, activeFilters, '');
     }
-    // Note: No alert/modal shown for empty search results
   };
 
-  // FIXED: Clear search
+  // Clear search
   const clearSearch = () => {
     setSearchInputValue('');
     setSearchQuery('');
     loadProducts(true, activeFilters, '');
   };
 
-  // Appliquer les filtres - No modal on empty results
-  const handleApplyFilters = (filters) => {
+  // Apply filters
+  const handleApplyFilters = (filters: FilterOptions) => {
     console.log('✅ Filtres appliqués:', filters);
-    setShowFilterModal(false); // Close modal immediately
+    setShowFilterModal(false);
     loadProducts(true, filters, searchQuery);
-    // Note: No alert/modal shown for empty filter results
   };
 
-  // Supprimer tous les filtres
+  // Clear filters
   const handleClearFilters = () => {
     Alert.alert(
       'Supprimer les filtres',
@@ -351,63 +447,66 @@ export default function ProductScreen({ navigation, route }) {
     );
   };
 
-  // Changer le mode de tri
-  const handleSortChange = (newSortBy) => {
+  // Change sort
+  const handleSortChange = (newSortBy: 'date' | 'price' | 'name') => {
     setSortBy(newSortBy);
     const sortedProducts = sortProducts(products, newSortBy);
     setProducts(sortedProducts);
   };
 
-  // Vérifier si des filtres sont actifs
-  const hasActiveFilters = () => {
+  // Check active filters
+  const hasActiveFilters = (): boolean => {
     return Object.keys(activeFilters).length > 0;
   };
 
-  // Compter les filtres actifs
-  const getActiveFilterCount = () => {
+  // Count active filters
+  const getActiveFilterCount = (): number => {
     return Object.keys(activeFilters).length;
   };
 
-  // Naviguer vers les détails du produit
-  const navigateToProductDetails = (product) => {
-    navigation.navigate('ProductDetails', { 
-      productId: product.id,
-      product: product 
+  // Navigate to product details
+  const navigateToProductDetails = (product: any) => {
+    console.log('🔍 Navigate to ProductDetails called with:', { 
+      productId: product.id, 
+      productLabel: product.label 
     });
+    
+    try {
+      // Navigate to ProductDetails with both productId and product for compatibility
+      navigation.navigate('ProductDetails', { 
+        productId: product.id,
+        product: product 
+      });
+      console.log('✅ Navigation.navigate called successfully');
+    } catch (error) {
+      console.error('❌ Navigation error:', error);
+    }
   };
 
-  // FIXED: Rendu d'un produit - Correct props for ProductCard2
-  const renderProduct = ({ item, index }) => {
-    // Debug log to check product data
+  // =====================================
+  // RENDER FUNCTIONS
+  // =====================================
+
+  // Render product item
+  const renderProduct = ({ item, index }: { item: Product; index: number }) => {
     if (!item) {
       console.warn(`ProductScreen: Item at index ${index} is undefined/null`);
       return null;
     }
     
-    // Additional debug info - only log if item seems problematic
-    if (!item.label && !item.ref && !item.name) {
-      console.warn(`ProductScreen: Item at index ${index} missing name fields:`, {
-        id: item.id,
-        hasLabel: !!item.label,
-        hasRef: !!item.ref, 
-        hasName: !!item.name,
-        hasImageLink: !!item.image_link,
-        keys: Object.keys(item).slice(0, 10) // First 10 keys for debugging
-      });
-    }
-    
     return (
       <ProductCard2
-        product={item}                    // ✅ FIXED: Use 'product' not 'data'
-        onPress={navigateToProductDetails} // ✅ FIXED: Added onPress handler
-        viewMode={viewMode}               // ✅ FIXED: Use 'viewMode' not 'layoutMode'
-        isDarkMode={isDarkMode}           // ✅ FIXED: Added missing isDarkMode
-        colorTheme={colorTheme}           // ✅ FIXED: Use 'colorTheme' not 'theme'
+        navigation={navigation} // ✅ FIXED: Pass navigation prop explicitly
+        product={item}
+        onPress={navigateToProductDetails} // ✅ Also provide onPress as fallback
+        viewMode={viewMode}
+        isDarkMode={isDarkMode}
+        colorTheme={colorTheme}
       />
     );
   };
 
-  // Rendu du footer de chargement
+  // Render loading footer
   const renderFooter = () => {
     if (!loadingMore) return null;
     
@@ -421,7 +520,7 @@ export default function ProductScreen({ navigation, route }) {
     );
   };
 
-  // Rendu de l'état de chargement
+  // Render loading state
   const renderLoading = () => (
     <View style={styles.loadingContainer}>
       <ActivityIndicator size="large" color={PRIMARY_COLOR} />
@@ -431,7 +530,7 @@ export default function ProductScreen({ navigation, route }) {
     </View>
   );
 
-  // FIXED: Rendu de l'état vide - No modal/toast, just clean empty state
+  // Render empty state
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <Ionicons 
@@ -474,7 +573,7 @@ export default function ProductScreen({ navigation, route }) {
     </View>
   );
 
-  // Rendu de l'en-tête avec les filtres actifs et le total - FIXED
+  // Render filter header
   const renderFilterHeader = () => {
     return (
       <View style={[styles.filterHeader, { backgroundColor: CARD_BACKGROUND, borderColor: BORDER_COLOR }]}>
@@ -519,7 +618,7 @@ export default function ProductScreen({ navigation, route }) {
     );
   };
 
-  // Rendu de l'indicateur de pagination - FIXED
+  // Render pagination info
   const renderPaginationInfo = () => {
     if (paginationData.page_count <= 1) return null;
     
@@ -543,7 +642,7 @@ export default function ProductScreen({ navigation, route }) {
     );
   };
 
-  // FIXED: Rendu de la barre de recherche
+  // Render search bar
   const renderSearchBar = () => {
     if (!showSearchBar) return null;
 
@@ -572,7 +671,7 @@ export default function ProductScreen({ navigation, route }) {
     );
   };
 
-  // Rendu de la barre d'outils
+  // Render toolbar
   const renderToolbar = () => (
     <View style={[styles.toolbar, { backgroundColor: CARD_BACKGROUND, borderColor: BORDER_COLOR }]}>
       <View style={styles.toolbarLeft}>
@@ -625,20 +724,15 @@ export default function ProductScreen({ navigation, route }) {
     </View>
   );
 
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
-    };
-  }, []);
+  // =====================================
+  // MAIN RENDER
+  // =====================================
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: BACKGROUND_COLOR }]}>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       
-      {/* Header - FIXED to show correct totals */}
+      {/* Header */}
       <View style={[styles.header, { backgroundColor: PRIMARY_COLOR }]}>
         <TouchableOpacity 
           style={styles.headerButton}
@@ -686,10 +780,10 @@ export default function ProductScreen({ navigation, route }) {
         </View>
       </View>
 
-      {/* Barre de recherche */}
+      {/* Search bar */}
       {renderSearchBar()}
 
-      {/* Contenu principal */}
+      {/* Main content */}
       <View style={styles.content}>
         {loading ? (
           renderLoading()
@@ -701,12 +795,11 @@ export default function ProductScreen({ navigation, route }) {
               data={products}
               renderItem={renderProduct}
               keyExtractor={(item, index) => {
-                // Create a unique key combining item ID and index to avoid duplicates
-                const uniqueId = item.id || item.rowid || index;
+                const uniqueId = item.id || index;
                 return `product-${uniqueId}-${index}`;
               }}
               numColumns={viewMode === 'grid' ? 2 : 1}
-              key={viewMode} // Force re-render when view mode changes
+              key={viewMode}
               columnWrapperStyle={viewMode === 'grid' ? styles.productRow : null}
               contentContainerStyle={styles.productList}
               showsVerticalScrollIndicator={false}
@@ -728,14 +821,13 @@ export default function ProductScreen({ navigation, route }) {
         )}
       </View>
 
-      {/* Modal de filtrage - Only show when explicitly requested */}
+      {/* Filter Modal */}
       {showFilterModal && (
         <FilterModal
           visible={showFilterModal}
           onClose={() => setShowFilterModal(false)}
           onApplyFilters={handleApplyFilters}
           initialFilters={activeFilters}
-          categories={categories}
           showAnimalFilter={true}
           showBrandFilter={true}
           showCategoryFilter={true}
@@ -745,6 +837,10 @@ export default function ProductScreen({ navigation, route }) {
     </SafeAreaView>
   );
 }
+
+// =====================================
+// STYLES
+// =====================================
 
 const styles = StyleSheet.create({
   container: {
@@ -962,7 +1058,7 @@ const styles = StyleSheet.create({
   // Product List
   productList: {
     paddingHorizontal: 16,
-    paddingBottom: 80, // Extra space for pagination indicator
+    paddingBottom: 80,
   },
   productRow: {
     justifyContent: 'space-between',

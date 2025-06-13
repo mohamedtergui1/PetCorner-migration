@@ -106,6 +106,7 @@ export interface Product {
   specimen: number;
   duration: string;
   image_link?: string;
+  photo_link?: string;
   sousprods?: SubProduct[];
   fk_product_parent?: string;
 }
@@ -142,6 +143,10 @@ export interface ProductExtraFields {
   options_similaire?: string;
   options_ecommerceng_wc_sale_price?: string;
   options_runsoft_review?: string;
+  options_gout?: string; // Taste/flavor field
+  options_option_sante?: string; // Health option field
+  options_ages?: string; // Age field
+  options_option_nutritionnel?: string; // Nutritional option field
 }
 
 /**
@@ -176,6 +181,72 @@ export interface SubProduct {
   ref: string;
   fk_association: string;
   rang: string;
+}
+
+/**
+ * Brand Interface
+ */
+export interface Brand {
+  id: string;
+  name: string;
+  label: string;
+  productCount: number;
+}
+
+/**
+ * Category Interface
+ */
+export interface Category {
+  id: string;
+  label: string;
+  name: string;
+  description?: string;
+  parent?: string;
+  product_count?: number;
+  children?: Category[];
+}
+
+/**
+ * Animal Category Interface
+ */
+export interface AnimalCategory {
+  id: string;
+  label: string;
+  name: string;
+  description?: string;
+  parent?: string;
+}
+
+/**
+ * Price Range Interface
+ */
+export interface PriceRange {
+  min_price: number;
+  max_price: number;
+  avg_price: number;
+  product_count: number;
+}
+
+/**
+ * Search Suggestion Interface
+ */
+export interface SearchSuggestion {
+  id: string;
+  ref: string;
+  label: string;
+  price: number;
+  image_link?: string;
+}
+
+/**
+ * Filter Data Interface
+ */
+export interface FilterData {
+  categories: Category[];
+  brands: Brand[];
+  animals: AnimalCategory[];
+  success: boolean;
+  error?: string;
 }
 
 /**
@@ -230,42 +301,6 @@ export interface SearchParams {
   includesubproducts?: boolean;
   includeparentid?: boolean;
   includetrans?: boolean;
-  mode?: 0 | 1 | 2; // 0=all, 1=products only, 2=services only
-  variant_filter?: 0 | 1 | 2 | 3;
-  sqlfilters?: string;
-  ids_only?: boolean;
-}
-
-/**
- * Date Range Parameters Interface
- */
-export interface DateRangeParams {
-  date_field?: 'creation' | 'modification';
-  date_from?: string; // YYYY-MM-DD format
-  date_to?: string; // YYYY-MM-DD format
-  search_name?: string;
-  categories?: string;
-  brand?: string;
-  limit?: number;
-  page?: number;
-  sortfield?: string;
-  sortorder?: 'ASC' | 'DESC';
-  pagination_data?: boolean;
-}
-
-/**
- * Advanced Search Criteria Interface
- */
-export interface AdvancedSearchCriteria {
-  name?: string;
-  categories?: string[] | string;
-  brand?: string;
-  game?: string;
-  taste?: string;
-  limit?: number;
-  page?: number;
-  sortfield?: string;
-  sortorder?: 'ASC' | 'DESC';
 }
 
 /**
@@ -287,68 +322,44 @@ export interface MultipleProductsOptions extends ProductOptions {
 }
 
 /**
- * Product Category Interface
+ * Date Range Parameters Interface
  */
-export interface ProductCategory {
-  id: string;
-  ref: string;
-  label: string;
-  description?: string;
-  color?: string;
-  position?: number;
-  visible?: number;
-  type?: number;
+export interface DateRangeParams {
+  date_field?: 'creation' | 'modification';
+  date_from?: string; // YYYY-MM-DD format
+  date_to?: string; // YYYY-MM-DD format
+  search_name?: string;
+  categories?: string;
+  brand?: string;
+  limit?: number;
+  page?: number;
+  sortfield?: string;
+  sortorder?: 'ASC' | 'DESC';
+  pagination_data?: boolean;
 }
 
 /**
- * Stock Response Interface
+ * Filtered Products Parameters Interface
  */
-export interface StockResponse {
-  stock_warehouses: Record<string, StockWarehouse>;
-}
-
-/**
- * API Error Response Interface
- */
-export interface ApiErrorResponse {
-  error: {
-    message: string;
-    code?: number;
-  };
-}
-
-/**
- * Product Creation Data Interface
- */
-export interface ProductCreateData {
-  ref: string;
-  label: string;
-  description?: string;
-  type?: string;
-  price?: string;
-  price_base_type?: string;
-  tva_tx?: string;
-  status?: string;
-  status_buy?: string;
-  weight?: string;
-  length?: string;
-  width?: string;
-  height?: string;
-  barcode?: string;
-  array_options?: Partial<ProductExtraFields>;
-}
-
-/**
- * Product Update Data Interface
- */
-export interface ProductUpdateData extends Partial<ProductCreateData> {
-  id?: string;
+export interface FilteredProductsParams {
+  sortfield?: string;
+  sortorder?: 'ASC' | 'DESC';
+  limit?: number;
+  page?: number;
+  animal_category?: number;
+  category?: number;
+  brand?: string;
+  search?: string;
+  price_min?: number;
+  price_max?: number;
+  pagination_data?: boolean;
+  includestockdata?: 0 | 1;
 }
 
 // ==================== SERVICE CLASS ====================
 
 /**
- * Complete ProductService with all enhanced filtering and search capabilities
+ * ProductService using your custom PHP endpoints
  * Default limit set to 16 products per request with full TypeScript support
  */
 class ProductService {
@@ -359,30 +370,7 @@ class ProductService {
   static readonly DEFAULT_SORT_ORDER: 'ASC' | 'DESC' = "ASC";
 
   /**
-   * Get all products with basic parameters (original index endpoint)
-   */
-  static async getAllProducts(params: Partial<SearchParams> = {}): Promise<PaginatedProductResponse | ProductListResponse> {
-    const defaultParams: SearchParams = {
-      limit: this.DEFAULT_LIMIT,
-      page: this.DEFAULT_PAGE,
-      sortfield: this.DEFAULT_SORT_FIELD,
-      sortorder: this.DEFAULT_SORT_ORDER,
-      pagination_data: true,
-      includestockdata: 0,
-      ...params
-    };
-
-    try {
-      const response = await apiClient.get('/products', { params: defaultParams });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching all products:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Search products with enhanced filtering (main search function)
+   * Search products with enhanced filtering (uses your search_filtered endpoint)
    */
   static async searchProducts(filters: Partial<SearchParams> = {}): Promise<PaginatedProductResponse | ProductListResponse> {
     const defaultParams: SearchParams = {
@@ -405,6 +393,246 @@ class ProductService {
   }
 
   /**
+   * Get single product by ID (uses your enhanced endpoint)
+   */
+  static async getProductById(id: number | string, options: ProductOptions = {}): Promise<Product> {
+    const defaultOptions: ProductOptions = {
+      includestockdata: 0,
+      includesubproducts: false,
+      includeparentid: false,
+      includetrans: false,
+      ...options
+    };
+
+    try {
+      const response = await apiClient.get(`/products/enhanced/${id}`, { params: defaultOptions });
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching product ${id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get multiple products by array of IDs (uses your enhanced/multiple endpoint)
+   */
+  static async getMultipleProducts(
+    ids: (number | string)[] | string, 
+    options: Partial<MultipleProductsOptions> = {}
+  ): Promise<PaginatedProductResponse | ProductListResponse> {
+    const idString = Array.isArray(ids) ? ids.join(',') : ids;
+    
+    const defaultOptions: MultipleProductsOptions = {
+      ids: idString,
+      includestockdata: 0,
+      includesubproducts: false,
+      includeparentid: false,
+      includetrans: false,
+      pagination_data: true,
+      ...options
+    };
+
+    try {
+      const response = await apiClient.get('/products/enhanced/multiple', { params: defaultOptions });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching multiple products:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get products by date range (uses your by_date endpoint)
+   */
+  static async getProductsByDateRange(
+    dateParams: DateRangeParams = {}
+  ): Promise<PaginatedProductResponse | ProductListResponse> {
+    const defaultParams: DateRangeParams = {
+      date_field: 'creation',
+      limit: this.DEFAULT_LIMIT,
+      page: this.DEFAULT_PAGE,
+      sortfield: '',
+      sortorder: 'DESC',
+      pagination_data: true,
+      ...dateParams
+    };
+
+    try {
+      const response = await apiClient.get('/products/by_date', { params: defaultParams });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching products by date range:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get filtered products (uses your filtered endpoint)
+   */
+  static async getFilteredProducts(params: FilteredProductsParams = {}): Promise<PaginatedProductResponse | ProductListResponse> {
+    const defaultParams: FilteredProductsParams = {
+      sortfield: this.DEFAULT_SORT_FIELD,
+      sortorder: this.DEFAULT_SORT_ORDER,
+      limit: this.DEFAULT_LIMIT,
+      page: this.DEFAULT_PAGE,
+      pagination_data: true,
+      includestockdata: 0,
+      ...params
+    };
+
+    try {
+      const response = await apiClient.get('/products/filtered', { params: defaultParams });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching filtered products:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get products that belong to ALL specified categories (uses your categories/intersection endpoint)
+   */
+  static async getProductsByCategoriesIntersection(
+    categories: string[] | string, 
+    searchQuery?: string,
+    additionalParams: Partial<SearchParams> = {}
+  ): Promise<PaginatedProductResponse | ProductListResponse> {
+    const categoryString = Array.isArray(categories) ? categories.join(',') : categories;
+    
+    const params = {
+      categories: categoryString,
+      search_query: searchQuery || '',
+      sortfield: this.DEFAULT_SORT_FIELD,
+      sortorder: this.DEFAULT_SORT_ORDER,
+      limit: this.DEFAULT_LIMIT,
+      page: this.DEFAULT_PAGE,
+      pagination_data: true,
+      ...additionalParams
+    };
+
+    try {
+      const response = await apiClient.get('/products/categories/intersection', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching products by categories intersection:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all brands (uses your brands endpoint)
+   */
+  static async getBrands(animalCategoryId?: number): Promise<Brand[]> {
+    const params = animalCategoryId ? { animal_category_id: animalCategoryId } : {};
+
+    try {
+      const response = await apiClient.get('/products/brands', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching brands:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get categories by animal (uses your categories/by_animal endpoint)
+   */
+  static async getCategoriesByAnimal(animalCategoryId: number): Promise<Category[]> {
+    try {
+      const response = await apiClient.get(`/products/categories/by_animal/${animalCategoryId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching categories by animal:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all animal categories (uses your animals endpoint)
+   */
+  static async getAnimals(): Promise<AnimalCategory[]> {
+    try {
+      const response = await apiClient.get('/products/animals');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching animals:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get complete filter data (uses your filter_data endpoint)
+   */
+  static async getFilterData(animalCategoryId?: number): Promise<FilterData> {
+    const params = animalCategoryId ? { animal_category_id: animalCategoryId } : {};
+
+    try {
+      const response = await apiClient.get('/products/filter_data', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching filter data:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get price range statistics (uses your price_ranges endpoint)
+   */
+  static async getPriceRanges(
+    animalCategory?: number,
+    category?: number,
+    brand?: string
+  ): Promise<PriceRange> {
+    const params: any = {};
+    if (animalCategory) params.animal_category = animalCategory;
+    if (category) params.category = category;
+    if (brand) params.brand = brand;
+
+    try {
+      const response = await apiClient.get('/products/price_ranges', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching price ranges:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get category hierarchy (uses your categories/hierarchy endpoint)
+   */
+  static async getCategoryHierarchy(parentId: number = 1): Promise<Category[]> {
+    try {
+      const response = await apiClient.get('/products/categories/hierarchy', { 
+        params: { parent_id: parentId }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching category hierarchy:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get search suggestions (uses your search_suggestions endpoint)
+   */
+  static async getSearchSuggestions(
+    query: string,
+    limit: number = 10,
+    animalCategory?: number
+  ): Promise<SearchSuggestion[]> {
+    const params: any = { query, limit };
+    if (animalCategory) params.animal_category = animalCategory;
+
+    try {
+      const response = await apiClient.get('/products/search_suggestions', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching search suggestions:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Search products by name/title
    */
   static async searchByName(
@@ -418,7 +646,7 @@ class ProductService {
   }
 
   /**
-   * Filter products by categories (OR logic - product in any of the categories)
+   * Filter products by categories
    */
   static async filterByCategories(
     categories: string[] | string, 
@@ -472,176 +700,21 @@ class ProductService {
   }
 
   /**
-   * Advanced search with multiple filters
-   */
-  static async advancedSearch(searchCriteria: AdvancedSearchCriteria = {}): Promise<PaginatedProductResponse | ProductListResponse> {
-    const {
-      name,
-      categories,
-      brand,
-      game,
-      taste,
-      limit = this.DEFAULT_LIMIT,
-      page = this.DEFAULT_PAGE,
-      sortfield = this.DEFAULT_SORT_FIELD,
-      sortorder = this.DEFAULT_SORT_ORDER
-    } = searchCriteria;
-
-    const categoryString = Array.isArray(categories) ? categories.join(',') : categories;
-
-    return this.searchProducts({
-      search_name: name || '',
-      categories: categoryString || '',
-      brand: brand || '',
-      game: game || '',
-      taste: taste || '',
-      limit,
-      page,
-      sortfield,
-      sortorder
-    });
-  }
-
-  /**
-   * Get products that belong to ALL specified categories (AND logic)
-   */
-  static async getProductsByCategoriesIntersection(
-    categories: string[] | string, 
-    additionalParams: Partial<SearchParams> = {}
-  ): Promise<PaginatedProductResponse | ProductListResponse> {
-    const categoryString = Array.isArray(categories) ? categories.join(',') : categories;
-    
-    const defaultParams: SearchParams = {
-      categories: categoryString,
-      limit: this.DEFAULT_LIMIT,
-      page: this.DEFAULT_PAGE,
-      sortfield: this.DEFAULT_SORT_FIELD,
-      sortorder: this.DEFAULT_SORT_ORDER,
-      pagination_data: true,
-      ...additionalParams
-    };
-
-    try {
-      const response = await apiClient.get('/products/categories/intersection', { params: defaultParams });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching products by categories intersection:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get single product by ID
-   */
-  static async getProductById(id: number | string, options: ProductOptions = {}): Promise<Product> {
-    const defaultOptions: ProductOptions = {
-      includestockdata: 0,
-      includesubproducts: false,
-      includeparentid: false,
-      includetrans: false,
-      ...options
-    };
-
-    try {
-      const response = await apiClient.get(`/products/${id}`, { params: defaultOptions });
-      return response.data;
-    } catch (error) {
-      console.error(`Error fetching product ${id}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get enhanced single product by ID with additional data
-   */
-  static async getEnhancedProduct(id: number | string, options: ProductOptions = {}): Promise<Product> {
-    const defaultOptions: ProductOptions = {
-      includestockdata: 0,
-      includesubproducts: false,
-      includeparentid: false,
-      includetrans: false,
-      ...options
-    };
-
-    try {
-      const response = await apiClient.get(`/products/enhanced/${id}`, { params: defaultOptions });
-      return response.data;
-    } catch (error) {
-      console.error(`Error fetching enhanced product ${id}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get multiple products by array of IDs
-   */
-  static async getMultipleProducts(
-    ids: (number | string)[] | string, 
-    options: Partial<MultipleProductsOptions> = {}
-  ): Promise<PaginatedProductResponse | ProductListResponse> {
-    const idString = Array.isArray(ids) ? ids.join(',') : ids;
-    
-    const defaultOptions: MultipleProductsOptions = {
-      ids: idString,
-      includestockdata: 0,
-      includesubproducts: false,
-      includeparentid: false,
-      includetrans: false,
-      pagination_data: true,
-      ...options
-    };
-
-    try {
-      const response = await apiClient.get('/products/enhanced/multiple', { params: defaultOptions });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching multiple products:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get products by date range
-   */
-  static async getProductsByDateRange(
-    dateParams: DateRangeParams = {}, 
-    additionalParams: Partial<SearchParams> = {}
-  ): Promise<PaginatedProductResponse | ProductListResponse> {
-    const defaultParams: DateRangeParams = {
-      date_field: 'creation',
-      limit: this.DEFAULT_LIMIT,
-      page: this.DEFAULT_PAGE,
-      sortfield: 't.datec',
-      sortorder: 'DESC',
-      pagination_data: true,
-      ...dateParams,
-      ...additionalParams
-    };
-
-    try {
-      const response = await apiClient.get('/products/by_date', { params: defaultParams });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching products by date range:', error);
-      throw error;
-    }
-  }
-
-  /**
    * Get recently created products
    */
   static async getRecentProducts(
     days: number = 7, 
-    additionalParams: Partial<SearchParams> = {}
+    additionalParams: Partial<DateRangeParams> = {}
   ): Promise<PaginatedProductResponse | ProductListResponse> {
     const dateFrom = new Date();
     dateFrom.setDate(dateFrom.getDate() - days);
     
     return this.getProductsByDateRange({
       date_field: 'creation',
-      date_from: dateFrom.toISOString().split('T')[0], // YYYY-MM-DD format
-      date_to: new Date().toISOString().split('T')[0]
-    }, additionalParams);
+      date_from: dateFrom.toISOString().split('T')[0],
+      date_to: new Date().toISOString().split('T')[0],
+      ...additionalParams
+    });
   }
 
   /**
@@ -649,100 +722,17 @@ class ProductService {
    */
   static async getRecentlyModifiedProducts(
     days: number = 7, 
-    additionalParams: Partial<SearchParams> = {}
+    additionalParams: Partial<DateRangeParams> = {}
   ): Promise<PaginatedProductResponse | ProductListResponse> {
     const dateFrom = new Date();
     dateFrom.setDate(dateFrom.getDate() - days);
     
     return this.getProductsByDateRange({
       date_field: 'modification',
-      date_from: dateFrom.toISOString().split('T')[0], // YYYY-MM-DD format
-      date_to: new Date().toISOString().split('T')[0]
-    }, additionalParams);
-  }
-
-  /**
-   * Get product by reference
-   */
-  static async getProductByRef(ref: string, options: ProductOptions = {}): Promise<Product> {
-    const defaultOptions: ProductOptions = {
-      includestockdata: 0,
-      includesubproducts: false,
-      includeparentid: false,
-      includetrans: false,
-      ...options
-    };
-
-    try {
-      const response = await apiClient.get(`/products/ref/${ref}`, { params: defaultOptions });
-      return response.data;
-    } catch (error) {
-      console.error(`Error fetching product by ref ${ref}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get product by barcode
-   */
-  static async getProductByBarcode(barcode: string, options: ProductOptions = {}): Promise<Product> {
-    const defaultOptions: ProductOptions = {
-      includestockdata: 0,
-      includesubproducts: false,
-      includeparentid: false,
-      includetrans: false,
-      ...options
-    };
-
-    try {
-      const response = await apiClient.get(`/products/barcode/${barcode}`, { params: defaultOptions });
-      return response.data;
-    } catch (error) {
-      console.error(`Error fetching product by barcode ${barcode}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get product categories
-   */
-  static async getProductCategories(
-    productId: number | string, 
-    options: Partial<SearchParams> = {}
-  ): Promise<ProductCategory[]> {
-    const defaultOptions = {
-      sortfield: 's.rowid',
-      sortorder: 'ASC' as const,
-      limit: 0,
-      page: 0,
-      ...options
-    };
-
-    try {
-      const response = await apiClient.get(`/products/${productId}/categories`, { params: defaultOptions });
-      return response.data;
-    } catch (error) {
-      console.error(`Error fetching categories for product ${productId}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get product stock information
-   */
-  static async getProductStock(
-    productId: number | string, 
-    warehouseId?: number | string
-  ): Promise<StockResponse> {
-    const params = warehouseId ? { selected_warehouse_id: warehouseId } : {};
-
-    try {
-      const response = await apiClient.get(`/products/${productId}/stock`, { params });
-      return response.data;
-    } catch (error) {
-      console.error(`Error fetching stock for product ${productId}:`, error);
-      throw error;
-    }
+      date_from: dateFrom.toISOString().split('T')[0],
+      date_to: new Date().toISOString().split('T')[0],
+      ...additionalParams
+    });
   }
 
   /**
@@ -803,61 +793,6 @@ class ProductService {
     }
 
     return this.searchWithPagination(searchParams, pagination.page - 1);
-  }
-
-  /**
-   * Create a new product
-   */
-  static async createProduct(productData: ProductCreateData): Promise<{ id: string }> {
-    try {
-      const response = await apiClient.post('/products', productData);
-      return response.data;
-    } catch (error) {
-      console.error('Error creating product:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update an existing product
-   */
-  static async updateProduct(id: number | string, productData: ProductUpdateData): Promise<Product> {
-    try {
-      const response = await apiClient.put(`/products/${id}`, productData);
-      return response.data;
-    } catch (error) {
-      console.error(`Error updating product ${id}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Delete a product
-   */
-  static async deleteProduct(id: number | string): Promise<{ success: { code: number; message: string } }> {
-    try {
-      const response = await apiClient.delete(`/products/${id}`);
-      return response.data;
-    } catch (error) {
-      console.error(`Error deleting product ${id}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Utility function to build search URL for direct API calls
-   */
-  static buildSearchUrl(params: Partial<SearchParams> = {}): string {
-    const baseUrl = 'https://ipos.ma/fide/api/index.php/products/search_filtered';
-    const defaultParams = {
-      limit: this.DEFAULT_LIMIT,
-      page: this.DEFAULT_PAGE,
-      pagination_data: true,
-      ...params
-    };
-
-    const queryString = new URLSearchParams(defaultParams as Record<string, string>).toString();
-    return `${baseUrl}?${queryString}`;
   }
 
   /**
