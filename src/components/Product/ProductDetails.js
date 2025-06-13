@@ -13,7 +13,8 @@ import {
   TouchableWithoutFeedback,
   TouchableOpacity,
   PanResponder,
-  FlatList
+  FlatList,
+  Image
 } from 'react-native';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { COLOURS } from '../../database/Database';
@@ -27,8 +28,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useCart } from '../../context/CartContext';
 import { StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import customProductApiService from '../../service/CustomProductApiService';
-import ProductImage from '../ProductImage'; // Import the new component
+import ProductService from '../../service/CustomProductApiService'; // Using TypeScript ProductService
 
 export default function ProductDetails({ route, navigation }) {
   const { width, height } = Dimensions.get('window');
@@ -60,7 +60,77 @@ export default function ProductDetails({ route, navigation }) {
   const [lastTranslateX, setLastTranslateX] = useState(0);
   const [lastTranslateY, setLastTranslateY] = useState(0);
 
-  // Function to load product data using CustomProductApiService
+  // Helper functions for product data
+  const formatPrice = (product) => {
+    if (!product) return '0,00 DH';
+    
+    // Use price_ttc (TTC = Tax included price)
+    const price = parseFloat(product.price_ttc || product.price || 0);
+    return `${price.toFixed(2).replace('.', ',')} DH`;
+  };
+
+  const getPriceHT = (product) => {
+    if (!product) return '0,00 DH';
+    
+    const priceHT = parseFloat(product.price || 0);
+    return `${priceHT.toFixed(2).replace('.', ',')} DH`;
+  };
+
+  const getTaxAmount = (product) => {
+    if (!product) return '0,00 DH';
+    
+    const priceTTC = parseFloat(product.price_ttc || 0);
+    const priceHT = parseFloat(product.price || 0);
+    const taxAmount = priceTTC - priceHT;
+    
+    return `${taxAmount.toFixed(2).replace('.', ',')} DH`;
+  };
+
+  const getBrand = (product) => {
+    return product?.array_options?.options_marque || null;
+  };
+
+  const getFormattedWeight = (product) => {
+    if (!product?.weight) return null;
+    const weight = parseFloat(product.weight);
+    if (weight >= 1) {
+      return `${weight} kg`;
+    } else {
+      return `${(weight * 1000).toFixed(0)} g`;
+    }
+  };
+
+  const isProductInStock = (product) => {
+    if (!product) return false;
+    return parseInt(product.stock_reel || 0) > 0;
+  };
+
+  const getStockStatusText = (product) => {
+    if (!product) return 'Indisponible';
+    
+    const stock = parseInt(product.stock_reel || 0);
+    if (stock > 0) {
+      return stock > 5 ? 'En stock' : `Stock limité (${stock})`;
+    }
+    return 'Rupture de stock';
+  };
+
+  const getProductImageUrl = (product) => {
+    if (!product) return null;
+    
+    // Try multiple image URL sources
+    if (product.image_link) return product.image_link;
+    if (product.photo_link) return product.photo_link;
+    
+    // Fallback image URL construction
+    if (product.id && product.ref) {
+      return `https://ipos.ma/fide/documents/produit/${Math.floor(product.id/1000)}/${Math.floor(product.id/100)}/${product.id}/photos/${product.ref}.jpg`;
+    }
+    
+    return null;
+  };
+
+  // Function to load product data using ProductService
   const loadProductData = async (id) => {
     if (!id) {
       setError('ID produit manquant');
@@ -74,34 +144,21 @@ export default function ProductDetails({ route, navigation }) {
       
       console.log('Loading product with ID:', id);
       
-      // Debug image URL generation
-      customProductApiService.debugImageUrl = (product) => {
-        console.log('=== IMAGE DEBUG INFO ===');
-        console.log('Product ID:', product?.id);
-        console.log('Product Ref:', product?.ref);
-        console.log('Photo Link:', product?.photo_link);
-        console.log('Image Link:', product?.image_link);
-        console.log('Entity:', product?.entity);
-        console.log('Primary URL:', customProductApiService.getProductImageUrl(product));
-        console.log('Alternative URLs:', customProductApiService.getAlternativeImageUrls(product));
-        console.log('========================');
-      };
-      
-      // Load product using custom API service
-      const productData = await customProductApiService.getProduct(id, 'mobile');
+      // Load product using ProductService
+      const productData = await ProductService.getEnhancedProduct(id, {
+        includestockdata: 1,
+        includesubproducts: false,
+        includeparentid: false,
+        includetrans: false
+      });
       
       console.log('Loaded product data:', productData);
       
       if (productData) {
         setProduct(productData);
         
-        // Debug image URLs
-        customProductApiService.debugImageUrl(productData);
-        
         // Load similar products if available
-        if (productData.similar_products_ids && productData.similar_products_ids.length > 0) {
-          loadSimilarProducts(productData.similar_products_ids);
-        } else if (productData.array_options?.options_similaire) {
+        if (productData.array_options?.options_similaire) {
           // Parse similar product IDs from string
           const similarIds = productData.array_options.options_similaire
             .split(',')
@@ -133,10 +190,16 @@ export default function ProductDetails({ route, navigation }) {
       
       console.log('Loading similar products with IDs:', similarIds);
       
-      // Load similar products using custom API service
-      const similarProductsData = await customProductApiService.getProductsByIds(similarIds);
+      // Load similar products using ProductService
+      const similarProductsResponse = await ProductService.getMultipleProducts(similarIds, {
+        includestockdata: 0,
+        pagination_data: false
+      });
       
-      console.log('Loaded similar products:', similarProductsData);
+      console.log('Loaded similar products:', similarProductsResponse);
+      
+      // Handle both paginated and non-paginated responses
+      const similarProductsData = similarProductsResponse.data || similarProductsResponse;
       
       // Filter out current product if present
       const filteredSimilar = similarProductsData.filter(
@@ -165,8 +228,8 @@ export default function ProductDetails({ route, navigation }) {
     }
   }, [productIdToLoad]);
 
-  // Calculate derived values using service methods
-  const isAvailable = product ? customProductApiService.isProductInStock(product) : false;
+  // Calculate derived values
+  const isAvailable = product ? isProductInStock(product) : false;
 
   // Setup pan responder for image zooming and panning
   const panResponder = useRef(
@@ -278,20 +341,20 @@ export default function ProductDetails({ route, navigation }) {
       const parsedWishlist = JSON.parse(wishlist);
       
       if (parsedWishlist === null) {
-        const newWishlist = [product.id];
+        const newWishlist = [parseInt(product.id)];
         await AsyncStorage.setItem("wishlistItem", JSON.stringify(newWishlist));
         setInSaved(true);
         showToast('Ajouter à la liste des favoris');
       } else {
-        const isExist = parsedWishlist.includes(product.id);
+        const isExist = parsedWishlist.includes(parseInt(product.id));
         
         if (isExist) {
-          const newWishlist = parsedWishlist.filter((item) => item !== product.id);
+          const newWishlist = parsedWishlist.filter((item) => item !== parseInt(product.id));
           await AsyncStorage.setItem("wishlistItem", JSON.stringify(newWishlist));
           setInSaved(false);
           showToast('Retiré de la liste des favoris');
         } else {
-          const newWishlist = [...parsedWishlist, product.id];
+          const newWishlist = [...parsedWishlist, parseInt(product.id)];
           await AsyncStorage.setItem("wishlistItem", JSON.stringify(newWishlist));
           setInSaved(true);
           showToast('Ajouter à la liste des favoris');
@@ -353,7 +416,7 @@ export default function ProductDetails({ route, navigation }) {
   const handleShareProduct = () => {
     if (!product) return;
     
-    const formattedPrice = customProductApiService.formatProductPrice(product);
+    const formattedPrice = formatPrice(product);
     
     Share.share({
       message: `Découvrez ${product.label} à ${formattedPrice} sur notre application!`,
@@ -377,18 +440,18 @@ export default function ProductDetails({ route, navigation }) {
 
   // Render similar product item
   const renderSimilarProduct = ({ item }) => {
-    const similarAvailable = customProductApiService.isProductInStock(item);
+    const similarAvailable = isProductInStock(item);
+    const imageUrl = getProductImageUrl(item);
 
     return (
       <TouchableOpacity 
         style={[styles.similarProductCard, { backgroundColor: theme.cardBackground }]}
         onPress={() => handleSimilarProductPress(item)}
       >
-        <ProductImage 
-          product={item} 
+        <Image 
+          source={{ uri: imageUrl || 'https://via.placeholder.com/150' }}
           style={styles.similarProductImage}
           resizeMode="cover"
-          showDebugInfo={false} // Disable debug for similar products
           onError={(error) => {
             if (__DEV__) {
               console.log('Similar product image error:', error?.nativeEvent?.error);
@@ -404,7 +467,7 @@ export default function ProductDetails({ route, navigation }) {
             {item.label}
           </Text>
           <Text style={[styles.similarProductPrice, { color: theme.primary }]}>
-            {customProductApiService.formatProductPrice(item)}
+            {formatPrice(item)}
           </Text>
           <View style={[
             styles.similarProductStatus, 
@@ -414,7 +477,7 @@ export default function ProductDetails({ route, navigation }) {
               styles.similarProductStatusText, 
               { color: similarAvailable ? theme.primary : '#f44336' }
             ]}>
-              {customProductApiService.getStockStatusText(item)}
+              {getStockStatusText(item)}
             </Text>
           </View>
         </View>
@@ -484,6 +547,8 @@ export default function ProductDetails({ route, navigation }) {
     );
   }
 
+  const imageUrl = getProductImageUrl(product);
+
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundColor }]}>
       <StatusBar 
@@ -495,11 +560,10 @@ export default function ProductDetails({ route, navigation }) {
       {/* Product Image */}
       <View style={styles.imageContainer}>
         <TouchableWithoutFeedback onPress={openImageViewer}>
-          <ProductImage 
-            product={product} 
+          <Image 
+            source={{ uri: imageUrl || 'https://via.placeholder.com/400x320' }}
             style={styles.productImage}
             resizeMode="cover"
-            showDebugInfo={__DEV__} // Enable debug in development mode
             onError={(error) => {
               console.log('Main product image error:', error?.nativeEvent?.error);
             }}
@@ -581,10 +645,10 @@ export default function ProductDetails({ route, navigation }) {
         <View style={styles.detailsContainer}>
           {/* Brand and Category */}
           <View style={styles.badgeRow}>
-            {customProductApiService.getBrand(product) && (
+            {getBrand(product) && (
               <View style={[styles.brandBadge, { backgroundColor: theme.primary + '20' }]}>
                 <Text style={[styles.brandText, { color: theme.primary }]}>
-                  {customProductApiService.getBrand(product)}
+                  {getBrand(product)}
                 </Text>
               </View>
             )}
@@ -636,29 +700,29 @@ export default function ProductDetails({ route, navigation }) {
                 styles.statusText, 
                 { color: isAvailable ? theme.primary : '#f44336' }
               ]}>
-                {customProductApiService.getStockStatusText(product)}
+                {getStockStatusText(product)}
               </Text>
             </View>
           </View>
 
-          {/* Price Section */}
+          {/* Price Section - Updated to use price_ttc */}
           <View style={[styles.priceContainer, { borderColor: theme.border }]}>
             <View>
               <Text style={[styles.price, { color: theme.textColor }]}>
-                {customProductApiService.formatProductPrice(product)}
+                {formatPrice(product)}
               </Text>
               <Text style={[styles.priceHT, { color: theme.secondaryTextColor }]}>
-                Prix HT: {customProductApiService.getPriceHT(product)}
+                Prix HT: {getPriceHT(product)}
               </Text>
               <Text style={[styles.taxInfo, { color: theme.secondaryTextColor }]}>
-                TVA ({product.tva_tx}%): {customProductApiService.getTaxAmount(product)}
+                TVA ({product.tva_tx}%): {getTaxAmount(product)}
               </Text>
             </View>
             
-            {customProductApiService.getFormattedWeight(product) && (
+            {getFormattedWeight(product) && (
               <View style={[styles.weightBadge, { backgroundColor: theme.primary }]}>
                 <Text style={[styles.weightText, { color: '#ffffff' }]}>
-                  {customProductApiService.getFormattedWeight(product)}
+                  {getFormattedWeight(product)}
                 </Text>
               </View>
             )}
@@ -681,17 +745,11 @@ export default function ProductDetails({ route, navigation }) {
               {product.weight && (
                 <View style={styles.specItem}>
                   <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Poids:</Text>
-                  <Text style={[styles.specValue, { color: theme.textColor }]}>{customProductApiService.getFormattedWeight(product)}</Text>
+                  <Text style={[styles.specValue, { color: theme.textColor }]}>{getFormattedWeight(product)}</Text>
                 </View>
               )}
               
-              {product.cost_price && (
-                <View style={styles.specItem}>
-                  <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Prix de revient:</Text>
-                  <Text style={[styles.specValue, { color: theme.textColor }]}>{parseFloat(product.cost_price).toFixed(2)} DH</Text>
-                </View>
-              )}
-              
+             
               {product.array_options?.options_ages && (
                 <View style={styles.specItem}>
                   <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Âge:</Text>
@@ -744,7 +802,7 @@ export default function ProductDetails({ route, navigation }) {
           </View>
 
           {/* Similar Products Section */}
-          {customProductApiService.hasSimilarProducts(product) && (
+          {similarProducts.length > 0 && (
             <View style={styles.similarProductsContainer}>
               <Text style={[styles.sectionTitle, { color: theme.textColor }]}>
                 Produits similaires
@@ -752,7 +810,7 @@ export default function ProductDetails({ route, navigation }) {
               
               {loadingSimilar ? (
                 <ActivityIndicator size="large" color={theme.primary} style={styles.loadingIndicator} />
-              ) : similarProducts.length > 0 ? (
+              ) : (
                 <FlatList
                   data={similarProducts}
                   renderItem={renderSimilarProduct}
@@ -761,10 +819,6 @@ export default function ProductDetails({ route, navigation }) {
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.similarProductsList}
                 />
-              ) : (
-                <Text style={[styles.noSimilarText, { color: theme.secondaryTextColor }]}>
-                  Aucun produit similaire trouvé
-                </Text>
               )}
             </View>
           )}
@@ -842,11 +896,10 @@ export default function ProductDetails({ route, navigation }) {
                   }
                 ]}
               >
-                <ProductImage 
-                  product={product} 
+                <Image 
+                  source={{ uri: imageUrl || 'https://via.placeholder.com/400x400' }}
                   style={styles.fullscreenImage}
                   resizeMode="contain"
-                  showDebugInfo={__DEV__}
                   onError={(error) => {
                     console.log('Modal image error:', error?.nativeEvent?.error);
                   }}
@@ -1230,12 +1283,6 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
     paddingHorizontal: 20,
-  },
-  noSimilarText: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginVertical: 20,
-    fontStyle: 'italic',
   },
   helpText: {
     color: 'rgba(255,255,255,0.7)',
