@@ -99,6 +99,11 @@ export default function ProductCard({navigation, data, theme: propTheme, layoutM
     }
   }, [data.id, data.label, isAvailable, isAddingToCart, addToCart]);
 
+  // Navigation handler - UPDATED to send only productId
+  const handleProductPress = useCallback(() => {
+    navigation.navigate("ProductDetails", { productId: data.id });
+  }, [navigation, data.id]);
+
   // Animate on mount
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -236,7 +241,7 @@ export default function ProductCard({navigation, data, theme: propTheme, layoutM
       }}
     >
       <TouchableOpacity
-        onPress={() => navigation.navigate("ProductDetails", {product: data})}
+        onPress={handleProductPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         activeOpacity={1}
