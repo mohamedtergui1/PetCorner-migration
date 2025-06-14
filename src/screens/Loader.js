@@ -8,7 +8,6 @@ import {
   StatusBar,
   Image,
 } from 'react-native';
-import LottieView from 'lottie-react-native';
 
 const { width, height } = Dimensions.get('window');
 
@@ -20,15 +19,15 @@ const DARK_ORANGE = '#d27b00';
 const WHITE = '#ffffff';
 
 export default function SplashScreen({ visible = false }) {
-  // Animation refs
+  // Animation refs (removed sparkle animation)
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.3)).current;
   const logoSlideAnim = useRef(new Animated.Value(-100)).current;
   const textSlideAnim = useRef(new Animated.Value(100)).current;
-  const sparkleAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const colorShiftAnim = useRef(new Animated.Value(0)).current;
   const gradientAnim = useRef(new Animated.Value(0)).current;
+  const birdFloatAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
@@ -39,7 +38,7 @@ export default function SplashScreen({ visible = false }) {
           Animated.timing(fadeAnim, {
             toValue: 1,
             duration: 800,
-            useNativeDriver: false, // Changed for gradient animation
+            useNativeDriver: false,
           }),
           Animated.timing(gradientAnim, {
             toValue: 1,
@@ -90,14 +89,21 @@ export default function SplashScreen({ visible = false }) {
         ).start();
       }, 500);
 
-      // Start sparkle animation
+      // Start bird floating animation (replaces sparkle)
       setTimeout(() => {
         Animated.loop(
-          Animated.timing(sparkleAnim, {
-            toValue: 1,
-            duration: 2500,
-            useNativeDriver: true,
-          })
+          Animated.sequence([
+            Animated.timing(birdFloatAnim, {
+              toValue: 1,
+              duration: 2000,
+              useNativeDriver: true,
+            }),
+            Animated.timing(birdFloatAnim, {
+              toValue: 0,
+              duration: 2000,
+              useNativeDriver: true,
+            }),
+          ])
         ).start();
       }, 1000);
 
@@ -121,11 +127,6 @@ export default function SplashScreen({ visible = false }) {
     }
   }, [visible]);
 
-  const sparkleRotation = sparkleAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
   const backgroundColor = colorShiftAnim.interpolate({
     inputRange: [0, 0.5, 1],
     outputRange: [BLUE, DARK_BLUE, ORANGE],
@@ -134,6 +135,22 @@ export default function SplashScreen({ visible = false }) {
   const logoBackgroundColor = colorShiftAnim.interpolate({
     inputRange: [0, 0.5, 1],
     outputRange: ['rgba(254, 148, 0, 0.1)', 'rgba(255, 255, 255, 0.15)', 'rgba(0, 122, 254, 0.1)'],
+  });
+
+  // Bird floating animation
+  const birdFloat1 = birdFloatAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -10],
+  });
+
+  const birdFloat2 = birdFloatAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 8],
+  });
+
+  const birdFloat3 = birdFloatAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -6],
   });
 
   if (!visible) return null;
@@ -197,21 +214,62 @@ export default function SplashScreen({ visible = false }) {
               <View style={[styles.cornerAccent, { backgroundColor: ORANGE }]} />
             </Animated.View>
 
-            {/* Enhanced Sparkle Effect */}
-            <Animated.View
-              style={[
-                styles.sparkleContainer,
-                {
-                  transform: [{ rotate: sparkleRotation }],
-                },
-              ]}
-            >
-              <Text style={[styles.sparkle, styles.sparkle1, { color: ORANGE }]}>✨</Text>
-              <Text style={[styles.sparkle, styles.sparkle2, { color: '#FFD700' }]}>✨</Text>
-              <Text style={[styles.sparkle, styles.sparkle3, { color: ORANGE }]}>✨</Text>
-              <Text style={[styles.sparkle, styles.sparkle4, { color: '#FFD700' }]}>✨</Text>
-              <Text style={[styles.sparkle, styles.sparkle5, { color: ORANGE }]}>⭐</Text>
-              <Text style={[styles.sparkle, styles.sparkle6, { color: '#FFD700' }]}>⭐</Text>
+            {/* Floating Birds Effect (replaces sparkles) */}
+            <Animated.View style={styles.floatingBirdsContainer}>
+              <Animated.Text 
+                style={[
+                  styles.floatingBird, 
+                  styles.bird1,
+                  { transform: [{ translateY: birdFloat1 }] }
+                ]}
+              >
+                🦜
+              </Animated.Text>
+              <Animated.Text 
+                style={[
+                  styles.floatingBird, 
+                  styles.bird2,
+                  { transform: [{ translateY: birdFloat2 }] }
+                ]}
+              >
+                🐦
+              </Animated.Text>
+              <Animated.Text 
+                style={[
+                  styles.floatingBird, 
+                  styles.bird3,
+                  { transform: [{ translateY: birdFloat3 }] }
+                ]}
+              >
+                🕊️
+              </Animated.Text>
+              <Animated.Text 
+                style={[
+                  styles.floatingBird, 
+                  styles.bird4,
+                  { transform: [{ translateY: birdFloat1 }] }
+                ]}
+              >
+                🦅
+              </Animated.Text>
+              <Animated.Text 
+                style={[
+                  styles.floatingBird, 
+                  styles.bird5,
+                  { transform: [{ translateY: birdFloat2 }] }
+                ]}
+              >
+                🐤
+              </Animated.Text>
+              <Animated.Text 
+                style={[
+                  styles.floatingBird, 
+                  styles.bird6,
+                  { transform: [{ translateY: birdFloat3 }] }
+                ]}
+              >
+                🦆
+              </Animated.Text>
             </Animated.View>
           </Animated.View>
 
@@ -255,7 +313,7 @@ export default function SplashScreen({ visible = false }) {
                   {
                     transform: [
                       { 
-                        translateX: sparkleAnim.interpolate({
+                        translateX: birdFloatAnim.interpolate({
                           inputRange: [0, 0.25, 0.5, 0.75, 1],
                           outputRange: [0, 15, 0, -15, 0],
                         })
@@ -271,7 +329,7 @@ export default function SplashScreen({ visible = false }) {
                   {
                     transform: [
                       { 
-                        translateX: sparkleAnim.interpolate({
+                        translateX: birdFloatAnim.interpolate({
                           inputRange: [0, 0.25, 0.5, 0.75, 1],
                           outputRange: [0, -10, 0, 10, 0],
                         })
@@ -287,7 +345,7 @@ export default function SplashScreen({ visible = false }) {
                   {
                     transform: [
                       { 
-                        translateX: sparkleAnim.interpolate({
+                        translateX: birdFloatAnim.interpolate({
                           inputRange: [0, 0.25, 0.5, 0.75, 1],
                           outputRange: [0, 12, 0, -12, 0],
                         })
@@ -419,44 +477,45 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     opacity: 0.8,
   },
-  sparkleContainer: {
+  // New floating birds styles (replaces sparkle styles)
+  floatingBirdsContainer: {
     position: 'absolute',
     width: 280,
     height: 280,
   },
-  sparkle: {
+  floatingBird: {
     position: 'absolute',
-    fontSize: 18,
+    fontSize: 20,
   },
-  sparkle1: {
+  bird1: {
     top: 20,
     left: '50%',
-    marginLeft: -9,
+    marginLeft: -10,
   },
-  sparkle2: {
+  bird2: {
     right: 25,
     top: '30%',
-    marginTop: -9,
+    marginTop: -10,
   },
-  sparkle3: {
+  bird3: {
     bottom: 20,
     left: '50%',
-    marginLeft: -9,
+    marginLeft: -10,
   },
-  sparkle4: {
+  bird4: {
     left: 25,
     top: '30%',
-    marginTop: -9,
+    marginTop: -10,
   },
-  sparkle5: {
+  bird5: {
     right: 35,
     top: '70%',
-    fontSize: 16,
+    fontSize: 18,
   },
-  sparkle6: {
+  bird6: {
     left: 35,
     top: '70%',
-    fontSize: 16,
+    fontSize: 18,
   },
   textContainer: {
     alignItems: 'center',

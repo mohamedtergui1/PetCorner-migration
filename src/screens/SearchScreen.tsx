@@ -14,13 +14,16 @@ import {
   StatusBar,
   TouchableOpacity,
   SafeAreaView,
+  ScrollView,
+  Image,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../context/ThemeContext';
 import ProductCard2 from '../components/Product/ProductCard2';
+import { filterData } from '../database/Database';
 
-// Import the ProductService
+// Import the ProductService and CategoryService
 import ProductService, { 
   Product, 
   PaginatedProductResponse,
@@ -28,18 +31,14 @@ import ProductService, {
   FilteredProductsParams 
 } from '../service/CustomProductApiService';
 
+import categoryService, { getCategories, getCategoryProducts, getSubcategories } from '../service/CategoryService';
+
 // =====================================
 // TYPES AND INTERFACES
 // =====================================
 
 interface SearchScreenProps {
   navigation: any;
-}
-
-interface AnimalCategory {
-  id: number;
-  name: string;
-  icon: string;
 }
 
 interface PaginationData {
@@ -51,20 +50,27 @@ interface PaginationData {
   has_more: boolean;
 }
 
+interface CategoryData {
+  id: string;
+  name: string;
+  image: any;
+}
+
 // =====================================
 // CONSTANTS
 // =====================================
 
-const ANIMAL_CATEGORIES: AnimalCategory[] = [
-  { id: 1, name: 'Chiens', icon: '🐕' },
-  { id: 2, name: 'Chats', icon: '🐱' },
-  { id: 3, name: 'Oiseaux', icon: '🦜' },
-  { id: 4, name: 'Poissons', icon: '🐠' },
-  { id: 5, name: 'Rongeurs', icon: '🐹' },
-  { id: 6, name: 'Reptiles', icon: '🦎' },
-];
-
 const PAGE_SIZE = 10;
+
+// Category mapping from filterData IDs to API category IDs
+const CATEGORY_MAPPING: { [key: string]: number } = {
+  "2": 2,     // Chien -> API category 2
+  "3": 3,     // Chat -> API category 3
+  "184": 184, // Lapin -> API category 184
+  "21": 21,   // Poisson -> API category 21
+  "31": 31,   // Reptile -> API category 31
+  "20": 20,   // Oiseau -> API category 20
+};
 
 // =====================================
 // MAIN COMPONENT
@@ -81,7 +87,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
   // UI States
   const [modalVisible, setModalVisible] = useState(false);
   const [textInputFocussed, setTextInputFocussed] = useState(false);
-  const [showAnimalSelection, setShowAnimalSelection] = useState(false);
+  const [showCategoryFilter, setShowCategoryFilter] = useState(false);
   
   // Search States
   const [searchText, setSearchText] = useState('');
@@ -91,6 +97,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
   
   // Pagination States
   const [currentPage, setCurrentPage] = useState(0);
@@ -103,8 +110,16 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
     has_more: false
   });
   
-  // Animal Selection
-  const [selectedAnimal, setSelectedAnimal] = useState<number>(1); // Default to dogs
+  // Category Selection
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("2"); // Default to Chien
+  const [categoryName, setCategoryName] = useState('Chien');
+  
+  // Category filtering states
+  const [searchCategoryText, setSearchCategoryText] = useState('');
+  const [expandedCategories, setExpandedCategories] = useState(new Set());
+  
+  // API Categories data
+  const [apiCategories, setApiCategories] = useState([]);
   
   const textInput = useRef<TextInput>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -120,6 +135,67 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
   const TEXT_COLOR = isDarkMode ? '#ffffff' : '#000000';
   const TEXT_COLOR_SECONDARY = isDarkMode ? '#b3b3b3' : '#666666';
   const BORDER_COLOR = isDarkMode ? '#2c2c2c' : '#e0e0e0';
+  const SURFACE_COLOR = isDarkMode ? '#1E1E1E' : '#f5f5f5';
+
+  // =====================================
+  // CATEGORY FUNCTIONS
+  // =====================================
+
+  // Load categories from Dolibarr API
+  const loadApiCategories = useCallback(async () => {
+    setCategoriesLoading(true);
+    try {
+      const categories = await getCategories();
+      setApiCategories(categories);
+    } catch (error) {
+      console.error('Error loading API categories:', error);
+      Alert.alert(
+        'Erreur',
+        'Impossible de charger les catégories. Utilisation des catégories par défaut.'
+      );
+    } finally {
+      setCategoriesLoading(false);
+    }
+  }, []);
+
+  // Filter categories based on search text
+  const getFilteredCategories = () => {
+    if (!searchCategoryText.trim()) {
+      return apiCategories;
+    }
+    return categoryService.searchCategories(apiCategories, searchCategoryText);
+  };
+
+  const toggleCategoryExpansion = (categoryId) => {
+    const newExpanded = new Set(expandedCategories);
+    if (newExpanded.has(categoryId)) {
+      newExpanded.delete(categoryId);
+    } else {
+      newExpanded.add(categoryId);
+    }
+    setExpandedCategories(newExpanded);
+  };
+
+  // Handle category selection from API categories
+  const handleApiCategorySelect = useCallback(async (category) => {
+    const categoryId = category.id.toString();
+    setSelectedCategoryId(categoryId);
+    setCategoryName(category.label);
+    setShowCategoryFilter(false);
+    
+    // Reload products for new category
+    loadProducts(true, searchText);
+  }, [searchText]);
+
+  // Handle category selection from filter data
+  const handleFilterCategorySelect = useCallback((categoryData) => {
+    setSelectedCategoryId(categoryData.id);
+    setCategoryName(categoryData.name);
+    setShowCategoryFilter(false);
+    
+    // Reload products for new category
+    loadProducts(true, searchText);
+  }, [searchText]);
 
   // =====================================
   // API FUNCTIONS
@@ -137,13 +213,14 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
       }
 
       const pageToLoad = resetPagination ? 0 : currentPage;
+      const apiCategoryId = CATEGORY_MAPPING[selectedCategoryId];
       
       const params: FilteredProductsParams = {
         limit: PAGE_SIZE,
         page: pageToLoad,
         pagination_data: true,
         includestockdata: 0,
-        animal_category: selectedAnimal,
+        category: apiCategoryId,
         sortfield: 'datec',
         sortorder: 'DESC'
       };
@@ -207,7 +284,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
         results: newProducts.length,
         total: newPaginationData.total,
         page: newPaginationData.page,
-        animal: ANIMAL_CATEGORIES.find(cat => cat.id === selectedAnimal)?.name
+        category: categoryName
       });
 
     } catch (error) {
@@ -273,16 +350,6 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
   const handleModalClose = () => {
     setModalVisible(false);
     setTextInputFocussed(false);
-    setShowAnimalSelection(false);
-  };
-
-  // Handle animal selection
-  const handleAnimalSelect = (animalId: number) => {
-    setSelectedAnimal(animalId);
-    setShowAnimalSelection(false);
-    
-    // Reload products for new animal
-    loadProducts(true, searchText);
   };
 
   // Handle refresh
@@ -300,15 +367,43 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
     });
   };
 
+  // Clear category search
+  const clearCategorySearch = () => {
+    setSearchCategoryText('');
+  };
+
+  const expandAll = () => {
+    const allCategoryIds = new Set();
+    const addCategoryIds = (cats) => {
+      cats.forEach(cat => {
+        if (cat.subcategories && cat.subcategories.length > 0) {
+          allCategoryIds.add(cat.id);
+          addCategoryIds(cat.subcategories);
+        }
+      });
+    };
+    addCategoryIds(apiCategories);
+    setExpandedCategories(allCategoryIds);
+  };
+
+  const collapseAll = () => {
+    setExpandedCategories(new Set());
+  };
+
   // =====================================
   // EFFECTS
   // =====================================
 
-  // Load products when screen focuses or animal changes
+  // Load API categories on component mount
+  useEffect(() => {
+    loadApiCategories();
+  }, [loadApiCategories]);
+
+  // Load products when screen focuses or category changes
   useFocusEffect(
     useCallback(() => {
       loadProducts(true, searchText);
-    }, [selectedAnimal])
+    }, [selectedCategoryId])
   );
 
   // Cleanup timeout on unmount
@@ -336,63 +431,127 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
     />
   );
 
-  // Render animal selection modal
-  const renderAnimalSelection = () => (
-    <Modal
-      visible={showAnimalSelection}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={() => setShowAnimalSelection(false)}
-    >
-      <View style={styles.animalModalOverlay}>
-        <View style={[styles.animalModalContent, { backgroundColor: CARD_BACKGROUND }]}>
-          <View style={styles.animalModalHeader}>
-            <Text style={[styles.animalModalTitle, { color: TEXT_COLOR }]}>
-              Choisir un animal
-            </Text>
-            <TouchableOpacity 
-              onPress={() => setShowAnimalSelection(false)}
-              style={styles.animalModalClose}
-            >
-              <Ionicons name="close" size={24} color={TEXT_COLOR_SECONDARY} />
-            </TouchableOpacity>
+  // Render category item for horizontal scroll
+  const renderCategoryItem = useCallback(({ item }) => {
+    const isSelected = selectedCategoryId === item.id;
+    
+    return (
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => handleFilterCategorySelect(item.id)}
+        style={{
+          marginHorizontal: 5,
+          marginVertical: 8,
+        }}
+      >
+        <View
+          style={[
+            styles.categoryCard,
+            {
+              backgroundColor: isSelected 
+                ? PRIMARY_COLOR 
+                : (isDarkMode ? 'rgba(255,255,255,0.08)' : '#f0f0f0')
+            }
+          ]}
+        >
+          <View style={[styles.categoryImageWrapper, {
+            backgroundColor: isSelected 
+              ? 'rgba(255,255,255,0.15)' 
+              : (isDarkMode ? '#333' : '#e0e0e0')
+          }]}>
+            <Ionicons 
+              name="paw-outline" 
+              size={30} 
+              color={isSelected ? '#ffffff' : PRIMARY_COLOR} 
+            />
           </View>
-          
-          <FlatList
-            data={ANIMAL_CATEGORIES}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[
-                  styles.animalItem,
-                  { 
-                    backgroundColor: selectedAnimal === item.id ? PRIMARY_COLOR + '15' : 'transparent',
-                    borderColor: selectedAnimal === item.id ? PRIMARY_COLOR : BORDER_COLOR
-                  }
-                ]}
-                onPress={() => handleAnimalSelect(item.id)}
-              >
-                <Text style={styles.animalIcon}>{item.icon}</Text>
-                <Text style={[
-                  styles.animalName, 
-                  { 
-                    color: selectedAnimal === item.id ? PRIMARY_COLOR : TEXT_COLOR,
-                    fontWeight: selectedAnimal === item.id ? '600' : '400'
-                  }
-                ]}>
-                  {item.name}
-                </Text>
-                {selectedAnimal === item.id && (
-                  <Ionicons name="checkmark-circle" size={20} color={PRIMARY_COLOR} />
-                )}
-              </TouchableOpacity>
-            )}
-            showsVerticalScrollIndicator={false}
-          />
+          <Text
+            style={[
+              styles.categoryText,
+              { 
+                color: isSelected 
+                  ? '#ffffff' 
+                  : TEXT_COLOR_SECONDARY 
+              }
+            ]}
+            numberOfLines={2}
+          >
+            {item.name}
+          </Text>
         </View>
+      </TouchableOpacity>
+    );
+  }, [selectedCategoryId, handleFilterCategorySelect, isDarkMode, PRIMARY_COLOR, TEXT_COLOR_SECONDARY]);
+
+  // Render API category for modal (copied from ProductCategoryScreen)
+  const renderApiCategory = (category, level = 0) => {
+    const isExpanded = expandedCategories.has(category.id);
+    const isSelected = selectedCategoryId === category.id.toString();
+    const hasSubcategories = category.subcategories && category.subcategories.length > 0;
+    const categoryColor = category.color ? `#${category.color}` : SECONDARY_COLOR;
+
+    return (
+      <View key={category.id} style={[styles.modalCategoryContainer, { marginLeft: level * 20 }]}>
+        <TouchableOpacity
+          style={[
+            styles.modalCategoryItem,
+            {
+              backgroundColor: isSelected ? `${PRIMARY_COLOR}20` : SURFACE_COLOR,
+              borderLeftColor: categoryColor,
+              borderColor: isSelected ? PRIMARY_COLOR : BORDER_COLOR,
+            }
+          ]}
+          onPress={() => handleApiCategorySelect(category)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.modalCategoryContent}>
+            <View style={[styles.colorIndicator, { backgroundColor: categoryColor }]} />
+            
+            <View style={styles.modalCategoryText}>
+              <Text style={[
+                styles.modalCategoryLabel,
+                {
+                  color: isSelected ? PRIMARY_COLOR : TEXT_COLOR,
+                  fontWeight: level === 0 ? 'bold' : '600'
+                }
+              ]}>
+                {category.label}
+              </Text>
+              {category.description && category.description !== category.label && (
+                <Text style={[styles.modalCategoryDescription, { color: TEXT_COLOR_SECONDARY }]}>
+                  {category.description}
+                </Text>
+              )}
+            </View>
+
+            <View style={styles.modalCategoryActions}>
+              {isSelected && (
+                <Ionicons name="checkmark-circle" size={20} color={PRIMARY_COLOR} />
+              )}
+              {hasSubcategories && (
+                <TouchableOpacity
+                  onPress={() => toggleCategoryExpansion(category.id)}
+                  style={styles.expandButton}
+                >
+                  <Ionicons
+                    name={isExpanded ? "chevron-up" : "chevron-down"}
+                    size={20}
+                    color={TEXT_COLOR_SECONDARY}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        {hasSubcategories && isExpanded && (
+          <View style={styles.subcategoriesContainer}>
+            {category.subcategories.map(subcat => renderApiCategory(subcat, level + 1))}
+          </View>
+        )}
       </View>
-    </Modal>
-  );
+    );
+  };
 
   // Render loading footer
   const renderFooter = () => {
@@ -414,7 +573,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
       <View style={styles.headerInfoLeft}>
         <Ionicons name="paw" size={18} color={PRIMARY_COLOR} />
         <Text style={[styles.headerInfoText, { color: TEXT_COLOR }]}>
-          {paginationData.total} produits pour {ANIMAL_CATEGORIES.find(cat => cat.id === selectedAnimal)?.name?.toLowerCase()}
+          {paginationData.total} produits pour {categoryName}
         </Text>
       </View>
       {searchText && (
@@ -425,6 +584,8 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
       )}
     </View>
   );
+
+  const filteredCategories = getFilteredCategories();
 
   // =====================================
   // MAIN RENDER
@@ -447,14 +608,24 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Recherche</Text>
         <TouchableOpacity 
-          style={styles.animalButton}
-          onPress={() => setShowAnimalSelection(true)}
+          style={styles.categoryFilterButton}
+          onPress={() => setShowCategoryFilter(true)}
+          disabled={categoriesLoading}
         >
-          <Text style={styles.animalButtonText}>
-            {ANIMAL_CATEGORIES.find(cat => cat.id === selectedAnimal)?.icon || '🐕'}
-          </Text>
+          {categoriesLoading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <View style={styles.categoryDisplayButton}>
+              <Text style={styles.categoryDisplayText}>
+                {filterData.find(cat => cat.id === selectedCategoryId)?.name || categoryName}
+              </Text>
+              <Ionicons name="chevron-down" size={16} color="#fff" />
+            </View>
+          )}
         </TouchableOpacity>
       </View>
+
+      {/* Categories Filter (Horizontal) - REMOVED */}
 
       {/* Search Bar */}
       <View style={styles.searchContainer}>
@@ -496,12 +667,15 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
             </TouchableOpacity>
             <Text style={styles.modalHeaderTitle}>Rechercher</Text>
             <TouchableOpacity 
-              style={styles.animalButton}
-              onPress={() => setShowAnimalSelection(true)}
+              style={styles.categoryFilterButton}
+              onPress={() => setShowCategoryFilter(true)}
             >
-              <Text style={styles.animalButtonText}>
-                {ANIMAL_CATEGORIES.find(cat => cat.id === selectedAnimal)?.icon || '🐕'}
-              </Text>
+              <View style={styles.categoryDisplayButton}>
+                <Text style={styles.categoryDisplayText}>
+                  {filterData.find(cat => cat.id === selectedCategoryId)?.name || categoryName}
+                </Text>
+                <Ionicons name="chevron-down" size={16} color="#fff" />
+              </View>
             </TouchableOpacity>
           </View>
 
@@ -542,10 +716,10 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
           {/* Info Text */}
           <View style={styles.infoContainer}>
             <Text style={[styles.infoText, { color: TEXT_COLOR_SECONDARY }]}>
-              Recherche dans la catégorie {ANIMAL_CATEGORIES.find(cat => cat.id === selectedAnimal)?.name?.toLowerCase()}
+              Recherche dans la catégorie {categoryName}
             </Text>
             <Text style={[styles.infoSubText, { color: TEXT_COLOR_SECONDARY }]}>
-              Appuyez sur l'icône animal pour changer de catégorie
+              Appuyez sur la catégorie en haut pour changer
             </Text>
           </View>
         </SafeAreaView>
@@ -583,8 +757,8 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
                 </Text>
                 <Text style={[styles.emptyResultsText, { color: TEXT_COLOR_SECONDARY }]}>
                   {searchText 
-                    ? `Aucun produit ne correspond à "${searchText}" pour ${ANIMAL_CATEGORIES.find(cat => cat.id === selectedAnimal)?.name?.toLowerCase()}`
-                    : `Aucun produit disponible pour ${ANIMAL_CATEGORIES.find(cat => cat.id === selectedAnimal)?.name?.toLowerCase()}`
+                    ? `Aucun produit ne correspond à "${searchText}" pour ${categoryName}`
+                    : `Aucun produit disponible pour ${categoryName}`
                   }
                 </Text>
                 {searchText && (
@@ -601,8 +775,85 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
         </View>
       )}
 
-      {/* Animal Selection Modal */}
-      {renderAnimalSelection()}
+      {/* Simple Category Filter Modal */}
+      <Modal
+        visible={showCategoryFilter}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowCategoryFilter(false)}
+      >
+        <SafeAreaView style={[styles.modalContainer, { backgroundColor: BACKGROUND_COLOR }]}>
+          {/* Modal Header */}
+          <View style={[styles.modalHeaderContainer, { 
+            backgroundColor: CARD_BACKGROUND, 
+            borderBottomColor: BORDER_COLOR 
+          }]}>
+            <TouchableOpacity
+              onPress={() => setShowCategoryFilter(false)}
+              style={styles.modalCloseButton}
+            >
+              <Ionicons name="close" size={24} color={TEXT_COLOR} />
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: TEXT_COLOR }]}>
+              Choisir une catégorie
+            </Text>
+            <Text style={[styles.modalSubtitle, { color: TEXT_COLOR_SECONDARY }]}>
+              {filterData.length} catégories
+            </Text>
+          </View>
+
+          {/* Simple Categories List */}
+          <ScrollView 
+            style={styles.simpleCategoriesList}
+            showsVerticalScrollIndicator={false}
+          >
+            {filterData.map((category) => {
+              const isSelected = selectedCategoryId === category.id;
+              return (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[
+                    styles.simpleCategoryItem,
+                    {
+                      backgroundColor: isSelected ? `${PRIMARY_COLOR}15` : CARD_BACKGROUND,
+                      borderColor: isSelected ? PRIMARY_COLOR : BORDER_COLOR,
+                    }
+                  ]}
+                  onPress={() => handleFilterCategorySelect(category)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.simpleCategoryContent}>
+                    <View style={styles.categoryImageContainer}>
+                      <Image
+                        style={styles.categoryImageSmall}
+                        source={category.image}
+                      />
+                    </View>
+                    
+                    <View style={styles.simpleCategoryText}>
+                      <Text style={[
+                        styles.simpleCategoryLabel,
+                        {
+                          color: isSelected ? PRIMARY_COLOR : TEXT_COLOR,
+                          fontWeight: isSelected ? '600' : '500'
+                        }
+                      ]}>
+                        {category.name}
+                      </Text>
+                    </View>
+
+                    <View style={styles.simpleCategoryActions}>
+                      {isSelected && (
+                        <Ionicons name="checkmark-circle" size={20} color={PRIMARY_COLOR} />
+                      )}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -642,17 +893,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.15)',
   },
-  animalButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  categoryFilterButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    maxWidth: 120,
   },
-  animalButtonText: {
-    fontSize: 20,
+  categoryDisplayButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
+  categoryDisplayText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    maxWidth: 80,
+  },
+  
+  // Remove Categories Container styles (not needed)
+  
   searchContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -844,50 +1107,78 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   
-  // Animal Selection Modal Styles
-  animalModalOverlay: {
+  // Simple Category Filter Modal Styles
+  modalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
   },
-  animalModalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 20,
-    maxHeight: '70%',
-  },
-  animalModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+  modalHeaderContainer: {
+    padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  animalModalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  animalModalClose: {
-    padding: 4,
-  },
-  animalItem: {
-    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    marginHorizontal: 16,
-    marginVertical: 4,
+    position: 'relative',
+  },
+  modalCloseButton: {
+    position: 'absolute',
+    left: 16,
+    top: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 4,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    marginTop: 2,
+  },
+  simpleCategoriesList: {
+    flex: 1,
+    padding: 16,
+  },
+  simpleCategoryItem: {
     borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+    overflow: 'hidden',
   },
-  animalIcon: {
-    fontSize: 24,
+  simpleCategoryContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  categoryImageContainer: {
     marginRight: 16,
   },
-  animalName: {
+  categoryImageSmall: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  simpleCategoryText: {
     flex: 1,
+  },
+  simpleCategoryLabel: {
     fontSize: 16,
+  },
+  simpleCategoryActions: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 24,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 32,
+  },
+  emptyText: {
+    marginTop: 10,
+    fontSize: 16,
+    textAlign: 'center',
   },
 });
