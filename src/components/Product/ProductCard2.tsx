@@ -40,7 +40,7 @@ interface Product {
   [key: string]: any; // ✅ FIXED: Allow additional properties to match any Product type
 }
 
-interface ProductCard2Props {
+export interface ProductCard2Props {
   navigation?: any; // ✅ Made optional to prevent undefined errors
   product: any; // ✅ FIXED: Use 'any' to avoid type conflicts
   onPress?: (product: any) => void; // ✅ FIXED: Use 'any' for product parameter
