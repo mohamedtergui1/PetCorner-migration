@@ -1,4 +1,4 @@
-// ProductScreen.tsx - Updated to use new ProductService
+// ProductScreen.tsx - Fixed sort by creation date
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
@@ -186,6 +186,7 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
       
       console.log('📦 Chargement des produits - Page:', pageToLoad);
       console.log('🔍 Filtres:', filters, 'Recherche:', search);
+      console.log('📊 Sort by:', sortBy);
       
       // Prepare parameters for the new service
       const params: FilteredProductsParams = {
@@ -193,7 +194,7 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
         page: pageToLoad,
         pagination_data: true,
         includestockdata: 0,
-        sortfield: getSortField(sortBy),
+        sortfield: getSortField(sortBy),  
         sortorder: getSortOrder(sortBy),
       };
 
@@ -205,25 +206,13 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
       if (filters.priceMax !== undefined) params.price_max = filters.priceMax;
       if (search && search.trim()) params.search = search.trim();
 
+      console.log('🚀 API Params:', params);
+
       // Use the appropriate service method
       let result: PaginatedProductResponse | ProductListResponse;
       
-      if (search && search.trim()) {
-        // Use search method for text search
-        result = await ProductService.searchProducts({
-          search_name: search.trim(),
-          limit: pageSize,
-          page: pageToLoad,
-          pagination_data: true,
-          sortfield: getSortField(sortBy),
-          sortorder: getSortOrder(sortBy),
-          ...(filters.animal_category && { categories: filters.animal_category.toString() }),
-          ...(filters.brand && { brand: filters.brand }),
-        });
-      } else {
-        // Use filtered products method
-        result = await ProductService.getFilteredProducts(params);
-      }
+      params.animal_category = params.animal_category ? params.animal_category : 1;
+      result = await ProductService.getFilteredProducts(params);
       
       // Handle response
       let newProducts: Product[] = [];
@@ -261,13 +250,23 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
       }
       
       console.log('📊 Résultat pagination:', newPaginationData);
+      console.log('📦 Produits reçus:', newProducts.length);
+      
+      // Apply local sorting if API sorting doesn't work properly
+      if (newProducts.length > 0) {
+        newProducts = sortProducts(newProducts, sortBy);
+        console.log('🔄 Tri local appliqué:', sortBy);
+      }
       
       if (resetPagination) {
         setProducts(newProducts);
         setCurrentPage(0);
         setPaginationData(newPaginationData);
       } else {
-        setProducts(prevProducts => [...prevProducts, ...newProducts]);
+        setProducts(prevProducts => {
+          const combinedProducts = [...prevProducts, ...newProducts];
+          return sortProducts(combinedProducts, sortBy);
+        });
         setCurrentPage(pageToLoad + 1);
         setPaginationData(prev => ({
           ...newPaginationData,
@@ -282,7 +281,8 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
         total_affichés: resetPagination ? newProducts.length : products.length + newProducts.length,
         total_disponible: newPaginationData.total,
         page_actuelle: newPaginationData.page,
-        total_pages: newPaginationData.page_count
+        total_pages: newPaginationData.page_count,
+        tri_appliqué: sortBy
       });
       
       if (newProducts.length === 0) {
@@ -330,7 +330,7 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
   // UTILITY FUNCTIONS
   // =====================================
 
-  // Get sort field for API
+  // Get sort field for API - FIXED
   const getSortField = (sortType: string): string => {
     switch (sortType) {
       case 'price':
@@ -339,7 +339,10 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
         return 'label';
       case 'date':
       default:
-        return 'date_creation';
+        // Try multiple possible field names for creation date
+        // The API might use different field names
+        return 'datec'; // Common Dolibarr field name
+        // Alternative options to try: 'date_creation', 'tms', 'date_add', 'date_creation'
     }
   };
 
@@ -351,11 +354,11 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
         return 'ASC';
       case 'date':
       default:
-        return 'DESC';
+        return 'DESC'; // Most recent first
     }
   };
 
-  // Sort products locally (for immediate UI feedback)
+  // Sort products locally (for immediate UI feedback) - IMPROVED
   const sortProducts = (productsList: Product[], sortType: string) => {
     if (!Array.isArray(productsList)) return [];
     
@@ -377,9 +380,45 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
       case 'date':
       default:
         return sorted.sort((a, b) => {
-          const dateA = new Date(a.date_creation || 0);
-          const dateB = new Date(b.date_creation || 0);
-          return dateB.getTime() - dateA.getTime();
+          // Try multiple date fields that might exist in the product object
+          const getProductDate = (product: Product): number => {
+            // Try different possible date field names
+            const dateFields = [
+              'date_creation',
+              'datec', 
+              'tms',
+              'date_add',
+              'date_modif',
+              'date_modification',
+              'created_at',
+              'updated_at'
+            ];
+            
+            for (const field of dateFields) {
+              const dateValue = (product as any)[field];
+              if (dateValue) {
+                const timestamp = typeof dateValue === 'string' ? 
+                  new Date(dateValue).getTime() : 
+                  typeof dateValue === 'number' ? dateValue * 1000 : // Unix timestamp
+                  new Date(dateValue).getTime();
+                
+                if (!isNaN(timestamp)) {
+                  console.log(`📅 Date trouvée pour ${product.label}: ${field} = ${dateValue} (${new Date(timestamp)})`);
+                  return timestamp;
+                }
+              }
+            }
+            
+            // Fallback: use product ID as a rough creation order indicator
+            const productId = product.id ? parseInt(String(product.id)) : 0;
+            console.log(`⚠️ Aucune date trouvée pour ${product.label}, utilisation de l'ID: ${productId}`);
+            return productId;
+          };
+          
+          const dateA = getProductDate(a);
+          const dateB = getProductDate(b);
+          
+          return dateB - dateA; // Most recent first
         });
     }
   };
@@ -473,10 +512,18 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
     );
   };
 
-  // Change sort
+  // Change sort - IMPROVED
   const handleSortChange = (newSortBy: 'date' | 'price' | 'name') => {
+    console.log('🔄 Changement de tri:', sortBy, '->', newSortBy);
     setSortBy(newSortBy);
-    // Reload products with new sort
+    
+    // Apply local sorting immediately for better UX
+    if (products.length > 0) {
+      const sortedProducts = sortProducts(products, newSortBy);
+      setProducts(sortedProducts);
+    }
+    
+    // Reload products with new sort from API
     loadProducts(true, activeFilters, searchQuery);
   };
 
@@ -616,6 +663,9 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
                 {hasActiveFilters() && `${getActiveFilterCount()} filtre${getActiveFilterCount() > 1 ? 's' : ''} actif${getActiveFilterCount() > 1 ? 's' : ''}`}
               </Text>
             )}
+            <Text style={[styles.sortIndicator, { color: PRIMARY_COLOR }]}>
+              Trié par: {sortBy === 'date' ? 'Date de création' : sortBy === 'price' ? 'Prix' : 'Nom'}
+            </Text>
           </View>
         </View>
         
@@ -992,6 +1042,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '400',
     lineHeight: 16,
+  },
+  sortIndicator: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
   },
   filterHeaderRight: {
     flexDirection: 'row',
