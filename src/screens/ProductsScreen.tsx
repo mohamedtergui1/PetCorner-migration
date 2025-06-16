@@ -814,7 +814,7 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
           style={styles.headerButton}
           onPress={() => navigation.goBack()}
         >
-          <Feather name="arrow-left" size={20} color="#fff" />
+          <Ionicons name='arrow-back' size={24} color="#ffffff" />
         </TouchableOpacity>
         
         <View style={styles.headerCenter}>
