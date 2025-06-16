@@ -1,5 +1,5 @@
-import { Alert, Keyboard, SafeAreaView, ScrollView, StyleSheet, Text, View, TouchableOpacity, StatusBar, Platform, PermissionsAndroid } from 'react-native'
-import React, { useState } from 'react'
+import { Alert, Keyboard, SafeAreaView, ScrollView, StyleSheet, Text, View, TouchableOpacity, StatusBar, Platform, PermissionsAndroid, Animated } from 'react-native'
+import React, { useState, useRef, useEffect } from 'react'
 import Toast from 'react-native-toast-message';
 import Geolocation from 'react-native-geolocation-service';
 import Loader from '../Loader';
@@ -23,8 +23,65 @@ export default function Signup({navigation}) {
       const [errors, setErrors] = useState({});
       const [loading, setLoading] = useState(false);
       const [gettingLocation, setGettingLocation] = useState(false);
+      const [showSuccessToast, setShowSuccessToast] = useState(false); // ✅ New state for success toast
       const { theme, isDarkMode, toggleTheme, colorTheme, toggleColorTheme } = useTheme();
       const insets = useSafeAreaInsets();
+
+      // ✅ Animation refs for smooth transitions
+      const fadeAnim = useRef(new Animated.Value(1)).current;
+      const slideAnim = useRef(new Animated.Value(0)).current;
+      const successToastAnim = useRef(new Animated.Value(0)).current;
+      const successToastSlideAnim = useRef(new Animated.Value(-100)).current;
+
+      // ✅ Initialize entrance animations
+      useEffect(() => {
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+      }, []);
+
+      // ✅ Success toast animation functions
+      const showSuccessToastWithAnimation = () => {
+        setShowSuccessToast(true);
+        
+        Animated.parallel([
+          Animated.spring(successToastAnim, {
+            toValue: 1,
+            tension: 120,
+            friction: 8,
+            useNativeDriver: true,
+          }),
+          Animated.spring(successToastSlideAnim, {
+            toValue: 0,
+            tension: 140,
+            friction: 8,
+            useNativeDriver: true,
+          }),
+        ]).start();
+
+        setTimeout(() => {
+          hideSuccessToast();
+        }, 2000);
+      };
+
+      const hideSuccessToast = () => {
+        Animated.parallel([
+          Animated.timing(successToastAnim, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(successToastSlideAnim, {
+            toValue: -100,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          setShowSuccessToast(false);
+        });
+      };
 
       const validate = () => {
         Keyboard.dismiss();
@@ -246,20 +303,32 @@ export default function Signup({navigation}) {
             console.log("User ID:", res.data);
             setLoading(false);
             
-            // Show success toast
-            Toast.show({
-              type: 'success',
-              text1: 'Compte créé avec succès! 🎉',
-              text2: 'Vous pouvez maintenant vous connecter',
-              visibilityTime: 3000,
-              autoHide: true,
-              topOffset: 60,
-            });
+            // ✅ Show custom success toast instead of Toast.show
+            showSuccessToastWithAnimation();
 
-            // Navigate to Login after a short delay to let user see the toast
+            // ✅ Navigate with smooth transition and pass user data
             setTimeout(() => {
-              navigation.navigate('Login');
-            }, 1500);
+              // Fade out animation before navigation
+              Animated.parallel([
+                Animated.timing(fadeAnim, {
+                  toValue: 0,
+                  duration: 200,
+                  useNativeDriver: true,
+                }),
+                Animated.timing(slideAnim, {
+                  toValue: -100,
+                  duration: 200,
+                  useNativeDriver: true,
+                }),
+              ]).start(() => {
+                // ✅ Navigate to Login with pre-filled email and phone
+                navigation.replace('Login', {
+                  email: inputs.email,
+                  phone: inputs.phone,
+                  fromSignup: true
+                });
+              });
+            }, 2200);
     
         } catch (error) {
             setLoading(false);
@@ -296,174 +365,258 @@ export default function Signup({navigation}) {
         setErrors(prevState => ({...prevState, [input]: error}));
       };
 
+      // ✅ Navigate to login with smooth transition
+      const navigateToLogin = () => {
+        Animated.parallel([
+          Animated.timing(fadeAnim, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(slideAnim, {
+            toValue: -100,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          navigation.replace('Login');
+        });
+      };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.backgroundColor }]}>
       <StatusBar 
         barStyle={isDarkMode ? 'light-content' : 'dark-content'} 
         backgroundColor={theme.backgroundColor} 
       />
-      <Loader visible={loading || gettingLocation} />
       
-      {/* Theme Controls */}
-      <View style={[styles.themeControls, { paddingTop: insets.top + 15 }]}>
-        {/* Dark Mode Toggle */}
-        <TouchableOpacity 
-          style={[styles.themeButton, { 
-            backgroundColor: theme.cardBackground || (isDarkMode ? '#2a2a2a' : '#f0f0f0'),
-            borderWidth: 1,
-            borderColor: theme.borderColor || (isDarkMode ? '#404040' : '#e0e0e0')
-          }]}
-          onPress={toggleTheme}
+      {/* ✅ Only show loader during registration process, not after success */}
+      <Loader visible={(loading || gettingLocation) && !showSuccessToast} />
+      
+      {/* ✅ Beautiful Success Toast */}
+      {showSuccessToast && (
+        <Animated.View 
+          style={[
+            styles.successToastContainer,
+            {
+              opacity: successToastAnim,
+              transform: [{ translateY: successToastSlideAnim }],
+              top: insets.top + 20,
+            }
+          ]}
         >
-          <MaterialCommunityIcons 
-            name={isDarkMode ? "weather-sunny" : "weather-night"} 
-            size={22} 
-            color={theme.primary} 
-          />
-          <Text style={[styles.themeButtonText, { color: theme.textColor }]}>
-            {isDarkMode ? 'Clair' : 'Sombre'}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Color Theme Toggle */}
-        <TouchableOpacity 
-          style={[styles.themeButton, { 
-            backgroundColor: theme.cardBackground || (isDarkMode ? '#2a2a2a' : '#f0f0f0'),
-            borderWidth: 1,
-            borderColor: theme.borderColor || (isDarkMode ? '#404040' : '#e0e0e0')
-          }]}
-          onPress={toggleColorTheme}
-        >
-          <View style={[styles.colorIndicator, { backgroundColor: theme.primary }]} />
-          <Text style={[styles.themeButtonText, { color: theme.textColor }]}>
-            {colorTheme === 'blue' ? 'Bleu' : 'Orange'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.headerContainer}>
-          <Text style={[styles.title, { color: theme.textColor }]}>
-            S'inscrire
-          </Text>
-          <Text style={[styles.subtitle, { color: theme.secondaryTextColor }]}>
-            Entrez vos coordonnées pour vous inscrire
-          </Text>
-        </View>
-
-        <View style={styles.formContainer}>
-          <Input
-            onChangeText={text => handleOnchange(text, 'email')}
-            onFocus={() => handleError(null, 'email')}
-            iconName="email-outline"
-            label="Email"
-            placeholder="Entrez votre adresse email"
-            error={errors.email}
-            labelColor={theme.textColor}
-            theme={theme}
-            isDarkMode={isDarkMode}
-          />
-
-          <Input
-            onChangeText={text => handleOnchange(text, 'fullname')}
-            onFocus={() => handleError(null, 'fullname')}
-            iconName="account-outline"
-            label="Nom complet"
-            placeholder="Entrez votre nom complet"
-            error={errors.fullname}
-            labelColor={theme.textColor}
-            theme={theme}
-            isDarkMode={isDarkMode}
-          />
-
-          {/* Address Input with Location Button */}
-          <View style={styles.addressContainer}>
-            <View style={styles.addressInputContainer}>
-              <Input
-                value={inputs.address}
-                onChangeText={text => handleOnchange(text, 'address')}
-                onFocus={() => handleError(null, 'address')}
-                iconName="map-marker-outline"
-                label="Adresse"
-                placeholder="Entrez votre adresse ou utilisez la localisation"
-                error={errors.address}
-                labelColor={theme.textColor}
-                theme={theme}
-                isDarkMode={isDarkMode}
-              />
-            </View>
-            
-            {/* Location Button */}
-            <TouchableOpacity
-              style={[styles.locationButton, { 
-                backgroundColor: theme.primary,
-                opacity: gettingLocation ? 0.6 : 1
-              }]}
-              onPress={getCurrentLocationAddress}
-              disabled={gettingLocation}
+          <View style={[styles.successToast, { backgroundColor: '#4CAF50' }]}>
+            <Animated.View
+              style={{
+                transform: [{ 
+                  scale: successToastAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.8, 1],
+                  })
+                }],
+              }}
             >
               <MaterialCommunityIcons 
-                name={gettingLocation ? "loading" : "crosshairs-gps"} 
-                size={20} 
-                color="white" 
-                style={gettingLocation ? styles.spinIcon : null}
+                name="account-check" 
+                size={28} 
+                color="#ffffff" 
               />
-            </TouchableOpacity>
+            </Animated.View>
+            <View style={styles.successToastTextContainer}>
+              <Text style={styles.successToastTitle}>Compte créé avec succès!</Text>
+              <Text style={styles.successToastSubtitle}>Redirection vers la connexion...</Text>
+            </View>
+            <Animated.View
+              style={{
+                transform: [{ 
+                  rotate: successToastAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', '360deg'],
+                  })
+                }],
+              }}
+            >
+              <MaterialCommunityIcons 
+                name="login" 
+                size={24} 
+                color="#ffffff" 
+              />
+            </Animated.View>
+          </View>
+        </Animated.View>
+      )}
+      
+      {/* ✅ Animated main content */}
+      <Animated.View 
+        style={[
+          styles.animatedContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          }
+        ]}
+      >
+        {/* Theme Controls */}
+        <View style={[styles.themeControls, { paddingTop: insets.top + 15 }]}>
+          {/* Dark Mode Toggle */}
+          <TouchableOpacity 
+            style={[styles.themeButton, { 
+              backgroundColor: theme.cardBackground || (isDarkMode ? '#2a2a2a' : '#f0f0f0'),
+              borderWidth: 1,
+              borderColor: theme.borderColor || (isDarkMode ? '#404040' : '#e0e0e0')
+            }]}
+            onPress={toggleTheme}
+          >
+            <MaterialCommunityIcons 
+              name={isDarkMode ? "weather-sunny" : "weather-night"} 
+              size={22} 
+              color={theme.primary} 
+            />
+            <Text style={[styles.themeButtonText, { color: theme.textColor }]}>
+              {isDarkMode ? 'Clair' : 'Sombre'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Color Theme Toggle */}
+          <TouchableOpacity 
+            style={[styles.themeButton, { 
+              backgroundColor: theme.cardBackground || (isDarkMode ? '#2a2a2a' : '#f0f0f0'),
+              borderWidth: 1,
+              borderColor: theme.borderColor || (isDarkMode ? '#404040' : '#e0e0e0')
+            }]}
+            onPress={toggleColorTheme}
+          >
+            <View style={[styles.colorIndicator, { backgroundColor: theme.primary }]} />
+            <Text style={[styles.themeButtonText, { color: theme.textColor }]}>
+              {colorTheme === 'blue' ? 'Bleu' : 'Orange'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.headerContainer}>
+            <Text style={[styles.title, { color: theme.textColor }]}>
+              S'inscrire
+            </Text>
+            <Text style={[styles.subtitle, { color: theme.secondaryTextColor }]}>
+              Entrez vos coordonnées pour vous inscrire
+            </Text>
           </View>
 
-          {/* Helper text for location feature */}
-          <Text style={[styles.helperText, { color: theme.secondaryTextColor }]}>
-            💡 Appuyez sur le bouton GPS pour obtenir automatiquement votre adresse
-          </Text>
+          <View style={styles.formContainer}>
+            <Input
+              onChangeText={text => handleOnchange(text, 'email')}
+              onFocus={() => handleError(null, 'email')}
+              iconName="email-outline"
+              label="Email"
+              placeholder="Entrez votre adresse email"
+              error={errors.email}
+              labelColor={theme.textColor}
+              theme={theme}
+              isDarkMode={isDarkMode}
+            />
 
-          <Input
-            keyboardType="phone-pad"
-            onChangeText={text => handleOnchange(text, 'phone')}
-            onFocus={() => handleError(null, 'phone')}
-            iconName="phone-outline"
-            label="Numéro de téléphone"
-            placeholder="Entrez votre numéro de téléphone"
-            error={errors.phone}
-            labelColor={theme.textColor}
-            theme={theme}
-            isDarkMode={isDarkMode}
-          />
+            <Input
+              onChangeText={text => handleOnchange(text, 'fullname')}
+              onFocus={() => handleError(null, 'fullname')}
+              iconName="account-outline"
+              label="Nom complet"
+              placeholder="Entrez votre nom complet"
+              error={errors.fullname}
+              labelColor={theme.textColor}
+              theme={theme}
+              isDarkMode={isDarkMode}
+            />
 
-          <Input
-            onChangeText={text => handleOnchange(text, 'password')}
-            onFocus={() => handleError(null, 'password')}
-            iconName="lock-outline"
-            label="Mot de passe"
-            placeholder="Entrez votre mot de passe"
-            error={errors.password}
-            password
-            labelColor={theme.textColor}
-            theme={theme}
-            isDarkMode={isDarkMode}
-          />
+            {/* Address Input with Location Button */}
+            <View style={styles.addressContainer}>
+              <View style={styles.addressInputContainer}>
+                <Input
+                  value={inputs.address}
+                  onChangeText={text => handleOnchange(text, 'address')}
+                  onFocus={() => handleError(null, 'address')}
+                  iconName="map-marker-outline"
+                  label="Adresse"
+                  placeholder="Entrez votre adresse ou utilisez la localisation"
+                  error={errors.address}
+                  labelColor={theme.textColor}
+                  theme={theme}
+                  isDarkMode={isDarkMode}
+                />
+              </View>
+              
+              {/* Location Button */}
+              <TouchableOpacity
+                style={[styles.locationButton, { 
+                  backgroundColor: theme.primary,
+                  opacity: gettingLocation ? 0.6 : 1
+                }]}
+                onPress={getCurrentLocationAddress}
+                disabled={gettingLocation}
+              >
+                <MaterialCommunityIcons 
+                  name={gettingLocation ? "loading" : "crosshairs-gps"} 
+                  size={20} 
+                  color="white" 
+                  style={gettingLocation ? styles.spinIcon : null}
+                />
+              </TouchableOpacity>
+            </View>
 
-          <Button 
-            title="S'inscrire" 
-            onPress={validate}
-            theme={theme}
-            isDarkMode={isDarkMode}
-          />
-
-          <Text
-            onPress={() => navigation.navigate('Login')}
-            style={[styles.loginText, { color: theme.textColor }]}
-          >
-            Vous avez déjà un compte ? 
-            <Text style={[styles.loginLink, { color: theme.primary }]}>
-              {' '}Connectez-vous
+            {/* Helper text for location feature */}
+            <Text style={[styles.helperText, { color: theme.secondaryTextColor }]}>
+              💡 Appuyez sur le bouton GPS pour obtenir automatiquement votre adresse
             </Text>
-          </Text>
-        </View>
-      </ScrollView>
+
+            <Input
+              keyboardType="phone-pad"
+              onChangeText={text => handleOnchange(text, 'phone')}
+              onFocus={() => handleError(null, 'phone')}
+              iconName="phone-outline"
+              label="Numéro de téléphone"
+              placeholder="Entrez votre numéro de téléphone"
+              error={errors.phone}
+              labelColor={theme.textColor}
+              theme={theme}
+              isDarkMode={isDarkMode}
+            />
+
+            <Input
+              onChangeText={text => handleOnchange(text, 'password')}
+              onFocus={() => handleError(null, 'password')}
+              iconName="lock-outline"
+              label="Mot de passe"
+              placeholder="Entrez votre mot de passe"
+              error={errors.password}
+              password
+              labelColor={theme.textColor}
+              theme={theme}
+              isDarkMode={isDarkMode}
+            />
+
+            <Button 
+              title="S'inscrire" 
+              onPress={validate}
+              theme={theme}
+              isDarkMode={isDarkMode}
+            />
+
+            <Text
+              onPress={navigateToLogin}
+              style={[styles.loginText, { color: theme.textColor }]}
+            >
+              Vous avez déjà un compte ? 
+              <Text style={[styles.loginLink, { color: theme.primary }]}>
+                {' '}Connectez-vous
+              </Text>
+            </Text>
+          </View>
+        </ScrollView>
+      </Animated.View>
       
       {/* Toast component */}
       <Toast />
@@ -473,6 +626,9 @@ export default function Signup({navigation}) {
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  animatedContainer: {
     flex: 1,
   },
   themeControls: {
@@ -570,5 +726,40 @@ const styles = StyleSheet.create({
   loginLink: {
     fontWeight: '700',
     textDecorationLine: 'underline',
+  },
+  // ✅ New styles for success toast
+  successToastContainer: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    zIndex: 1000,
+  },
+  successToast: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  successToastTextContainer: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 12,
+  },
+  successToastTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  successToastSubtitle: {
+    color: '#ffffff',
+    fontSize: 14,
+    opacity: 0.9,
   },
 })

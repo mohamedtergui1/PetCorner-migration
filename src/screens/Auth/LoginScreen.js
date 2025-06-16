@@ -13,10 +13,19 @@ import { useTheme } from '../../context/ThemeContext'
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
-export default function LoginScreen({navigation}) {
-    const [inputs, setInputs] = useState({email: '', password: ''});
+export default function LoginScreen({navigation, route}) {
+    // ✅ Get params from signup navigation
+    const signupData = route?.params || {};
+    const { email: signupEmail, phone: signupPhone, fromSignup } = signupData;
+    
+    const [inputs, setInputs] = useState({
+      email: signupPhone || '', // ✅ Pre-fill with phone from signup
+      password: ''
+    });
     const [errors, setErrors] = useState({});
     const [loading, setLoading] = useState(false);
+    const [showSuccessToast, setShowSuccessToast] = useState(false);
+    const [showWelcomeMessage, setShowWelcomeMessage] = useState(false); // ✅ New state for welcome message
     const [backPressCount, setBackPressCount] = useState(0);
     const [keyboardVisible, setKeyboardVisible] = useState(false);
     const { theme, isDarkMode, toggleTheme, colorTheme, toggleColorTheme } = useTheme();
@@ -33,6 +42,22 @@ export default function LoginScreen({navigation}) {
     const buttonPulseAnim = useRef(new Animated.Value(1)).current;
     const successAnim = useRef(new Animated.Value(0)).current;
     const logoContainerAnim = useRef(new Animated.Value(1)).current;
+    
+    // ✅ New animation refs for success toast
+    const successToastAnim = useRef(new Animated.Value(0)).current;
+    const successToastSlideAnim = useRef(new Animated.Value(-100)).current;
+
+    // ✅ Show welcome message if coming from signup
+    useEffect(() => {
+      if (fromSignup) {
+        setShowWelcomeMessage(true);
+        
+        // Auto-hide welcome message after 3 seconds
+        setTimeout(() => {
+          setShowWelcomeMessage(false);
+        }, 3000);
+      }
+    }, [fromSignup]);
 
     // Keyboard event listeners
     useEffect(() => {
@@ -128,6 +153,50 @@ export default function LoginScreen({navigation}) {
       
       setTimeout(pulseAnimation, 1000);
     }, []);
+
+    // ✅ Improved success toast animation with better timing
+    const showSuccessToastWithAnimation = () => {
+      setShowSuccessToast(true);
+      
+      // Animate in with spring animation for smoothness
+      Animated.parallel([
+        Animated.spring(successToastAnim, {
+          toValue: 1,
+          tension: 120,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+        Animated.spring(successToastSlideAnim, {
+          toValue: 0,
+          tension: 140,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      // ✅ Hide after shorter duration for better flow
+      setTimeout(() => {
+        hideSuccessToast();
+      }, 1500); // Reduced from 2000 to 1500
+    };
+
+    // ✅ Faster hide animation
+    const hideSuccessToast = () => {
+      Animated.parallel([
+        Animated.timing(successToastAnim, {
+          toValue: 0,
+          duration: 200, // Faster fade out
+          useNativeDriver: true,
+        }),
+        Animated.timing(successToastSlideAnim, {
+          toValue: -100,
+          duration: 200, // Faster slide up
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setShowSuccessToast(false);
+      });
+    };
 
     // Success animation when login succeeds
     const playSuccessAnimation = () => {
@@ -232,8 +301,12 @@ export default function LoginScreen({navigation}) {
           }
         });
   
+        // ✅ Stop animations and hide loading immediately
         setLoading(false);
         loadingRotation.stop();
+        
+        // ✅ Reset logo rotation to prevent visual glitches
+        logoRotateAnim.setValue(1);
         
         if (response.status === 200) {
           const result = response.data;
@@ -242,19 +315,35 @@ export default function LoginScreen({navigation}) {
           if (idMatch && idMatch[1]) {
             const userId = parseInt(idMatch[1], 10);
 
+            // ✅ Save user data first
             await AsyncStorage.setItem('userData', JSON.stringify({ 
               id: userId, 
               phone: inputs.email, 
               loggedIn: true 
             }));
 
-            // Success animation before navigation
-            playSuccessAnimation();
+            // ✅ Show success toast with improved timing
+            showSuccessToastWithAnimation();
             
-            // Navigate with delay for animation
+            // ✅ Shorter delay for smoother transition
             setTimeout(() => {
-              navigation.navigate('Main');
-            }, 800);
+              // ✅ Fade out current screen before navigation
+              Animated.parallel([
+                Animated.timing(fadeAnim, {
+                  toValue: 0,
+                  duration: 200,
+                  useNativeDriver: true,
+                }),
+                Animated.timing(formSlideAnim, {
+                  toValue: 100,
+                  duration: 200,
+                  useNativeDriver: true,
+                }),
+              ]).start(() => {
+                // ✅ Navigate after fade out animation completes
+                navigation.replace('Main'); // Use replace instead of navigate for smoother transition
+              });
+            }, 1800); // Reduced delay for better flow
           } else {
             Alert.alert('Error', 'Unable to extract user ID from the response');
           }
@@ -264,6 +353,9 @@ export default function LoginScreen({navigation}) {
       } catch (error) {
         setLoading(false);
         loadingRotation.stop();
+        
+        // Reset logo rotation on error
+        logoRotateAnim.setValue(1);
         
         // Error shake animation
         Animated.sequence([
@@ -307,7 +399,88 @@ export default function LoginScreen({navigation}) {
           barStyle={isDarkMode ? 'light-content' : 'dark-content'} 
           backgroundColor={theme.backgroundColor} 
         />
-        <Loader visible={loading} />
+        
+        {/* ✅ Only show loader during login process, not after success */}
+        <Loader visible={loading && !showSuccessToast} />
+        
+        {/* ✅ Welcome Message for users coming from signup */}
+        {showWelcomeMessage && (
+          <Animated.View 
+            style={[
+              styles.welcomeMessageContainer,
+              {
+                top: insets.top + 80,
+              }
+            ]}
+          >
+            <View style={[styles.welcomeMessage, { backgroundColor: theme.primary }]}>
+              <MaterialCommunityIcons 
+                name="account-check" 
+                size={24} 
+                color="#ffffff" 
+              />
+              <View style={styles.welcomeMessageTextContainer}>
+                <Text style={styles.welcomeMessageTitle}>Bienvenue!</Text>
+                <Text style={styles.welcomeMessageSubtitle}>
+                  Connectez-vous avec votre numéro de téléphone
+                </Text>
+              </View>
+            </View>
+          </Animated.View>
+        )}
+        
+        {/* ✅ Beautiful Success Toast */}
+        {showSuccessToast && (
+          <Animated.View 
+            style={[
+              styles.successToastContainer,
+              {
+                opacity: successToastAnim,
+                transform: [{ translateY: successToastSlideAnim }],
+                top: insets.top + 20,
+              }
+            ]}
+          >
+            <View style={[styles.successToast, { backgroundColor: '#4CAF50' }]}>
+              <Animated.View
+                style={{
+                  transform: [{ 
+                    scale: successToastAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.8, 1],
+                    })
+                  }],
+                }}
+              >
+                <MaterialCommunityIcons 
+                  name="check-circle" 
+                  size={28} 
+                  color="#ffffff" 
+                />
+              </Animated.View>
+              <View style={styles.successToastTextContainer}>
+                <Text style={styles.successToastTitle}>Connexion réussie!</Text>
+                <Text style={styles.successToastSubtitle}>Redirection...</Text>
+              </View>
+              <Animated.View
+                style={{
+                  transform: [{ 
+                    rotate: successToastAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0deg', '360deg'],
+                    })
+                  }],
+                }}
+              >
+                <MaterialCommunityIcons 
+                  name="arrow-right-circle" 
+                  size={24} 
+                  color="#ffffff" 
+                />
+              </Animated.View>
+            </View>
+          </Animated.View>
+        )}
         
         <KeyboardAvoidingView 
           style={styles.keyboardAvoidingView}
@@ -395,23 +568,6 @@ export default function LoginScreen({navigation}) {
                   ]}
                 />
               </Animated.View>
-
-              {/* Success checkmark overlay */}
-              <Animated.View
-                style={[
-                  styles.successOverlay,
-                  {
-                    opacity: successAnim,
-                    transform: [{ scale: successAnim }],
-                  },
-                ]}
-              >
-                <MaterialCommunityIcons 
-                  name="check-circle" 
-                  size={60} 
-                  color="#4CAF50" 
-                />
-              </Animated.View>
             </Animated.View>
             
             {/* Animated Form Container */}
@@ -431,6 +587,7 @@ export default function LoginScreen({navigation}) {
               <View style={styles.inputContainer}>
                 <View style={styles.inputWrapper}>
                   <Input
+                    value={inputs.email} // ✅ Show pre-filled value
                     onChangeText={text => handleOnchange(text, 'email')}
                     onFocus={() => {
                       handleError(null, 'email');
@@ -551,21 +708,6 @@ const styles = StyleSheet.create({
     width: 120,
     height: 108,
   },
-  successOverlay: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    marginTop: -30,
-    marginLeft: -30,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 50,
-    padding: 20,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
   formContainer: {
     flex: 1,
     paddingHorizontal: 20,
@@ -595,5 +737,74 @@ const styles = StyleSheet.create({
   signupLink: {
     fontWeight: '700',
     textDecorationLine: 'underline',
+  },
+  // ✅ New styles for success toast
+  successToastContainer: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    zIndex: 1000,
+  },
+  successToast: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  successToastTextContainer: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 12,
+  },
+  successToastTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  successToastSubtitle: {
+    color: '#ffffff',
+    fontSize: 14,
+    opacity: 0.9,
+  },
+  // ✅ New styles for welcome message
+  welcomeMessageContainer: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    zIndex: 999,
+  },
+  welcomeMessage: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+  },
+  welcomeMessageTextContainer: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  welcomeMessageTitle: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: 'bold',
+    marginBottom: 1,
+  },
+  welcomeMessageSubtitle: {
+    color: '#ffffff',
+    fontSize: 13,
+    opacity: 0.9,
   },
 })
