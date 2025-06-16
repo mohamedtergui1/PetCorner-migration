@@ -296,7 +296,7 @@ export default function OrderScreen({ navigation }) {
             </Text>
             <TouchableOpacity 
               style={[styles.shopButton, { backgroundColor: PRIMARY_COLOR }]}
-              onPress={() => navigation.navigate('Home')}
+              onPress={() => navigation.navigate('ProductsScreen')}
               activeOpacity={0.8}
             >
               <Feather name="shopping-cart" size={18} color="#fff" style={{ marginRight: 8 }} />
