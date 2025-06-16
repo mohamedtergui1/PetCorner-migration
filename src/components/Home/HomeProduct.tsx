@@ -494,20 +494,7 @@ export default function HomeProduct({ navigation }: HomeProductProps) {
             {item.name}
           </Text>
           
-          {/* Product count badge */}
-          <View style={[styles.productCountBadge, {
-            backgroundColor: isSelected 
-              ? 'rgba(255,255,255,0.3)' 
-              : PRIMARY_COLOR + '20'
-          }]}>
-            <Text style={[styles.productCountText, {
-              color: isSelected 
-                ? '#FFFFFF' 
-                : PRIMARY_COLOR
-            }]}>
-              {item.loading ? '...' : item.products.length}
-            </Text>
-          </View>
+        
           
           {/* Error indicator */}
           {item.error && !item.loading && (
@@ -603,7 +590,7 @@ export default function HomeProduct({ navigation }: HomeProductProps) {
             style={styles.viewAllButton}
           >
             <Text style={[styles.viewAllText, { color: PRIMARY_COLOR }]}>
-              Voir tout ({category.products.length})
+              Voir tout 
             </Text>
             <Ionicons name="chevron-forward" size={16} color={PRIMARY_COLOR} />
           </TouchableOpacity>
@@ -719,20 +706,7 @@ export default function HomeProduct({ navigation }: HomeProductProps) {
                     {item.name}
                   </Text>
                   
-                  {/* Product count badge */}
-                  <View style={[styles.productCountBadge, {
-                    backgroundColor: indexCheck === item.id 
-                      ? 'rgba(255,255,255,0.3)' 
-                      : PRIMARY_COLOR + '20'
-                  }]}>
-                    <Text style={[styles.productCountText, {
-                      color: indexCheck === item.id 
-                        ? '#FFFFFF' 
-                        : PRIMARY_COLOR
-                    }]}>
-                      {item.loading ? '...' : item.products.length}
-                    </Text>
-                  </View>
+                 
                   
                   {/* Error indicator */}
                   {item.error && !item.loading && (

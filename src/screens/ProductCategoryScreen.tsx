@@ -124,6 +124,27 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
   const PAGE_SIZE: number = 10;
   const isLoadingRef = useRef<boolean>(false);
 
+  // ✅ Helper function to remove duplicate products and ensure unique keys
+  const removeDuplicateProducts = useCallback((productsList: Product[]): Product[] => {
+    const uniqueProducts = new Map<string, Product>();
+    
+    productsList.forEach((product) => {
+      const id = product.id?.toString();
+      if (id && !uniqueProducts.has(id)) {
+        uniqueProducts.set(id, product);
+      }
+    });
+    
+    return Array.from(uniqueProducts.values());
+  }, []);
+
+  // ✅ Improved key extractor function
+  const getProductKey = useCallback((item: Product, index: number): string => {
+    // Use combination of id and index to ensure uniqueness
+    const productId = item.id?.toString() || `unknown-${index}`;
+    return `product-${productId}-${index}`;
+  }, []);
+
   // Fixed loadProducts function - removed currentPage from dependency array
   const loadProducts = useCallback(async (categoryId: string, resetPagination: boolean = true): Promise<void> => {
     if (isLoadingRef.current) return;
@@ -158,11 +179,17 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
         ? newProducts.length
         : (result.pagination?.total || newProducts.length);
 
+      // ✅ Remove duplicates before setting state
       if (resetPagination) {
-        setProducts(newProducts);
+        const uniqueProducts = removeDuplicateProducts(newProducts);
+        setProducts(uniqueProducts);
       } else {
-        setProducts((prev: Product[]) => [...prev, ...newProducts]);
+        setProducts((prev: Product[]) => {
+          const combinedProducts = [...prev, ...newProducts];
+          return removeDuplicateProducts(combinedProducts);
+        });
       }
+      
       setTotalProducts(total);
       setCategoryName(selectedCategory?.name || '');
       setCurrentPage(pageToLoad + 1);
@@ -173,7 +200,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
       setLoadingMore(false);
       isLoadingRef.current = false;
     }
-  }, []); // Empty dependency array to prevent unnecessary re-renders
+  }, [removeDuplicateProducts]); // Add removeDuplicateProducts to dependency array
 
   // Effect for initial load and category changes
   useEffect(() => {
@@ -210,7 +237,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
     });
   }, []);
 
-  const renderProduct = useCallback(({ item }: ListRenderItemInfo<Product>): JSX.Element => {
+  const renderProduct = useCallback(({ item, index }: ListRenderItemInfo<Product>): JSX.Element => {
     const hasImageFailed: boolean = failedImageLoads.has(item.id);
     const productCardProps: ProductCard2Props = {
       navigation,
@@ -305,9 +332,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
           onPress={() => navigation.goBack()}
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
-
         </TouchableOpacity>
-
 
         <Text style={styles.headerTitle}>Catégories</Text>
 
@@ -373,7 +398,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
       ) : (
         <FlatList<Product>
           data={products}
-          keyExtractor={(item: Product) => `product-${item.id}`}
+          keyExtractor={getProductKey} // ✅ Use improved key extractor
           renderItem={renderProduct}
           numColumns={2}
           columnWrapperStyle={styles.productRow}
@@ -381,6 +406,9 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
           showsVerticalScrollIndicator={false}
           onEndReached={loadMoreProducts}
           onEndReachedThreshold={0.5}
+          removeClippedSubviews={true} // ✅ Performance optimization
+          maxToRenderPerBatch={10} // ✅ Performance optimization
+          windowSize={10} // ✅ Performance optimization
           ListFooterComponent={
             loadingMore ? (
               <View style={styles.loadingFooter}>
