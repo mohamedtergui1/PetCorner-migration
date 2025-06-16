@@ -59,7 +59,7 @@ const Header = ({ navigation, theme }) => { // Removed cartItemsCount prop since
       </View>
 
       <TouchableOpacity
-        onPress={() => navigation.navigate('Panier')}
+        onPress={() => navigation.navigate('CartScreen')}
         activeOpacity={0.6}
         style={{
           alignItems: 'center',
