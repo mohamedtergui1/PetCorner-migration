@@ -19,7 +19,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { COLOURS, Items } from '../../database/Database';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import Feather from 'react-native-vector-icons/Feather';
+import FontAwesome from 'react-native-vector-icons/FontAwesome';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import API_BASE_URL from '../../../config/Api';
@@ -474,7 +474,7 @@ export default function Cart({ navigation }) {
         Toast.show('Les articles seront livrés BIENTOT !', Toast.SHORT);
         setIsLoading(true);
       }
-      navigation.navigate('Home2');
+      navigation.navigate('Accueil');
     } catch (error) {
       console.log("Error:", error);
       if (error.response) {
@@ -746,8 +746,8 @@ export default function Cart({ navigation }) {
           }}
           style={styles.backButton}
         >
-          <Feather
-            name="arrow-left"
+          <Ionicons
+            name="arrow-back"
             size={24}
             color="#fff"
           />
@@ -766,8 +766,8 @@ export default function Cart({ navigation }) {
           style={styles.backButton}
           onPress={() => getDataFromDB()}
         >
-          <Feather
-            name="refresh-cw"
+          <Ionicons
+            name="refresh"
             size={20}
             color="#fff"
           />
@@ -984,7 +984,7 @@ export default function Cart({ navigation }) {
               <TouchableOpacity
                 onPress={() => (total != 0 ? checkOut() : null)}
                 style={[styles.shopButton, { backgroundColor: PRIMARY_COLOR }]}>
-                <Feather 
+                <FontAwesome 
                   name="shopping-bag"
                   size={18}
                   color="#fff"

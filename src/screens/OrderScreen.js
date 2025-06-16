@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Feather from 'react-native-vector-icons/Feather';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import API_BASE_URL from '../../config/Api';
@@ -249,8 +250,8 @@ export default function OrderScreen({ navigation }) {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Feather 
-            name="arrow-left" 
+          <Ionicons 
+            name="arrow-back" 
             size={24} 
             color="#fff" 
           />
