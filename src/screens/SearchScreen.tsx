@@ -1,4 +1,6 @@
-import React, { useCallback, useRef, useState, useEffect } from 'react';
+"use client"
+
+import { useCallback, useRef, useState, useEffect } from "react"
 import {
   FlatList,
   Modal,
@@ -7,7 +9,6 @@ import {
   TouchableWithoutFeedback,
   View,
   TextInput,
-  Alert,
   Keyboard,
   ActivityIndicator,
   useWindowDimensions,
@@ -16,126 +17,125 @@ import {
   SafeAreaView,
   ScrollView,
   Image,
-} from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import Ionicons from 'react-native-vector-icons/Ionicons';
-import { useTheme } from '../context/ThemeContext';
-import ProductCard2 from '../components/Product/ProductCard2';
-import { filterData } from '../database/Database';
+} from "react-native"
+import { useFocusEffect } from "@react-navigation/native"
+import Ionicons from "react-native-vector-icons/Ionicons"
+import { useTheme } from "../context/ThemeContext"
+import ProductCard2 from "../components/Product/ProductCard2"
+import { filterData } from "../database/Database"
 
 // Import the ProductService and CategoryService
-import ProductService, { 
-  Product, 
-  PaginatedProductResponse,
-  ProductListResponse,
-  FilteredProductsParams 
-} from '../service/CustomProductApiService';
+import ProductService, { type Product, type FilteredProductsParams } from "../service/CustomProductApiService"
 
-import categoryService, { getCategories, getCategoryProducts, getSubcategories } from '../service/CategoryService';
+import categoryService, { getCategories } from "../service/CategoryService"
 
 // =====================================
 // TYPES AND INTERFACES
 // =====================================
 
 interface SearchScreenProps {
-  navigation: any;
+  navigation: any
 }
 
 interface PaginationData {
-  total: number;
-  page: number;
-  page_count: number;
-  limit: number;
-  current_count: number;
-  has_more: boolean;
+  total: number
+  page: number
+  page_count: number
+  limit: number
+  current_count: number
+  has_more: boolean
 }
 
 interface CategoryData {
-  id: string;
-  name: string;
-  image: any;
+  id: string
+  name: string
+  image: any
 }
 
 // =====================================
 // CONSTANTS
 // =====================================
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 10
 
 // Category mapping from filterData IDs to API category IDs
 const CATEGORY_MAPPING: { [key: string]: number } = {
-  "2": 2,     // Chien -> API category 2
-  "3": 3,     // Chat -> API category 3
+  "2": 2, // Chien -> API category 2
+  "3": 3, // Chat -> API category 3
   "184": 184, // Lapin -> API category 184
-  "21": 21,   // Poisson -> API category 21
-  "31": 31,   // Reptile -> API category 31
-  "20": 20,   // Oiseau -> API category 20
-};
+  "21": 21, // Poisson -> API category 21
+  "31": 31, // Reptile -> API category 31
+  "20": 20, // Oiseau -> API category 20
+}
 
 // =====================================
 // MAIN COMPONENT
 // =====================================
 
 export default function SearchScreen({ navigation }: SearchScreenProps) {
-  const { isDarkMode, colorTheme } = useTheme();
-  const { width, height } = useWindowDimensions();
-  
+  const { isDarkMode, colorTheme } = useTheme()
+  const { width, height } = useWindowDimensions()
+
   // =====================================
   // STATE MANAGEMENT
   // =====================================
-  
+
   // UI States
-  const [modalVisible, setModalVisible] = useState(false);
-  const [textInputFocussed, setTextInputFocussed] = useState(false);
-  const [showCategoryFilter, setShowCategoryFilter] = useState(false);
-  
+  const [modalVisible, setModalVisible] = useState(false)
+  const [textInputFocussed, setTextInputFocussed] = useState(false)
+  const [showCategoryFilter, setShowCategoryFilter] = useState(false)
+
   // Search States
-  const [searchText, setSearchText] = useState('');
-  const [products, setProducts] = useState<Product[]>([]);
-  
+  const [searchText, setSearchText] = useState("")
+  const [products, setProducts] = useState<Product[]>([])
+
   // Loading States
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [categoriesLoading, setCategoriesLoading] = useState(false);
-  
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [categoriesLoading, setCategoriesLoading] = useState(false)
+
+  // Error States
+  const [error, setError] = useState<string | null>(null)
+  const [isNotFound, setIsNotFound] = useState(false)
+
   // Pagination States
-  const [currentPage, setCurrentPage] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0)
   const [paginationData, setPaginationData] = useState<PaginationData>({
     total: 0,
     page: 0,
     page_count: 0,
     limit: PAGE_SIZE,
     current_count: 0,
-    has_more: false
-  });
-  
+    has_more: false,
+  })
+
   // Category Selection
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("2"); // Default to Chien
-  const [categoryName, setCategoryName] = useState('Chien');
-  
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("2") // Default to Chien
+  const [categoryName, setCategoryName] = useState("Chien")
+
   // Category filtering states
-  const [searchCategoryText, setSearchCategoryText] = useState('');
-  const [expandedCategories, setExpandedCategories] = useState(new Set());
-  
+  const [searchCategoryText, setSearchCategoryText] = useState("")
+  const [expandedCategories, setExpandedCategories] = useState(new Set())
+
   // API Categories data
-  const [apiCategories, setApiCategories] = useState([]);
-  
-  const textInput = useRef<TextInput>(null);
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [apiCategories, setApiCategories] = useState([])
+
+  const textInput = useRef<TextInput>(null)
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // =====================================
   // THEME COLORS
   // =====================================
-  
-  const PRIMARY_COLOR = colorTheme === 'blue' ? '#007afe' : '#fe9400';
-  const SECONDARY_COLOR = colorTheme === 'blue' ? '#fe9400' : '#007afe';
-  const BACKGROUND_COLOR = isDarkMode ? '#121212' : '#f8f8f8';
-  const CARD_BACKGROUND = isDarkMode ? '#1e1e1e' : '#ffffff';
-  const TEXT_COLOR = isDarkMode ? '#ffffff' : '#000000';
-  const TEXT_COLOR_SECONDARY = isDarkMode ? '#b3b3b3' : '#666666';
-  const BORDER_COLOR = isDarkMode ? '#2c2c2c' : '#e0e0e0';
-  const SURFACE_COLOR = isDarkMode ? '#1E1E1E' : '#f5f5f5';
+
+  const PRIMARY_COLOR = colorTheme === "blue" ? "#007afe" : "#fe9400"
+  const SECONDARY_COLOR = colorTheme === "blue" ? "#fe9400" : "#007afe"
+  const BACKGROUND_COLOR = isDarkMode ? "#121212" : "#f8f8f8"
+  const CARD_BACKGROUND = isDarkMode ? "#1e1e1e" : "#ffffff"
+  const TEXT_COLOR = isDarkMode ? "#ffffff" : "#000000"
+  const TEXT_COLOR_SECONDARY = isDarkMode ? "#b3b3b3" : "#666666"
+  const BORDER_COLOR = isDarkMode ? "#2c2c2c" : "#e0e0e0"
+  const SURFACE_COLOR = isDarkMode ? "#1E1E1E" : "#f5f5f5"
 
   // =====================================
   // CATEGORY FUNCTIONS
@@ -143,166 +143,192 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
 
   // Load categories from Dolibarr API
   const loadApiCategories = useCallback(async () => {
-    setCategoriesLoading(true);
+    setCategoriesLoading(true)
     try {
-      const categories = await getCategories();
-      setApiCategories(categories);
+      const categories = await getCategories()
+      setApiCategories(categories)
     } catch (error) {
-      console.error('Error loading API categories:', error);
-     
+      console.error("Error loading API categories:", error)
     } finally {
-      setCategoriesLoading(false);
+      setCategoriesLoading(false)
     }
-  }, []);
+  }, [])
 
   // Filter categories based on search text
   const getFilteredCategories = () => {
     if (!searchCategoryText.trim()) {
-      return apiCategories;
+      return apiCategories
     }
-    return categoryService.searchCategories(apiCategories, searchCategoryText);
-  };
+    return categoryService.searchCategories(apiCategories, searchCategoryText)
+  }
 
   const toggleCategoryExpansion = (categoryId) => {
-    const newExpanded = new Set(expandedCategories);
+    const newExpanded = new Set(expandedCategories)
     if (newExpanded.has(categoryId)) {
-      newExpanded.delete(categoryId);
+      newExpanded.delete(categoryId)
     } else {
-      newExpanded.add(categoryId);
+      newExpanded.add(categoryId)
     }
-    setExpandedCategories(newExpanded);
-  };
+    setExpandedCategories(newExpanded)
+  }
 
   // Handle category selection from API categories
-  const handleApiCategorySelect = useCallback(async (category) => {
-    const categoryId = category.id.toString();
-    setSelectedCategoryId(categoryId);
-    setCategoryName(category.label);
-    setShowCategoryFilter(false);
-    
-    // Reload products for new category
-    loadProducts(true, searchText);
-  }, [searchText]);
+  const handleApiCategorySelect = useCallback(
+    async (category) => {
+      const categoryId = category.id.toString()
+      setSelectedCategoryId(categoryId)
+      setCategoryName(category.label)
+      setShowCategoryFilter(false)
+
+      // Reload products for new category
+      loadProducts(true, searchText)
+    },
+    [searchText],
+  )
 
   // Handle category selection from filter data
-  const handleFilterCategorySelect = useCallback((categoryData) => {
-    setSelectedCategoryId(categoryData.id);
-    setCategoryName(categoryData.name);
-    setShowCategoryFilter(false);
-    
-    // Reload products for new category
-    loadProducts(true, searchText);
-  }, [searchText]);
+  const handleFilterCategorySelect = useCallback(
+    (categoryData) => {
+      setSelectedCategoryId(categoryData.id)
+      setCategoryName(categoryData.name)
+      setShowCategoryFilter(false)
+
+      // Reload products for new category
+      loadProducts(true, searchText)
+    },
+    [searchText],
+  )
 
   // =====================================
   // API FUNCTIONS
   // =====================================
 
   // Load products
-  const loadProducts = async (resetPagination = true, search = '') => {
+  const loadProducts = async (resetPagination = true, search = "") => {
     try {
       if (resetPagination) {
-        setLoading(true);
-        setCurrentPage(0);
-        setProducts([]);
+        setLoading(true)
+        setCurrentPage(0)
+        setProducts([])
+        setError(null)
+        setIsNotFound(false)
       } else {
-        setLoadingMore(true);
+        setLoadingMore(true)
       }
 
-      const pageToLoad = resetPagination ? 0 : currentPage;
-      const apiCategoryId = CATEGORY_MAPPING[selectedCategoryId];
-      
+      const pageToLoad = resetPagination ? 0 : currentPage
+      const apiCategoryId = CATEGORY_MAPPING[selectedCategoryId]
+
       const params: FilteredProductsParams = {
         limit: PAGE_SIZE,
         page: pageToLoad,
         pagination_data: true,
         includestockdata: 0,
         category: apiCategoryId,
-        sortfield: 'datec',
-        sortorder: 'DESC'
-      };
+        sortfield: "datec",
+        sortorder: "DESC",
+      }
 
       // Add search if provided
       if (search && search.trim()) {
-        params.search = search.trim();
+        params.search = search.trim()
       }
 
-      console.log('🔍 Loading products with params:', params);
-      
-      const result = await ProductService.getFilteredProducts(params);
-      
-      let newProducts: Product[] = [];
+      console.log("🔍 Loading products with params:", params)
+
+      const result = await ProductService.getFilteredProducts(params)
+
+      let newProducts: Product[] = []
       let newPaginationData: PaginationData = {
         total: 0,
         page: pageToLoad,
         page_count: 0,
         limit: PAGE_SIZE,
         current_count: 0,
-        has_more: false
-      };
+        has_more: false,
+      }
 
-      if ('pagination' in result) {
-        newProducts = result.data || [];
+      if ("pagination" in result) {
+        newProducts = result.data || []
         newPaginationData = {
           total: result.pagination.total || 0,
           page: result.pagination.page || pageToLoad,
           page_count: result.pagination.page_count || 0,
           limit: result.pagination.limit || PAGE_SIZE,
           current_count: newProducts.length,
-          has_more: (result.pagination.page || 0) < (result.pagination.page_count || 0) - 1
-        };
+          has_more: (result.pagination.page || 0) < (result.pagination.page_count || 0) - 1,
+        }
       } else {
-        newProducts = result as Product[];
+        newProducts = result as Product[]
         newPaginationData = {
           total: newProducts.length,
           page: 0,
           page_count: 1,
           limit: PAGE_SIZE,
           current_count: newProducts.length,
-          has_more: false
-        };
+          has_more: false,
+        }
       }
 
       if (resetPagination) {
-        setProducts(newProducts);
-        setCurrentPage(0);
-        setPaginationData(newPaginationData);
+        setProducts(newProducts)
+        setCurrentPage(0)
+        setPaginationData(newPaginationData)
       } else {
-        setProducts(prev => [...prev, ...newProducts]);
-        setCurrentPage(pageToLoad + 1);
-        setPaginationData(prev => ({
+        setProducts((prev) => [...prev, ...newProducts])
+        setCurrentPage(pageToLoad + 1)
+        setPaginationData((prev) => ({
           ...newPaginationData,
-          current_count: prev.current_count + newProducts.length
-        }));
+          current_count: prev.current_count + newProducts.length,
+        }))
       }
 
-      console.log('✅ Products loaded:', {
+      console.log("✅ Products loaded:", {
         search,
         results: newProducts.length,
         total: newPaginationData.total,
         page: newPaginationData.page,
-        category: categoryName
-      });
-
+        category: categoryName,
+      })
     } catch (error) {
-      console.error('❌ Error loading products:', error);
-       
+      console.error("❌ Error loading products:", error)
+
+      // Check if it's a 404 error or no products found
+      if (error?.response?.status === 404 || error?.message?.includes("404") || error?.message?.includes("Not Found")) {
+        setIsNotFound(true)
+        setError("No products found")
+      } else {
+        setError("Une erreur est survenue lors du chargement des produits")
+      }
+
+      // Reset products on error
+      if (resetPagination) {
+        setProducts([])
+        setPaginationData({
+          total: 0,
+          page: 0,
+          page_count: 0,
+          limit: PAGE_SIZE,
+          current_count: 0,
+          has_more: false,
+        })
+      }
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      setRefreshing(false);
+      setLoading(false)
+      setLoadingMore(false)
+      setRefreshing(false)
     }
-  };
+  }
 
   // Load more products
   const loadMoreProducts = () => {
-    const hasMore = (currentPage + 1) < paginationData.page_count;
-    
-    if (!loadingMore && hasMore && !loading) {
-      console.log('📄 Loading more products - page:', currentPage + 1);
-      loadProducts(false, searchText);
+    const hasMore = currentPage + 1 < paginationData.page_count
+
+    if (!loadingMore && hasMore && !loading && !error) {
+      console.log("📄 Loading more products - page:", currentPage + 1)
+      loadProducts(false, searchText)
     }
-  };
+  }
 
   // =====================================
   // EVENT HANDLERS
@@ -310,82 +336,90 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
 
   // Handle search input change
   const handleSearchInputChange = (text: string) => {
-    setSearchText(text);
-    
+    setSearchText(text)
+
     // Clear previous timeout
     if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
+      clearTimeout(searchTimeoutRef.current)
     }
-    
+
+    // Reset error states when user types
+    setError(null)
+    setIsNotFound(false)
+
     // Debounce search
     searchTimeoutRef.current = setTimeout(() => {
-      loadProducts(true, text);
-    }, 500);
-  };
+      loadProducts(true, text)
+    }, 500)
+  }
 
   // Handle search submission
   const handleSearchSubmit = () => {
     if (searchText.trim()) {
-      loadProducts(true, searchText.trim());
-      setModalVisible(false);
-      Keyboard.dismiss();
+      loadProducts(true, searchText.trim())
+      setModalVisible(false)
+      Keyboard.dismiss()
     }
-  };
+  }
 
   // Clear search
   const clearSearch = () => {
-    setSearchText('');
-    textInput.current?.clear();
-    loadProducts(true, '');
-    
+    setSearchText("")
+    textInput.current?.clear()
+    setError(null)
+    setIsNotFound(false)
+    loadProducts(true, "")
+
     if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
+      clearTimeout(searchTimeoutRef.current)
     }
-  };
+  }
 
   // Handle modal close
   const handleModalClose = () => {
-    setModalVisible(false);
-    setTextInputFocussed(false);
-  };
+    setModalVisible(false)
+    setTextInputFocussed(false)
+  }
 
   // Handle refresh
   const onRefresh = () => {
-    setRefreshing(true);
-    loadProducts(true, searchText);
-  };
+    setRefreshing(true)
+    setError(null)
+    setIsNotFound(false)
+    loadProducts(true, searchText)
+  }
 
   // Navigate to product details
   const navigateToProductDetails = (product: Product) => {
-    console.log('🔍 Navigate to ProductDetails:', product.id);
-    navigation.navigate('ProductDetails', { 
+    console.log("🔍 Navigate to ProductDetails:", product.id)
+    navigation.navigate("ProductDetails", {
       productId: product.id,
-      product: product 
-    });
-  };
+      product: product,
+    })
+  }
 
   // Clear category search
   const clearCategorySearch = () => {
-    setSearchCategoryText('');
-  };
+    setSearchCategoryText("")
+  }
 
   const expandAll = () => {
-    const allCategoryIds = new Set();
+    const allCategoryIds = new Set()
     const addCategoryIds = (cats) => {
-      cats.forEach(cat => {
+      cats.forEach((cat) => {
         if (cat.subcategories && cat.subcategories.length > 0) {
-          allCategoryIds.add(cat.id);
-          addCategoryIds(cat.subcategories);
+          allCategoryIds.add(cat.id)
+          addCategoryIds(cat.subcategories)
         }
-      });
-    };
-    addCategoryIds(apiCategories);
-    setExpandedCategories(allCategoryIds);
-  };
+      })
+    }
+    addCategoryIds(apiCategories)
+    setExpandedCategories(allCategoryIds)
+  }
 
   const collapseAll = () => {
-    setExpandedCategories(new Set());
-  };
+    setExpandedCategories(new Set())
+  }
 
   // =====================================
   // EFFECTS
@@ -393,24 +427,24 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
 
   // Load API categories on component mount
   useEffect(() => {
-    loadApiCategories();
-  }, [loadApiCategories]);
+    loadApiCategories()
+  }, [loadApiCategories])
 
   // Load products when screen focuses or category changes
   useFocusEffect(
     useCallback(() => {
-      loadProducts(true, searchText);
-    }, [selectedCategoryId])
-  );
+      loadProducts(true, searchText)
+    }, [selectedCategoryId]),
+  )
 
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
       if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
+        clearTimeout(searchTimeoutRef.current)
       }
-    };
-  }, []);
+    }
+  }, [])
 
   // =====================================
   // RENDER FUNCTIONS
@@ -426,143 +460,87 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
       isDarkMode={isDarkMode}
       colorTheme={colorTheme}
     />
-  );
+  )
 
-  // Render category item for horizontal scroll
-  const renderCategoryItem = useCallback(({ item }) => {
-    const isSelected = selectedCategoryId === item.id;
-    
-    return (
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={() => handleFilterCategorySelect(item.id)}
-        style={{
-          marginHorizontal: 5,
-          marginVertical: 8,
-        }}
-      >
-        <View
-          style={[
-            styles.categoryCard,
-            {
-              backgroundColor: isSelected 
-                ? PRIMARY_COLOR 
-                : (isDarkMode ? 'rgba(255,255,255,0.08)' : '#f0f0f0')
-            }
-          ]}
-        >
-          <View style={[styles.categoryImageWrapper, {
-            backgroundColor: isSelected 
-              ? 'rgba(255,255,255,0.15)' 
-              : (isDarkMode ? '#333' : '#e0e0e0')
-          }]}>
-            <Ionicons 
-              name="paw-outline" 
-              size={30} 
-              color={isSelected ? '#ffffff' : PRIMARY_COLOR} 
-            />
-          </View>
-          <Text
-            style={[
-              styles.categoryText,
-              { 
-                color: isSelected 
-                  ? '#ffffff' 
-                  : TEXT_COLOR_SECONDARY 
-              }
-            ]}
-            numberOfLines={2}
-          >
-            {item.name}
+  // Enhanced Empty/Error Component
+  const renderEmptyOrError = () => {
+    if (error || isNotFound) {
+      return (
+        <View style={styles.emptyResults}>
+          <Ionicons
+            name={isNotFound ? "search-outline" : "alert-circle-outline"}
+            size={64}
+            color={TEXT_COLOR_SECONDARY}
+          />
+          <Text style={[styles.emptyResultsTitle, { color: TEXT_COLOR }]}>
+            {isNotFound ? "Aucun produit trouvé" : "Erreur de chargement"}
           </Text>
-        </View>
-      </TouchableOpacity>
-    );
-  }, [selectedCategoryId, handleFilterCategorySelect, isDarkMode, PRIMARY_COLOR, TEXT_COLOR_SECONDARY]);
-
-  // Render API category for modal (copied from ProductCategoryScreen)
-  const renderApiCategory = (category, level = 0) => {
-    const isExpanded = expandedCategories.has(category.id);
-    const isSelected = selectedCategoryId === category.id.toString();
-    const hasSubcategories = category.subcategories && category.subcategories.length > 0;
-    const categoryColor = category.color ? `#${category.color}` : SECONDARY_COLOR;
-
-    return (
-      <View key={category.id} style={[styles.modalCategoryContainer, { marginLeft: level * 20 }]}>
-        <TouchableOpacity
-          style={[
-            styles.modalCategoryItem,
-            {
-              backgroundColor: isSelected ? `${PRIMARY_COLOR}20` : SURFACE_COLOR,
-              borderLeftColor: categoryColor,
-              borderColor: isSelected ? PRIMARY_COLOR : BORDER_COLOR,
-            }
-          ]}
-          onPress={() => handleApiCategorySelect(category)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.modalCategoryContent}>
-            <View style={[styles.colorIndicator, { backgroundColor: categoryColor }]} />
-            
-            <View style={styles.modalCategoryText}>
-              <Text style={[
-                styles.modalCategoryLabel,
+          <Text style={[styles.emptyResultsText, { color: TEXT_COLOR_SECONDARY }]}>
+            {isNotFound
+              ? searchText
+                ? `Aucun produit ne correspond à "${searchText}" dans ${categoryName}`
+                : `Aucun produit disponible dans ${categoryName}`
+              : error || "Une erreur est survenue lors du chargement"}
+          </Text>
+          <View style={styles.emptyActions}>
+            {searchText && (
+              <TouchableOpacity style={[styles.actionButton, { backgroundColor: PRIMARY_COLOR }]} onPress={clearSearch}>
+                <Ionicons name="refresh" size={16} color="#fff" />
+                <Text style={styles.actionButtonText}>Effacer la recherche</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
                 {
-                  color: isSelected ? PRIMARY_COLOR : TEXT_COLOR,
-                  fontWeight: level === 0 ? 'bold' : '600'
-                }
-              ]}>
-                {category.label}
-              </Text>
-              {category.description && category.description !== category.label && (
-                <Text style={[styles.modalCategoryDescription, { color: TEXT_COLOR_SECONDARY }]}>
-                  {category.description}
-                </Text>
-              )}
-            </View>
-
-            <View style={styles.modalCategoryActions}>
-              {isSelected && (
-                <Ionicons name="checkmark-circle" size={20} color={PRIMARY_COLOR} />
-              )}
-              {hasSubcategories && (
-                <TouchableOpacity
-                  onPress={() => toggleCategoryExpansion(category.id)}
-                  style={styles.expandButton}
-                >
-                  <Ionicons
-                    name={isExpanded ? "chevron-up" : "chevron-down"}
-                    size={20}
-                    color={TEXT_COLOR_SECONDARY}
-                  />
-                </TouchableOpacity>
-              )}
-            </View>
+                  backgroundColor: "transparent",
+                  borderWidth: 1,
+                  borderColor: PRIMARY_COLOR,
+                },
+              ]}
+              onPress={() => loadProducts(true, searchText)}
+            >
+              <Ionicons name="reload" size={16} color={PRIMARY_COLOR} />
+              <Text style={[styles.actionButtonText, { color: PRIMARY_COLOR }]}>Réessayer</Text>
+            </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        </View>
+      )
+    }
 
-        {hasSubcategories && isExpanded && (
-          <View style={styles.subcategoriesContainer}>
-            {category.subcategories.map(subcat => renderApiCategory(subcat, level + 1))}
-          </View>
+    // Default empty state (no error)
+    return (
+      <View style={styles.emptyResults}>
+        <Ionicons name="search-outline" size={64} color={TEXT_COLOR_SECONDARY} />
+        <Text style={[styles.emptyResultsTitle, { color: TEXT_COLOR }]}>
+          {searchText ? "Aucun résultat trouvé" : "Aucun produit disponible"}
+        </Text>
+        <Text style={[styles.emptyResultsText, { color: TEXT_COLOR_SECONDARY }]}>
+          {searchText
+            ? `Aucun produit ne correspond à "${searchText}" pour ${categoryName}`
+            : `Aucun produit disponible pour ${categoryName}`}
+        </Text>
+        {searchText && (
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: PRIMARY_COLOR }]} onPress={clearSearch}>
+            <Ionicons name="refresh" size={16} color="#fff" />
+            <Text style={styles.actionButtonText}>Effacer la recherche</Text>
+          </TouchableOpacity>
         )}
       </View>
-    );
-  };
+    )
+  }
 
   // Render loading footer
   const renderFooter = () => {
-    if (!loadingMore) return null;
-    
+    if (!loadingMore) return null
+
     return (
       <View style={styles.loadingFooter}>
         <ActivityIndicator size="small" color={PRIMARY_COLOR} />
-        <Text style={[styles.loadingFooterText, { color: TEXT_COLOR_SECONDARY }]}>
-          Chargement...
-        </Text>
+        <Text style={[styles.loadingFooterText, { color: TEXT_COLOR_SECONDARY }]}>Chargement...</Text>
       </View>
-    );
-  };
+    )
+  }
 
   // Render header info
   const renderHeaderInfo = () => (
@@ -574,15 +552,18 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
         </Text>
       </View>
       {searchText && (
-        <TouchableOpacity onPress={clearSearch} style={[styles.clearSearchButton, { backgroundColor: PRIMARY_COLOR + '15' }]}>
+        <TouchableOpacity
+          onPress={clearSearch}
+          style={[styles.clearSearchButton, { backgroundColor: PRIMARY_COLOR + "15" }]}
+        >
           <Ionicons name="close" size={14} color={PRIMARY_COLOR} />
           <Text style={[styles.clearSearchText, { color: PRIMARY_COLOR }]}>Effacer</Text>
         </TouchableOpacity>
       )}
     </View>
-  );
+  )
 
-  const filteredCategories = getFilteredCategories();
+  const filteredCategories = getFilteredCategories()
 
   // =====================================
   // MAIN RENDER
@@ -590,21 +571,15 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: BACKGROUND_COLOR }]}>
-      <StatusBar 
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'} 
-        backgroundColor={BACKGROUND_COLOR} 
-      />
+      <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} backgroundColor={BACKGROUND_COLOR} />
 
       {/* Header */}
       <View style={[styles.header, { backgroundColor: PRIMARY_COLOR }]}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Recherche</Text>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.categoryFilterButton}
           onPress={() => setShowCategoryFilter(true)}
           disabled={categoriesLoading}
@@ -614,7 +589,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
           ) : (
             <View style={styles.categoryDisplayButton}>
               <Text style={styles.categoryDisplayText}>
-                {filterData.find(cat => cat.id === selectedCategoryId)?.name || categoryName}
+                {filterData.find((cat) => cat.id === selectedCategoryId)?.name || categoryName}
               </Text>
               <Ionicons name="chevron-down" size={16} color="#fff" />
             </View>
@@ -622,22 +597,20 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
         </TouchableOpacity>
       </View>
 
-      {/* Categories Filter (Horizontal) - REMOVED */}
-
       {/* Search Bar */}
       <View style={styles.searchContainer}>
         <TouchableWithoutFeedback onPress={() => setModalVisible(true)}>
-          <View style={[styles.searchArea, { 
-            backgroundColor: CARD_BACKGROUND, 
-            borderColor: BORDER_COLOR,
-            shadowColor: isDarkMode ? '#000' : PRIMARY_COLOR,
-          }]}>
-            <Ionicons 
-              name="search" 
-              size={22} 
-              color={TEXT_COLOR_SECONDARY}
-              style={styles.searchIcon}
-            />
+          <View
+            style={[
+              styles.searchArea,
+              {
+                backgroundColor: CARD_BACKGROUND,
+                borderColor: BORDER_COLOR,
+                shadowColor: isDarkMode ? "#000" : PRIMARY_COLOR,
+              },
+            ]}
+          >
+            <Ionicons name="search" size={22} color={TEXT_COLOR_SECONDARY} style={styles.searchIcon} />
             <Text style={[styles.searchPlaceholder, { color: searchText ? TEXT_COLOR : TEXT_COLOR_SECONDARY }]}>
               {searchText || "Qu'est-ce que vous cherchez ?"}
             </Text>
@@ -653,23 +626,16 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
       {/* Search Modal */}
       <Modal animationType="slide" transparent={false} visible={modalVisible}>
         <SafeAreaView style={[styles.modal, { backgroundColor: BACKGROUND_COLOR }]}>
-          
           {/* Modal Header */}
           <View style={[styles.modalHeader, { backgroundColor: PRIMARY_COLOR }]}>
-            <TouchableOpacity 
-              style={styles.modalBackButton}
-              onPress={handleModalClose}
-            >
+            <TouchableOpacity style={styles.modalBackButton} onPress={handleModalClose}>
               <Ionicons name="arrow-back" size={24} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.modalHeaderTitle}>Rechercher</Text>
-            <TouchableOpacity 
-              style={styles.categoryFilterButton}
-              onPress={() => setShowCategoryFilter(true)}
-            >
+            <TouchableOpacity style={styles.categoryFilterButton} onPress={() => setShowCategoryFilter(true)}>
               <View style={styles.categoryDisplayButton}>
                 <Text style={styles.categoryDisplayText}>
-                  {filterData.find(cat => cat.id === selectedCategoryId)?.name || categoryName}
+                  {filterData.find((cat) => cat.id === selectedCategoryId)?.name || categoryName}
                 </Text>
                 <Ionicons name="chevron-down" size={16} color="#fff" />
               </View>
@@ -678,18 +644,23 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
 
           {/* Search Input */}
           <View style={styles.searchInputContainer}>
-            <View style={[styles.searchInputWrapper, { 
-              borderColor: textInputFocussed ? PRIMARY_COLOR : BORDER_COLOR,
-              backgroundColor: CARD_BACKGROUND,
-              shadowColor: isDarkMode ? '#000' : PRIMARY_COLOR,
-            }]}>
-              <Ionicons 
-                name="search" 
-                size={20} 
+            <View
+              style={[
+                styles.searchInputWrapper,
+                {
+                  borderColor: textInputFocussed ? PRIMARY_COLOR : BORDER_COLOR,
+                  backgroundColor: CARD_BACKGROUND,
+                  shadowColor: isDarkMode ? "#000" : PRIMARY_COLOR,
+                },
+              ]}
+            >
+              <Ionicons
+                name="search"
+                size={20}
                 color={textInputFocussed ? PRIMARY_COLOR : TEXT_COLOR_SECONDARY}
                 style={styles.inputIcon}
               />
-              <TextInput 
+              <TextInput
                 style={[styles.textInput, { color: TEXT_COLOR }]}
                 placeholder="Tapez votre recherche..."
                 placeholderTextColor={TEXT_COLOR_SECONDARY}
@@ -709,7 +680,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
               )}
             </View>
           </View>
-          
+
           {/* Info Text */}
           <View style={styles.infoContainer}>
             <Text style={[styles.infoText, { color: TEXT_COLOR_SECONDARY }]}>
@@ -726,19 +697,17 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={PRIMARY_COLOR} />
-          <Text style={[styles.loadingText, { color: TEXT_COLOR }]}>
-            Chargement des produits...
-          </Text>
+          <Text style={[styles.loadingText, { color: TEXT_COLOR }]}>Chargement des produits...</Text>
         </View>
       ) : (
         <View style={styles.contentContainer}>
-          {renderHeaderInfo()}
+          {!error && !isNotFound && renderHeaderInfo()}
           <FlatList
             data={products}
             keyExtractor={(item, index) => `${item.id}-${index}`}
             renderItem={renderProduct}
             numColumns={2}
-            columnWrapperStyle={styles.productRow}
+            columnWrapperStyle={products.length > 0 ? styles.productRow : null}
             contentContainerStyle={styles.productsList}
             showsVerticalScrollIndicator={false}
             onEndReached={loadMoreProducts}
@@ -746,28 +715,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
             refreshing={refreshing}
             onRefresh={onRefresh}
             ListFooterComponent={renderFooter}
-            ListEmptyComponent={
-              <View style={styles.emptyResults}>
-                <Ionicons name="search-outline" size={64} color={TEXT_COLOR_SECONDARY} />
-                <Text style={[styles.emptyResultsTitle, { color: TEXT_COLOR }]}>
-                  {searchText ? 'Aucun résultat trouvé' : 'Aucun produit disponible'}
-                </Text>
-                <Text style={[styles.emptyResultsText, { color: TEXT_COLOR_SECONDARY }]}>
-                  {searchText 
-                    ? `Aucun produit ne correspond à "${searchText}" pour ${categoryName}`
-                    : `Aucun produit disponible pour ${categoryName}`
-                  }
-                </Text>
-                {searchText && (
-                  <TouchableOpacity 
-                    style={[styles.clearButton2, { backgroundColor: PRIMARY_COLOR }]}
-                    onPress={clearSearch}
-                  >
-                    <Text style={styles.clearButtonText}>Effacer la recherche</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            }
+            ListEmptyComponent={renderEmptyOrError}
           />
         </View>
       )}
@@ -781,31 +729,26 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
       >
         <SafeAreaView style={[styles.modalContainer, { backgroundColor: BACKGROUND_COLOR }]}>
           {/* Modal Header */}
-          <View style={[styles.modalHeaderContainer, { 
-            backgroundColor: CARD_BACKGROUND, 
-            borderBottomColor: BORDER_COLOR 
-          }]}>
-            <TouchableOpacity
-              onPress={() => setShowCategoryFilter(false)}
-              style={styles.modalCloseButton}
-            >
+          <View
+            style={[
+              styles.modalHeaderContainer,
+              {
+                backgroundColor: CARD_BACKGROUND,
+                borderBottomColor: BORDER_COLOR,
+              },
+            ]}
+          >
+            <TouchableOpacity onPress={() => setShowCategoryFilter(false)} style={styles.modalCloseButton}>
               <Ionicons name="close" size={24} color={TEXT_COLOR} />
             </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: TEXT_COLOR }]}>
-              Choisir une catégorie
-            </Text>
-            <Text style={[styles.modalSubtitle, { color: TEXT_COLOR_SECONDARY }]}>
-              {filterData.length} catégories
-            </Text>
+            <Text style={[styles.modalTitle, { color: TEXT_COLOR }]}>Choisir une catégorie</Text>
+            <Text style={[styles.modalSubtitle, { color: TEXT_COLOR_SECONDARY }]}>{filterData.length} catégories</Text>
           </View>
 
           {/* Simple Categories List */}
-          <ScrollView 
-            style={styles.simpleCategoriesList}
-            showsVerticalScrollIndicator={false}
-          >
+          <ScrollView style={styles.simpleCategoriesList} showsVerticalScrollIndicator={false}>
             {filterData.map((category) => {
-              const isSelected = selectedCategoryId === category.id;
+              const isSelected = selectedCategoryId === category.id
               return (
                 <TouchableOpacity
                   key={category.id}
@@ -814,45 +757,42 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
                     {
                       backgroundColor: isSelected ? `${PRIMARY_COLOR}15` : CARD_BACKGROUND,
                       borderColor: isSelected ? PRIMARY_COLOR : BORDER_COLOR,
-                    }
+                    },
                   ]}
                   onPress={() => handleFilterCategorySelect(category)}
                   activeOpacity={0.7}
                 >
                   <View style={styles.simpleCategoryContent}>
                     <View style={styles.categoryImageContainer}>
-                      <Image
-                        style={styles.categoryImageSmall}
-                        source={category.image}
-                      />
+                      <Image style={styles.categoryImageSmall} source={category.image} />
                     </View>
-                    
+
                     <View style={styles.simpleCategoryText}>
-                      <Text style={[
-                        styles.simpleCategoryLabel,
-                        {
-                          color: isSelected ? PRIMARY_COLOR : TEXT_COLOR,
-                          fontWeight: isSelected ? '600' : '500'
-                        }
-                      ]}>
+                      <Text
+                        style={[
+                          styles.simpleCategoryLabel,
+                          {
+                            color: isSelected ? PRIMARY_COLOR : TEXT_COLOR,
+                            fontWeight: isSelected ? "600" : "500",
+                          },
+                        ]}
+                      >
                         {category.name}
                       </Text>
                     </View>
 
                     <View style={styles.simpleCategoryActions}>
-                      {isSelected && (
-                        <Ionicons name="checkmark-circle" size={20} color={PRIMARY_COLOR} />
-                      )}
+                      {isSelected && <Ionicons name="checkmark-circle" size={20} color={PRIMARY_COLOR} />}
                     </View>
                   </View>
                 </TouchableOpacity>
-              );
+              )
             })}
           </ScrollView>
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
-  );
+  )
 }
 
 // =====================================
@@ -865,9 +805,9 @@ const styles = StyleSheet.create({
   },
   header: {
     height: 60,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 15,
     elevation: 4,
     shadowColor: "#000",
@@ -877,42 +817,40 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
+    fontWeight: "600",
+    color: "#fff",
     flex: 1,
-    textAlign: 'center',
+    textAlign: "center",
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.15)",
   },
   categoryFilterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.15)",
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 8,
     maxWidth: 120,
   },
   categoryDisplayButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
   },
   categoryDisplayText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
     maxWidth: 80,
   },
-  
-  // Remove Categories Container styles (not needed)
-  
+
   searchContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -921,8 +859,8 @@ const styles = StyleSheet.create({
     height: 50,
     borderRadius: 25,
     borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     elevation: 2,
     shadowOffset: { width: 0, height: 2 },
@@ -944,9 +882,9 @@ const styles = StyleSheet.create({
   },
   modalHeader: {
     height: 60,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 15,
     elevation: 4,
     shadowColor: "#000",
@@ -956,26 +894,26 @@ const styles = StyleSheet.create({
   },
   modalHeaderTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
+    fontWeight: "600",
+    color: "#fff",
     flex: 1,
-    textAlign: 'center',
+    textAlign: "center",
   },
   modalBackButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.15)",
   },
   searchInputContainer: {
     paddingHorizontal: 16,
     paddingVertical: 16,
   },
   searchInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 2,
     borderRadius: 25,
     paddingHorizontal: 16,
@@ -999,42 +937,42 @@ const styles = StyleSheet.create({
   infoContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
-    alignItems: 'center',
+    alignItems: "center",
   },
   infoText: {
     fontSize: 14,
-    fontWeight: '500',
-    textAlign: 'center',
+    fontWeight: "500",
+    textAlign: "center",
   },
   infoSubText: {
     fontSize: 12,
     marginTop: 4,
-    textAlign: 'center',
+    textAlign: "center",
   },
   contentContainer: {
     flex: 1,
   },
   headerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
   },
   headerInfoLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     flex: 1,
   },
   headerInfoText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: "500",
     marginLeft: 8,
   },
   clearSearchButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
@@ -1042,32 +980,32 @@ const styles = StyleSheet.create({
   },
   clearSearchText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 24,
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   loadingFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 20,
     gap: 10,
   },
   loadingFooterText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   productRow: {
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
     marginBottom: 16,
   },
   productsList: {
@@ -1075,35 +1013,44 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   emptyResults: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 60,
     paddingHorizontal: 32,
   },
   emptyResultsTitle: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: "600",
     marginTop: 16,
-    textAlign: 'center',
+    textAlign: "center",
   },
   emptyResultsText: {
     fontSize: 16,
     marginTop: 8,
-    textAlign: 'center',
+    textAlign: "center",
     lineHeight: 22,
   },
-  clearButton2: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 25,
+  emptyActions: {
+    flexDirection: "row",
+    gap: 12,
     marginTop: 20,
+    flexWrap: "wrap",
+    justifyContent: "center",
   },
-  clearButtonText: {
-    color: '#fff',
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 6,
+  },
+  actionButtonText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
+    color: "#fff",
   },
-  
+
   // Simple Category Filter Modal Styles
   modalContainer: {
     flex: 1,
@@ -1111,22 +1058,22 @@ const styles = StyleSheet.create({
   modalHeaderContainer: {
     padding: 16,
     borderBottomWidth: 1,
-    alignItems: 'center',
-    position: 'relative',
+    alignItems: "center",
+    position: "relative",
   },
   modalCloseButton: {
-    position: 'absolute',
+    position: "absolute",
     left: 16,
     top: 16,
     width: 40,
     height: 40,
     borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     marginTop: 4,
   },
   modalSubtitle: {
@@ -1141,11 +1088,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     marginBottom: 8,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   simpleCategoryContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 16,
   },
   categoryImageContainer: {
@@ -1163,19 +1110,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   simpleCategoryActions: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     width: 24,
   },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 32,
-  },
-  emptyText: {
-    marginTop: 10,
-    fontSize: 16,
-    textAlign: 'center',
-  },
-});
+})
