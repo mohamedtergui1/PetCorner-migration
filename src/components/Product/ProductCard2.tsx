@@ -1,5 +1,5 @@
-// ProductCard2.tsx - Updated to match ProductCard navigation pattern
-import React, { useEffect, useRef } from 'react';
+// ProductCard2.tsx - Updated with Direct CartContext Integration
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
   Image,
@@ -9,9 +9,11 @@ import {
   View,
   Animated,
   Platform,
-  Alert, // ✅ Added Alert import
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useCart } from '../../context/CartContext'; // ✅ Import CartContext
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -37,13 +39,13 @@ interface Product {
     options_marque?: string;
     [key: string]: any;
   };
-  [key: string]: any; // ✅ FIXED: Allow additional properties to match any Product type
+  [key: string]: any;
 }
 
 export interface ProductCard2Props {
-  navigation?: any; // ✅ Made optional to prevent undefined errors
-  product: any; // ✅ FIXED: Use 'any' to avoid type conflicts
-  onPress?: (product: any) => void; // ✅ FIXED: Use 'any' for product parameter
+  navigation?: any;
+  product: any;
+  onPress?: (product: any) => void;
   viewMode?: 'grid' | 'list';
   isDarkMode?: boolean;
   colorTheme?: 'blue' | 'orange';
@@ -54,14 +56,21 @@ export interface ProductCard2Props {
 // =====================================
 
 const ProductCard2: React.FC<ProductCard2Props> = ({ 
-  navigation, // ✅ Optional navigation prop with error handling
-  product: data, // ✅ Rename to 'data' to match ProductCard pattern - now using 'any' type
+  navigation,
+  product: data,
   onPress, 
   viewMode = 'grid', 
   isDarkMode = false,
   colorTheme = 'blue',
 }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const buttonScaleAnim = useRef(new Animated.Value(1)).current;
+  const [isAddingToCart, setIsAddingToCart] = useState(false);
+  
+  // ✅ Use CartContext directly
+  const { addToCart, getItemQuantityInCart, canAddMoreItems } = useCart();
+  const [quantityInCart, setQuantityInCart] = useState(0);
+  const [stockInfo, setStockInfo] = useState(null);
 
   // =====================================
   // DATA EXTRACTION AND VALIDATION
@@ -109,12 +118,36 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
     }).start();
   }, [fadeAnim]);
 
+  // ✅ Update quantity in cart when cart changes
+  useEffect(() => {
+    if (data?.id) {
+      const quantity = getItemQuantityInCart(data.id);
+      setQuantityInCart(quantity);
+    }
+  }, [data?.id, getItemQuantityInCart]);
+
+  // ✅ Check stock availability when component mounts
+  useEffect(() => {
+    const checkStockAvailability = async () => {
+      if (data?.id) {
+        try {
+          const availability = await canAddMoreItems(data.id);
+          setStockInfo(availability);
+        } catch (error) {
+          console.error('Error checking stock availability:', error);
+        }
+      }
+    };
+
+    checkStockAvailability();
+  }, [data?.id, canAddMoreItems, quantityInCart]);
+
   // =====================================
   // UTILITY FUNCTIONS
   // =====================================
 
   // Stock information with improved logic
-  const getStockInfo = () => {
+  const getStockDisplayInfo = () => {
     if (productStock === null || productStock === undefined) {
       return { 
         bg: isDarkMode ? '#3f3f3f' : '#e5e5e5', 
@@ -131,6 +164,33 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
         icon: 'close-circle-outline',
         status: 'Indisponible'
       };
+    }
+    
+    // ✅ Show quantity in cart if any
+    if (quantityInCart > 0) {
+      const remaining = productStock - quantityInCart;
+      if (remaining <= 0) {
+        return { 
+          bg: isDarkMode ? '#7f1d1d' : '#fee2e2', 
+          textColor: isDarkMode ? '#fca5a5' : '#dc2626', 
+          icon: 'cart',
+          status: `${quantityInCart} au panier (stock épuisé)`
+        };
+      } else if (remaining <= 3) {
+        return { 
+          bg: isDarkMode ? '#78350f' : '#fef3c7', 
+          textColor: isDarkMode ? '#fcd34d' : '#d97706', 
+          icon: 'cart',
+          status: `${quantityInCart} au panier (${remaining} restant)`
+        };
+      } else {
+        return { 
+          bg: isDarkMode ? '#14532d' : '#dcfce7', 
+          textColor: isDarkMode ? '#86efac' : '#16a34a', 
+          icon: 'cart',
+          status: `${quantityInCart} au panier`
+        };
+      }
     }
     
     if (productStock <= 5) {
@@ -150,15 +210,15 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
     };
   };
 
-  const stockInfo = getStockInfo();
+  const stockDisplayInfo = getStockDisplayInfo();
 
   // Card layout calculations
   const getCardDimensions = () => {
     const isListMode = viewMode === 'list';
     const cardWidth = isListMode ? screenWidth - 32 : (screenWidth - 44) / 2;
-    const cardHeight = isListMode ? 120 : cardWidth * 1.35;
+    const cardHeight = isListMode ? 120 : cardWidth * 1.55;
     const imageWidth = isListMode ? 90 : cardWidth - 24;
-    const imageHeight = isListMode ? 90 : (cardWidth - 24) * 0.75;
+    const imageHeight = isListMode ? 90 : (cardWidth - 24) * 0.6;
     
     return {
       cardWidth,
@@ -175,25 +235,83 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
   // EVENT HANDLERS
   // =====================================
 
-  // ✅ FIXED: Simple handling - just log for now since ProductDetails doesn't exist
+  // Handle product card press (navigation to details)
   const handlePress = () => {
-    // First priority: use onPress if provided
     if (onPress) {
       onPress(data);
       return;
     }
     
-    // For now, just log the product info since ProductDetails screen doesn't exist
     console.log('ProductCard2: Product tapped:', {
       id: data?.id,
       label: data?.label,
       price: formattedPrice
     });
-    
-    // Optional: You can uncomment this when you create the ProductDetails screen
-    // if (navigation && navigation.navigate) {
-    //   navigation.navigate("ProductDetails", { productId: data.id });
-    // }
+  };
+
+  // ✅ Handle add to cart action using CartContext
+  const handleAddToCart = async () => {
+    if (!isAvailable || isAddingToCart || !data?.id) return;
+
+    // ✅ Check if we can add more items before attempting
+    if (stockInfo && !stockInfo.canAdd) {
+      Alert.alert(
+        'Stock épuisé', 
+        `Vous avez déjà ${stockInfo.currentInCart} article(s) au panier. Stock disponible: ${stockInfo.availableStock}`
+      );
+      return;
+    }
+
+    // Button press animation
+    Animated.sequence([
+      Animated.timing(buttonScaleAnim, {
+        toValue: 0.95,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(buttonScaleAnim, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    setIsAddingToCart(true);
+
+    try {
+      // ✅ Use CartContext addToCart method
+      const result = await addToCart(data.id);
+      
+      if (result.success) {
+        // Success feedback animation
+        Animated.sequence([
+          Animated.timing(buttonScaleAnim, {
+            toValue: 1.05,
+            duration: 150,
+            useNativeDriver: true,
+          }),
+          Animated.timing(buttonScaleAnim, {
+            toValue: 1,
+            duration: 150,
+            useNativeDriver: true,
+          }),
+        ]).start();
+
+        // ✅ Show success message if provided
+        if (result.message) {
+          // Optional: You can show a toast or brief alert
+          // For now, we'll just log it
+          console.log('Cart success:', result.message);
+        }
+      } else {
+        throw new Error(result.error || 'Erreur lors de l\'ajout au panier');
+      }
+    } catch (error) {
+      console.error('Error adding to cart:', error);
+      Alert.alert('Erreur', error.message || 'Impossible d\'ajouter le produit au panier');
+    } finally {
+      setIsAddingToCart(false);
+    }
   };
 
   // =====================================
@@ -227,11 +345,11 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
       />
       
       {/* Stock Indicator */}
-      <View style={[styles.stockIndicator, { backgroundColor: stockInfo.bg }]}>
+      <View style={[styles.stockIndicator, { backgroundColor: stockDisplayInfo.bg }]}>
         <MaterialCommunityIcons 
-          name={stockInfo.icon} 
+          name={stockDisplayInfo.icon} 
           size={dimensions.isListMode ? 12 : 10} 
-          color={stockInfo.textColor}
+          color={stockDisplayInfo.textColor}
         />
       </View>
     </View>
@@ -244,7 +362,8 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
       {
         flex: dimensions.isListMode ? 1 : 0,
         justifyContent: 'space-between',
-        height: dimensions.isListMode ? 90 : dimensions.cardHeight - dimensions.imageHeight - 32,
+        height: dimensions.isListMode ? 90 : dimensions.cardHeight - dimensions.imageHeight - 80,
+        marginBottom: dimensions.isListMode ? 0 : 50,
       }
     ]}>
       {/* Product Name and Details */}
@@ -297,7 +416,7 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
       </View>
       
       {/* Bottom Section: Price and Stock */}
-      <View style={styles.bottomContainer}>
+      <View style={[styles.bottomContainer, { marginBottom: 8 }]}>
         {/* Price Display */}
         {formattedPrice && (
           <View style={styles.priceContainer}>
@@ -318,29 +437,79 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
         <View style={[
           styles.availabilityContainer,
           { 
-            backgroundColor: stockInfo.bg,
+            backgroundColor: stockDisplayInfo.bg,
             alignSelf: dimensions.isListMode ? 'flex-end' : 'flex-start',
           }
         ]}>
           <MaterialCommunityIcons 
-            name={stockInfo.icon}
+            name={stockDisplayInfo.icon}
             size={dimensions.isListMode ? 11 : 10}
-            color={stockInfo.textColor}
+            color={stockDisplayInfo.textColor}
             style={{ marginRight: 3 }}
           />
           <Text style={[
             styles.availabilityText,
             {
               fontSize: dimensions.isListMode ? 10 : 9,
-              color: stockInfo.textColor,
+              color: stockDisplayInfo.textColor,
             }
           ]}>
-            {stockInfo.status}
+            {stockDisplayInfo.status}
           </Text>
         </View>
       </View>
     </View>
   );
+
+  // ✅ Render Add to Cart Button
+  const renderAddToCartButton = () => {
+    if (dimensions.isListMode) return null; // Don't show button in list mode
+
+    // ✅ Determine button state based on stock and cart status
+    const canAdd = stockInfo ? stockInfo.canAdd : isAvailable;
+    const buttonText = !isAvailable 
+      ? 'Indisponible' 
+      : !canAdd 
+        ? 'Stock épuisé' 
+        : quantityInCart > 0 
+          ? `Ajouter (${quantityInCart})` 
+          : 'Ajouter';
+
+    return (
+      <View style={styles.addToCartContainer}>
+        <Animated.View style={{ transform: [{ scale: buttonScaleAnim }] }}>
+          <TouchableOpacity
+            onPress={handleAddToCart}
+            disabled={!canAdd || isAddingToCart}
+            style={[
+              styles.addToCartButton,
+              {
+                backgroundColor: canAdd ? PRIMARY_COLOR : (isDarkMode ? '#444' : '#ccc'),
+                opacity: isAddingToCart ? 0.7 : 1,
+              }
+            ]}
+            activeOpacity={0.8}
+          >
+            {isAddingToCart ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <>
+                <MaterialCommunityIcons 
+                  name={quantityInCart > 0 ? "cart-plus" : "cart-plus"} 
+                  size={16} 
+                  color="#ffffff" 
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={styles.addToCartButtonText}>
+                  {buttonText}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
+    );
+  };
 
   // =====================================
   // MAIN RENDER
@@ -359,7 +528,7 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
       marginBottom: dimensions.isListMode ? 8 : 12 
     }}>
       <TouchableOpacity
-        onPress={handlePress} // ✅ FIXED: Using proper navigation like ProductCard
+        onPress={handlePress}
         activeOpacity={0.85}
         style={[
           styles.cardContainer,
@@ -376,6 +545,7 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
       >
         {renderProductImage()}
         {renderProductInfo()}
+        {renderAddToCartButton()}
       </TouchableOpacity>
     </Animated.View>
   );
@@ -390,6 +560,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     overflow: 'hidden',
+    position: 'relative',
     ...Platform.select({
       ios: {
         shadowOffset: { width: 0, height: 2 },
@@ -468,6 +639,32 @@ const styles = StyleSheet.create({
   availabilityText: {
     fontWeight: '600',
     letterSpacing: 0.2,
+  },
+  addToCartContainer: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    right: 10,
+    zIndex: 10,
+  },
+  addToCartButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  addToCartButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 });
 
