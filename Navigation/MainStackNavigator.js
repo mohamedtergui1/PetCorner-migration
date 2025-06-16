@@ -1,4 +1,4 @@
-// MainStackNavigator.js
+// MainStackNavigator.js - Single Stack Navigator for ALL app screens
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
@@ -13,7 +13,7 @@ import CartScreen from '../src/screens/CartScreen';
 import OrderScreen from '../src/screens/OrderScreen';
 import SearchScreen from '../src/screens/SearchScreen';
 import ProductCategoryScreen from '../src/screens/ProductCategoryScreen';
-import UserDetailsScreen from '../src/screens/UserDetailsScreen';
+import UserDetailsScreen from '../src/screens/UserDetailsScreen'; // ✅ Added UserDetailsScreen
 import ProfileScreen from '../src/screens/ProfileScreen';
 import LoginScreen from '../src/screens/Auth/LoginScreen';
 import Signup from '../src/screens/Auth/Signup';
@@ -52,6 +52,15 @@ export default function MainStackNavigator() {
         }}
       />
       
+      {/* ✅ UserDetailsScreen - Now accessible from anywhere in the app */}
+      <Stack.Screen 
+        name="UserDetailsScreen" 
+        component={UserDetailsScreen}
+        options={{
+          animation: 'slide_from_right'
+        }}
+      />
+      
       {/* All other screens */}
       <Stack.Screen 
         name="ProductsScreen" 
@@ -84,11 +93,6 @@ export default function MainStackNavigator() {
       <Stack.Screen 
         name="ProductCategoryScreen" 
         component={ProductCategoryScreen} 
-      />
-      
-      <Stack.Screen 
-        name="UserDetailsScreen" 
-        component={UserDetailsScreen} 
       />
       
       <Stack.Screen 

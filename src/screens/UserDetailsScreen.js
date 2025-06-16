@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import FeatherIcon from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons'; // Added for consistent back button
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { useFocusEffect } from '@react-navigation/native';
@@ -250,7 +251,7 @@ export default function UserDetailsScreen({ navigation }) {
       {showSuccess && (
         <View style={styles.successToast}>
           <View style={[styles.toastContent, { backgroundColor: '#4CAF50' }]}>
-            <FeatherIcon name="check-circle" size={20} color="#fff" />
+            <MaterialCommunityIcons name="check-circle" size={20} color="#fff" />
             <Text style={styles.toastText}>Informations mises à jour!</Text>
           </View>
         </View>
@@ -258,17 +259,19 @@ export default function UserDetailsScreen({ navigation }) {
 
       {/* Header */}
       <View style={[styles.header, { backgroundColor: PRIMARY_COLOR }]}>
+        {/* ✅ Updated Back Button - Using Ionicons for consistency */}
         <TouchableOpacity 
           style={styles.headerButton}
           onPress={() => navigation.goBack()}
         >
-          <FeatherIcon name="arrow-left" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         
         <Text style={styles.headerTitle}>
           {isEditing ? 'Modifier le profil' : 'Mon profil'}
         </Text>
         
+        {/* ✅ Edit/Cancel Button - Using MaterialCommunityIcons for better edit icons */}
         <TouchableOpacity 
           style={styles.headerButton}
           onPress={() => {
@@ -279,8 +282,8 @@ export default function UserDetailsScreen({ navigation }) {
             }
           }}
         >
-          <FeatherIcon 
-            name={isEditing ? "x" : "edit-3"} 
+          <MaterialCommunityIcons 
+            name={isEditing ? "close" : "pencil"} 
             size={20} 
             color="#fff" 
           />
@@ -502,7 +505,7 @@ export default function UserDetailsScreen({ navigation }) {
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <>
-                    <FeatherIcon name="save" size={20} color="#fff" />
+                    <MaterialCommunityIcons name="content-save" size={20} color="#fff" />
                     <Text style={styles.saveButtonText}>Enregistrer les modifications</Text>
                   </>
                 )}

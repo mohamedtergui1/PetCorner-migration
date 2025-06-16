@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
-import { 
-  ActivityIndicator, 
-  FlatList, 
-  Image, 
-  SafeAreaView, 
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  SafeAreaView,
   StyleSheet,
-  Text, 
-  TouchableOpacity, 
+  Text,
+  TouchableOpacity,
   View,
   StatusBar,
   Alert,
@@ -152,10 +152,10 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
       };
 
       const result: Product[] | PaginationResponse = await ProductService.getFilteredProducts(params);
-      
+
       const newProducts: Product[] = Array.isArray(result) ? result : (result.data || []);
-      const total: number = Array.isArray(result) 
-        ? newProducts.length 
+      const total: number = Array.isArray(result)
+        ? newProducts.length
         : (result.pagination?.total || newProducts.length);
 
       if (resetPagination) {
@@ -196,7 +196,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
       setTotalProducts(0);
       setCurrentPage(0);
       setFailedImageLoads(new Set());
-      
+
       // Update selected category
       setSelectedCategoryId(categoryId);
     }
@@ -219,16 +219,16 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
         image_link: hasImageFailed ? null : item.image_link,
         photo_link: hasImageFailed ? null : item.photo_link
       },
-      onPress: () => navigation.navigate('ProductDetails', { 
-        productId: item.id, 
-        product: item 
+      onPress: () => navigation.navigate('ProductDetails', {
+        productId: item.id,
+        product: item
       }),
       viewMode: "grid",
       isDarkMode,
       colorTheme,
       onImageError: () => handleImageError(item.id)
     };
-    
+
     return (
       <View style={styles.productContainer}>
         <ProductCard2 {...productCardProps} />
@@ -241,24 +241,24 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
     const cardStyle: StyleProp<ViewStyle> = [
       styles.categoryCard,
       {
-        backgroundColor: isSelected 
-          ? PRIMARY_COLOR 
+        backgroundColor: isSelected
+          ? PRIMARY_COLOR
           : (isDarkMode ? 'rgba(255,255,255,0.08)' : '#f0f0f0')
       }
     ];
-    
+
     const imageWrapperStyle: StyleProp<ViewStyle> = [
       styles.categoryImageWrapper,
       {
-        backgroundColor: isSelected 
-          ? 'rgba(255,255,255,0.15)' 
+        backgroundColor: isSelected
+          ? 'rgba(255,255,255,0.15)'
           : (isDarkMode ? '#333' : '#e0e0e0')
       }
     ];
 
     const textStyle: StyleProp<TextStyle> = [
       styles.categoryText,
-      { 
+      {
         color: isSelected ? '#ffffff' : TEXT_COLOR_SECONDARY,
         fontWeight: isSelected ? '600' : '500'
       }
@@ -275,10 +275,10 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
             {item.image ? (
               <Image source={item.image} style={styles.categoryImage} />
             ) : (
-              <Ionicons 
-                name="paw-outline" 
-                size={30} 
-                color={isSelected ? '#ffffff' : PRIMARY_COLOR} 
+              <Ionicons
+                name="paw-outline"
+                size={30}
+                color={isSelected ? '#ffffff' : PRIMARY_COLOR}
               />
             )}
           </View>
@@ -293,27 +293,29 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
   // Main render with typed styles
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: BACKGROUND_COLOR }]}>
-      <StatusBar 
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'} 
-        backgroundColor={isDarkMode ? '#000000' : '#ffffff'} 
+      <StatusBar
+        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
+        backgroundColor={isDarkMode ? '#000000' : '#ffffff'}
       />
-      
+
       {/* Header */}
       <View style={[styles.header, { backgroundColor: PRIMARY_COLOR }]}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Feather name="arrow-left" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+
         </TouchableOpacity>
-        
+
+
         <Text style={styles.headerTitle}>Catégories</Text>
-        
+
         <View style={styles.headerRightPlaceholder} />
       </View>
-      
+
       {/* Categories Filter */}
-      <View style={[styles.categoriesContainer, { 
+      <View style={[styles.categoriesContainer, {
         backgroundColor: CARD_BACKGROUND,
         borderColor: BORDER_COLOR
       }]}>
@@ -327,13 +329,13 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
           contentContainerStyle={styles.categoriesListContent}
         />
       </View>
-      
+
       {/* Category info */}
       {categoryName && (
         <View style={[styles.categoryBadge, { backgroundColor: `${PRIMARY_COLOR}15` }]}>
-          <MaterialCommunityIcons 
-            name="tag-outline" 
-            size={18} 
+          <MaterialCommunityIcons
+            name="tag-outline"
+            size={18}
             color={PRIMARY_COLOR}
             style={{ marginRight: 6 }}
           />
@@ -347,7 +349,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
           </View>
         </View>
       )}
-      
+
       {/* Product List */}
       {loading ? (
         <View style={styles.loadingContainer}>
