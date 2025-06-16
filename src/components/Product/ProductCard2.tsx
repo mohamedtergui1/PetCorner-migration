@@ -157,42 +157,54 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
       };
     }
     
+    // ✅ Handle case when product has no stock initially
     if (!isAvailable || productStock <= 0) {
-      return { 
-        bg: isDarkMode ? '#7f1d1d' : '#fee2e2', 
-        textColor: isDarkMode ? '#fca5a5' : '#dc2626', 
-        icon: 'close-circle-outline',
-        status: 'Indisponible'
-      };
-    }
-    
-    // ✅ Show quantity in cart if any
-    if (quantityInCart > 0) {
-      const remaining = productStock - quantityInCart;
-      if (remaining <= 0) {
+      if (quantityInCart > 0) {
         return { 
           bg: isDarkMode ? '#7f1d1d' : '#fee2e2', 
           textColor: isDarkMode ? '#fca5a5' : '#dc2626', 
           icon: 'cart',
-          status: `${quantityInCart} au panier (stock épuisé)`
+          status: `${quantityInCart} au panier - Stock épuisé`
         };
-      } else if (remaining <= 3) {
+      }
+      return { 
+        bg: isDarkMode ? '#7f1d1d' : '#fee2e2', 
+        textColor: isDarkMode ? '#fca5a5' : '#dc2626', 
+        icon: 'close-circle-outline',
+        status: 'Stock épuisé'
+      };
+    }
+    
+    // ✅ Calculate remaining stock after cart items
+    const remainingStock = Math.max(0, productStock - quantityInCart);
+    
+    // ✅ Show cart quantity and remaining stock status
+    if (quantityInCart > 0) {
+      if (remainingStock <= 0) {
+        return { 
+          bg: isDarkMode ? '#7f1d1d' : '#fee2e2', 
+          textColor: isDarkMode ? '#fca5a5' : '#dc2626', 
+          icon: 'cart',
+          status: `${quantityInCart} au panier - Stock épuisé`
+        };
+      } else if (remainingStock <= 3) {
         return { 
           bg: isDarkMode ? '#78350f' : '#fef3c7', 
           textColor: isDarkMode ? '#fcd34d' : '#d97706', 
           icon: 'cart',
-          status: `${quantityInCart} au panier (${remaining} restant)`
+          status: `${quantityInCart} au panier - ${remainingStock} restant`
         };
       } else {
         return { 
           bg: isDarkMode ? '#14532d' : '#dcfce7', 
           textColor: isDarkMode ? '#86efac' : '#16a34a', 
           icon: 'cart',
-          status: `${quantityInCart} au panier`
+          status: `${quantityInCart} au panier - ${remainingStock} dispo`
         };
       }
     }
     
+    // ✅ Show stock status when no items in cart
     if (productStock <= 5) {
       return { 
         bg: isDarkMode ? '#78350f' : '#fef3c7', 
@@ -465,15 +477,20 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
   const renderAddToCartButton = () => {
     if (dimensions.isListMode) return null; // Don't show button in list mode
 
-    // ✅ Determine button state based on stock and cart status
-    const canAdd = stockInfo ? stockInfo.canAdd : isAvailable;
-    const buttonText = !isAvailable 
-      ? 'Indisponible' 
-      : !canAdd 
-        ? 'Stock épuisé' 
-        : quantityInCart > 0 
-          ? `Ajouter (${quantityInCart})` 
-          : 'Ajouter';
+    // ✅ Calculate remaining stock after cart items
+    const remainingStock = Math.max(0, (productStock || 0) - quantityInCart);
+    const canAdd = isAvailable && remainingStock > 0;
+    
+    // ✅ Determine button text based on stock and cart status
+    let buttonText = 'Ajouter';
+    
+    if (!isAvailable || (productStock !== null && productStock <= 0)) {
+      buttonText = 'Stock épuisé';
+    } else if (remainingStock <= 0) {
+      buttonText = `Stock épuisé (${quantityInCart} au panier)`;
+    } else if (quantityInCart > 0) {
+      buttonText = `Ajouter (${quantityInCart} au panier)`;
+    }
 
     return (
       <View style={styles.addToCartContainer}>
@@ -495,7 +512,7 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
             ) : (
               <>
                 <MaterialCommunityIcons 
-                  name={quantityInCart > 0 ? "cart-plus" : "cart-plus"} 
+                  name={quantityInCart > 0 ? "cart" : "cart-plus"} 
                   size={16} 
                   color="#ffffff" 
                   style={{ marginRight: 4 }}
