@@ -78,6 +78,9 @@ export default function Cart({ navigation }) {
   const [locationLoading, setLocationLoading] = useState(false);
   const [deliveryCost, setDeliveryCost] = useState(0);
   
+  // Loading states for quantity updates
+  const [loadingQuantityUpdates, setLoadingQuantityUpdates] = useState({});
+  
   // Store location (set this to your actual store coordinates)
   const STORE_LOCATION = {
     latitude: 33.5731, // Example: Casablanca coordinates
@@ -93,6 +96,14 @@ export default function Cart({ navigation }) {
     const unsubscribe = navigation.addListener('focus', getDataFromDB);
     return unsubscribe;
   }, [navigation]);
+
+  // Add effect to recalculate total when products or quantities change
+  useEffect(() => {
+    if (products.length > 0) {
+      const quantities = getQuantities();
+      calculateTotal(products, quantities);
+    }
+  }, [products, cartItems]); // Listen to cartItems changes from context
 
   // Location permission request
   const requestLocationPermission = async () => {
@@ -336,7 +347,7 @@ export default function Cart({ navigation }) {
       setProducts(products);
       setIsLoading(false);
 
-      // Use context function to get quantities
+      // Calculate total immediately after setting products
       const quantities = getQuantities();
       calculateTotal(products, quantities);
     } catch (error) {
@@ -344,16 +355,33 @@ export default function Cart({ navigation }) {
     }
   }, [loadCartItems, getQuantities]);
 
+  // Fixed calculateTotal function
   const calculateTotal = (products, quantities) => {
-    const total = products.reduce((acc, item) => acc + item.price_ttc * (quantities[item.id] || 1), 0);
-    setTotal(total);
+    const newTotal = products.reduce((acc, item) => {
+      const quantity = quantities[item.id] || 1;
+      const itemTotal = (parseFloat(item.price_ttc) || 0) * quantity;
+      return acc + itemTotal;
+    }, 0);
+    setTotal(newTotal);
   };
 
-  // Updated to use cart context
+  // Updated to use cart context and recalculate total
   const handleUpdateQuantity = async (id, change) => {
-    const result = await updateQuantity(id, change); // Use context function
-    if (result.success) {
-      getDataFromDB(); // Refresh data after update
+    // Set loading state for this specific product
+    setLoadingQuantityUpdates(prev => ({ ...prev, [id]: true }));
+    
+    try {
+      const result = await updateQuantity(id, change); // Use context function
+      if (result.success) {
+        // Immediately recalculate total with updated quantities
+        const updatedQuantities = getQuantities();
+        calculateTotal(products, updatedQuantities);
+      }
+    } catch (error) {
+      console.error('Error updating quantity:', error);
+    } finally {
+      // Clear loading state for this specific product
+      setLoadingQuantityUpdates(prev => ({ ...prev, [id]: false }));
     }
   };
 
@@ -491,6 +519,7 @@ export default function Cart({ navigation }) {
   const renderProducts = ({ id, label, price_ttc, photo_link, description, stock }) => {
     const quantities = getQuantities(); // Use context function
     const quantity = quantities[id] || 1;
+    const isUpdatingQuantity = loadingQuantityUpdates[id] || false;
     const data = {
       id,
       label,
@@ -539,16 +568,38 @@ export default function Cart({ navigation }) {
             <View style={styles.quantityControls}>
               <TouchableOpacity
                 onPress={() => handleUpdateQuantity(id, -1)} // Use context function
-                style={[styles.quantityButton, { borderColor: PRIMARY_COLOR }]}>
-                <Text style={[styles.quantityButtonText, { color: PRIMARY_COLOR }]}>-</Text>
+                disabled={isUpdatingQuantity}
+                style={[
+                  styles.quantityButton, 
+                  { 
+                    borderColor: PRIMARY_COLOR,
+                    opacity: isUpdatingQuantity ? 0.6 : 1
+                  }
+                ]}>
+                {isUpdatingQuantity ? (
+                  <ActivityIndicator size="small" color={PRIMARY_COLOR} />
+                ) : (
+                  <Text style={[styles.quantityButtonText, { color: PRIMARY_COLOR }]}>-</Text>
+                )}
               </TouchableOpacity>
 
               <Text style={[styles.quantityText, { color: theme.textColor }]}>{quantity}</Text>
 
               <TouchableOpacity
                 onPress={() => handleUpdateQuantity(id, 1)} // Use context function
-                style={[styles.quantityButton, { borderColor: PRIMARY_COLOR }]}>
-                <Text style={[styles.quantityButtonText, { color: PRIMARY_COLOR }]}>+</Text>
+                disabled={isUpdatingQuantity}
+                style={[
+                  styles.quantityButton, 
+                  { 
+                    borderColor: PRIMARY_COLOR,
+                    opacity: isUpdatingQuantity ? 0.6 : 1
+                  }
+                ]}>
+                {isUpdatingQuantity ? (
+                  <ActivityIndicator size="small" color={PRIMARY_COLOR} />
+                ) : (
+                  <Text style={[styles.quantityButtonText, { color: PRIMARY_COLOR }]}>+</Text>
+                )}
               </TouchableOpacity>
             </View>
 
