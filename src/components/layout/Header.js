@@ -6,14 +6,14 @@ import { COLOURS, parameters } from '../../database/Database';
 import { Badge, Icon, withBadge } from 'react-native-elements';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'react-native';
-import { useCart } from '../../context/CartContext'; // Import cart context
+import { useCart } from '../../context/CartContext';
 
 const { width } = Dimensions.get('window');
 
-const Header = ({ navigation, theme }) => { // Removed cartItemsCount prop since we get it from context
-  const { cartCount } = useCart(); // Get cart count from context
+const Header = ({ navigation, theme }) => {
+  const { cartCount } = useCart();
   
-  const BadgeIcon = withBadge(cartCount)(Icon); // Use cartCount from context
+  const BadgeIcon = withBadge(cartCount)(Icon);
 
   return (
     <View style={[styles.header, { backgroundColor: theme?.primary || COLOURS.buttons }]}>
@@ -39,23 +39,14 @@ const Header = ({ navigation, theme }) => { // Removed cartItemsCount prop since
           alignItems: 'center',
           justifyContent: 'center',
         }}>
-        {/* If you want a text logo in dark mode instead of image */}
-        {/* {theme?.mode === 'dark' ? (
-          <Text
-            style={{
-              color: theme.buttonText,
-              fontSize: 25,
-              fontWeight: 'bold',
-            }}>
-            Petcorner
-          </Text>
-        ) : ( */}
+        {/* Logo with circular background */}
+        <View style={styles.logoContainer}>
           <Image
             source={require('../../assets/images/logo.png')}
             resizeMode="contain"
-            style={{width: 60, height: 100}}
+            style={styles.logo}
           />
-        {/* )} */}
+        </View>
       </View>
 
       <TouchableOpacity
@@ -64,7 +55,7 @@ const Header = ({ navigation, theme }) => { // Removed cartItemsCount prop since
         style={{
           alignItems: 'center',
           justifyContent: 'center',
-          marginRight: cartCount < 0 ? 15 : 17, // Use cartCount from context
+          marginRight: cartCount < 0 ? 15 : 17,
         }}>
         <BadgeIcon
           type="material-community"
@@ -83,6 +74,26 @@ const styles = StyleSheet.create({
     height: parameters.headerHeight + 10,
     justifyContent: 'space-between'
   },
+  logoContainer: {
+    backgroundColor: 'white', // White circular background
+    width: 70, // Fixed width
+    height: 70, // Fixed height (same as width for perfect circle)
+    borderRadius: 35, // Half of width/height for perfect circle
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 3.84,
+    elevation: 5, // Android shadow
+  },
+  logo: {
+    width: 68, // Increased from 50 to 58
+    height: 58 // Increased from 50 to 58
+  }
 });
 
 export default Header;
