@@ -149,10 +149,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
       setApiCategories(categories);
     } catch (error) {
       console.error('Error loading API categories:', error);
-      Alert.alert(
-        'Erreur',
-        'Impossible de charger les catégories. Utilisation des catégories par défaut.'
-      );
+     
     } finally {
       setCategoriesLoading(false);
     }
@@ -289,7 +286,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
 
     } catch (error) {
       console.error('❌ Error loading products:', error);
-      Alert.alert('Erreur', 'Une erreur est survenue lors du chargement des produits.');
+       
     } finally {
       setLoading(false);
       setLoadingMore(false);
