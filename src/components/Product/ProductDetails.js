@@ -525,7 +525,7 @@ const handleSimilarProductPress = (similarProduct) => {
           ]} 
           onPress={() => navigation.goBack()}
         >
-          <MaterialIcons name='arrow-back' size={24} color="#ffffff" />
+          <Ionicons name='arrow-back' size={24} color="#ffffff" />
         </TouchableOpacity>
 
         <MaterialCommunityIcons name="alert-circle-outline" size={64} color={theme.primary} />
