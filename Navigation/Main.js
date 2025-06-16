@@ -1,19 +1,11 @@
+// Main.js - Simplified Drawer Navigator
 import { Image, StyleSheet, Text, View, useColorScheme } from 'react-native'
 import React, { useEffect, useState } from 'react'
 import { createDrawerNavigator } from '@react-navigation/drawer'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import DrawerItems from '../src/components/layout/DrawerItems';
-import Tabs from './Tabs';
-import ProfileScreen from '../src/screens/ProfileScreen';
-import UserDetailsScreen from '../src/screens/UserDetailsScreen'; // Add this import
-import ProductsScreen from '../src/screens/ProductsScreen';
-import ProductDetails from '../src/components/Product/ProductDetails'; // ✅ ADD THIS LINE
-import WishListScreen from '../src/screens/WishListScreen';
-import CartScreen from '../src/screens/CartScreen';
-import OrderScreen from '../src/screens/OrderScreen';
-// Updated import path for the new modular filter screen
-import AnimalFilterScreen from '../src/screens/filters/AnimalFilterScreen';
+import MainStackNavigator from './MainStackNavigator'; // NEW: Single stack navigator
 import FontAwsome5Icon from 'react-native-vector-icons/FontAwesome5';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { COLOURS } from '../src/database/Database';
@@ -124,7 +116,7 @@ export default function Main() {
   return (
     <SafeAreaView style={[styles.safeAreaContainer, { backgroundColor: SAFE_AREA_COLOR }]}>
       <Drawer.Navigator
-        initialRouteName="Accueil"
+        initialRouteName="MainStack"
         screenOptions={getDrawerScreenOptions()}
         drawerContent={(props) => (
           <DrawerItems
@@ -134,9 +126,10 @@ export default function Main() {
           />
         )}
       >
+        {/* Main Stack Navigator - contains ALL screens including ProductDetails */}
         <Drawer.Screen
-          name="Accueil"
-          component={Tabs}
+          name="MainStack"
+          component={MainStackNavigator}
           options={{
             drawerIcon: ({ focused }) => (
               <View style={styles.iconContainer}>
@@ -151,9 +144,16 @@ export default function Main() {
           }}
         />
 
+        {/* These are now handled by MainStackNavigator, but we keep them for drawer menu display */}
         <Drawer.Screen
-          name="Produits"
-          component={ProductsScreen}
+          name="ProduitsDummy"
+          component={MainStackNavigator}
+          listeners={({ navigation }) => ({
+            drawerItemPress: (e) => {
+              e.preventDefault();
+              navigation.navigate('MainStack', { screen: 'ProductsScreen' });
+            },
+          })}
           options={{
             drawerIcon: ({ focused }) => (
               <View style={styles.iconContainer}>
@@ -176,8 +176,14 @@ export default function Main() {
         />
 
         <Drawer.Screen
-          name="Favoris"
-          component={WishListScreen}
+          name="FavorisDummy"
+          component={MainStackNavigator}
+          listeners={({ navigation }) => ({
+            drawerItemPress: (e) => {
+              e.preventDefault();
+              navigation.navigate('MainStack', { screen: 'WishListScreen' });
+            },
+          })}
           options={{
             drawerIcon: ({ focused }) => (
               <View style={styles.iconContainer}>
@@ -194,8 +200,14 @@ export default function Main() {
         />
 
         <Drawer.Screen
-          name="Panier"
-          component={CartScreen}
+          name="PanierDummy"
+          component={MainStackNavigator}
+          listeners={({ navigation }) => ({
+            drawerItemPress: (e) => {
+              e.preventDefault();
+              navigation.navigate('MainStack', { screen: 'CartScreen' });
+            },
+          })}
           options={{
             drawerIcon: ({ focused }) => (
               <View style={styles.iconContainer}>
@@ -211,8 +223,14 @@ export default function Main() {
         />
 
         <Drawer.Screen
-          name="Mes commandes"
-          component={OrderScreen}
+          name="CommandesDummy"
+          component={MainStackNavigator}
+          listeners={({ navigation }) => ({
+            drawerItemPress: (e) => {
+              e.preventDefault();
+              navigation.navigate('MainStack', { screen: 'OrderScreen' });
+            },
+          })}
           options={{
             drawerIcon: ({ focused }) => (
               <View style={styles.iconContainer}>
@@ -228,8 +246,14 @@ export default function Main() {
         />
 
         <Drawer.Screen
-          name="Mon compte"
-          component={ProfileScreen}
+          name="ProfilDummy"
+          component={MainStackNavigator}
+          listeners={({ navigation }) => ({
+            drawerItemPress: (e) => {
+              e.preventDefault();
+              navigation.navigate('MainStack', { screen: 'ProfileScreen' });
+            },
+          })}
           options={{
             drawerIcon: ({ focused }) => (
               <View style={styles.iconContainer}>
@@ -242,24 +266,6 @@ export default function Main() {
               </View>
             ),
             drawerLabel: "Mon compte",
-          }}
-        />
-
-        {/* Add UserDetailsScreen as a hidden drawer screen */}
-        <Drawer.Screen
-          name="UserDetails"
-          component={UserDetailsScreen}
-          options={{
-            drawerItemStyle: { display: 'none' }, // Hide from drawer menu
-          }}
-        />
-
-        {/* ✅ ADD THIS BLOCK - ProductDetails Screen */}
-        <Drawer.Screen
-          name="ProductDetails"
-          component={ProductDetails}
-          options={{
-            drawerItemStyle: { display: 'none' }, // Hide from drawer menu
           }}
         />
       </Drawer.Navigator>

@@ -534,7 +534,7 @@ export default function Cart({ navigation }) {
         {/* Product Image */}
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => navigation.navigate('ProductDetails', { product: data })}
+          onPress={() => navigation.push('ProductDetails', { productId: data.id })}
           style={styles.productImageContainer}>
           <Image
             source={{ uri: photo_link }}
