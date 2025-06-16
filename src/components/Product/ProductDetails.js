@@ -424,13 +424,11 @@ export default function ProductDetails({ route, navigation }) {
     .catch(error => {});
   };
 
-  // Function to navigate to similar product
-const handleSimilarProductPress = (similarProduct) => {
-  navigation.reset({
-    index: 0,
-    routes: [{ name: 'ProductDetails', params: { productId: similarProduct.id } }],
-  });
-};
+  // Function to navigate to similar product - FIXED VERSION
+  const handleSimilarProductPress = (similarProduct) => {
+    // Use push instead of reset to maintain navigation stack
+    navigation.push('ProductDetails', { productId: similarProduct.id });
+  };
 
   // Function to retry loading product
   const retryLoadProduct = () => {
@@ -525,7 +523,7 @@ const handleSimilarProductPress = (similarProduct) => {
           ]} 
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name='arrow-back' size={24} color="#ffffff" />
+           <Ionicons name='arrow-back' size={24} color="#ffffff" />
         </TouchableOpacity>
 
         <MaterialCommunityIcons name="alert-circle-outline" size={64} color={theme.primary} />
@@ -600,7 +598,7 @@ const handleSimilarProductPress = (similarProduct) => {
           ]} 
           onPress={() => navigation.goBack()}
         >
-          <MaterialIcons name='arrow-back' size={24} color="#ffffff" />
+          <Ionicons name='arrow-back' size={24} color="#ffffff" />
         </TouchableOpacity>
 
         {/* Wishlist Button */}

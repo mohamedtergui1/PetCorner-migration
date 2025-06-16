@@ -83,9 +83,9 @@ export default function Cart({ navigation }) {
   
   // Store location (set this to your actual store coordinates)
   const STORE_LOCATION = {
-    latitude: 33.5731, // Example: Casablanca coordinates
-    longitude: -7.5898,
-    address: "123 Rue Mohamed V, Casablanca, Morocco"
+    latitude: 33.951371146759776,
+    longitude: -6.88501751937855,
+    address: "Immeuble 102, Prestigia, Prestigia - Riyad Al Andalous, N° 13 sis, GH4, Rabat 10100"
   };
   
   // Define theme colors matching ProductScreen
