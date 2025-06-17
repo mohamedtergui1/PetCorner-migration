@@ -283,11 +283,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
       setActiveFilters(filters);
     } catch (error) {
       console.error('Error loading products:', error);
-      Alert.alert(
-        'Erreur',
-        'Impossible de charger les produits. Vérifiez votre connexion.',
-        [{ text: 'OK' }]
-      );
+      
     } finally {
       setLoading(false);
       setLoadingMore(false);
