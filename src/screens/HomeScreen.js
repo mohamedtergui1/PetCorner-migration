@@ -5,10 +5,10 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Modal,
   Dimensions,
   Linking,
   Alert,
+  Platform,
 } from "react-native"
 import { useCallback, useEffect, useState } from "react"
 import Ionicons from "react-native-vector-icons/Ionicons"
@@ -17,14 +17,12 @@ import Header from "../components/layout/Header"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useFocusEffect } from "@react-navigation/native"
 import { useTheme } from "../context/ThemeContext"
-import MapView, { Marker } from "react-native-maps"
 
 const { width, height } = Dimensions.get("window")
 
 export default function HomeScreen({ navigation }) {
   const { theme, isDarkMode } = useTheme()
   const [cartItemsCount, setCartItemsCount] = useState(0)
-  const [isMapModalVisible, setIsMapModalVisible] = useState(false)
 
   const getCartItemsCount = async () => {
     try {
@@ -49,34 +47,31 @@ export default function HomeScreen({ navigation }) {
   const petCornerLocation = {
     latitude: 33.95130166886704,
     longitude: -6.8852589153111134,
-    latitudeDelta: 0.01,
-    longitudeDelta: 0.01,
-  }
-
-  const openMapModal = () => {
-    setIsMapModalVisible(true)
-  }
-
-  const closeMapModal = () => {
-    setIsMapModalVisible(false)
   }
 
   // Function to open directions
   const openDirections = () => {
     const { latitude, longitude } = petCornerLocation
-    const url = `https://maps.google.com/maps?daddr=${latitude},${longitude}`
+    
+    // Platform-specific URLs for better compatibility
+    let url
+    if (Platform.OS === 'ios') {
+      url = `http://maps.apple.com/?daddr=${latitude},${longitude}`
+    } else {
+      url = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`
+    }
 
     Linking.canOpenURL(url)
       .then((supported) => {
         if (supported) {
           return Linking.openURL(url)
         } else {
-          Alert.alert("Error", "Unable to open maps application")
+          Alert.alert("Erreur", "Impossible d'ouvrir l'application de cartes")
         }
       })
       .catch((err) => {
         console.error("Error opening directions:", err)
-        Alert.alert("Error", "Unable to open directions")
+        Alert.alert("Erreur", "Impossible d'ouvrir l'itinéraire")
       })
   }
 
@@ -89,12 +84,30 @@ export default function HomeScreen({ navigation }) {
         if (supported) {
           return Linking.openURL(phoneNumber)
         } else {
-          Alert.alert("Error", "Unable to make phone call")
+          Alert.alert("Erreur", "Impossible de passer l'appel")
         }
       })
       .catch((err) => {
         console.error("Error making phone call:", err)
-        Alert.alert("Error", "Unable to make phone call")
+        Alert.alert("Erreur", "Impossible de passer l'appel")
+      })
+  }
+
+  // Function to open website
+  const openWebsite = () => {
+    const websiteUrl = "https://petcorner.ma" // Replace with actual website
+
+    Linking.canOpenURL(websiteUrl)
+      .then((supported) => {
+        if (supported) {
+          return Linking.openURL(websiteUrl)
+        } else {
+          Alert.alert("Erreur", "Impossible d'ouvrir le site web")
+        }
+      })
+      .catch((err) => {
+        console.error("Error opening website:", err)
+        Alert.alert("Erreur", "Impossible d'ouvrir le site web")
       })
   }
 
@@ -118,170 +131,127 @@ export default function HomeScreen({ navigation }) {
         {/* HomeProduct component with theme support */}
         <HomeProduct navigation={navigation} theme={theme} />
 
-        {/* Map Section */}
-        <View style={styles.mapSection}>
-          <View style={styles.mapHeader}>
+        {/* Store Location Section */}
+        <View style={styles.locationSection}>
+          <View style={styles.sectionHeader}>
             <Ionicons name="location" size={24} color={theme.primary} />
-            <Text style={[styles.mapTitle, { color: theme.textColor }]}>Pet Corner Location</Text>
+            <Text style={[styles.sectionTitle, { color: theme.textColor }]}>Visitez Notre Magasin</Text>
           </View>
 
-          <TouchableOpacity
-            style={[
-              styles.mapContainer,
-              {
-                shadowColor: isDarkMode ? "#000" : "#000",
-                backgroundColor: theme.cardBackground,
-              },
-            ]}
-            onPress={openMapModal}
-            activeOpacity={0.8}
-          >
-            <MapView
-              style={styles.map}
-              initialRegion={petCornerLocation}
-              provider="apple"
-              scrollEnabled={false}
-              zoomEnabled={false}
-              rotateEnabled={false}
-              pitchEnabled={false}
-            >
-              <Marker
-                coordinate={{
-                  latitude: petCornerLocation.latitude,
-                  longitude: petCornerLocation.longitude,
-                }}
-                title="Pet Corner"
-                description="Pet Corner Store Location"
-                pinColor={theme.primary}
-              />
-            </MapView>
-
-            {/* Overlay with tap indicator */}
-            <View style={styles.mapOverlay}>
-              <View style={[styles.tapIndicator, { backgroundColor: theme.primary }]}>
-                <Ionicons name="location-outline" size={20} color="#fff" />
-                <Text style={styles.tapText}>Tap to expand</Text>
+          {/* Store Info Card */}
+          <View style={[styles.storeCard, { backgroundColor: theme.cardBackground }]}>
+            <View style={styles.storeHeader}>
+              <Ionicons name="storefront" size={32} color={theme.primary} />
+              <View style={styles.storeHeaderText}>
+                <Text style={[styles.storeName, { color: theme.textColor }]}>Pet Corner</Text>
+                <Text style={[styles.storeTagline, { color: theme.secondaryTextColor }]}>
+                  Votre destination de confiance pour les animaux
+                </Text>
               </View>
             </View>
-          </TouchableOpacity>
 
-          {/* Store Info */}
-          <View style={[styles.storeInfo, { backgroundColor: theme.rowBackground }]}>
-            <View style={styles.infoRow}>
-              <Ionicons name="storefront-outline" size={18} color={theme.textColor} />
-              <Text style={[styles.infoText, { color: theme.textColor }]}>Pet Corner Store</Text>
+            <View style={styles.storeDetails}>
+              <View style={styles.detailRow}>
+                <Ionicons name="location-outline" size={20} color={theme.textColor} />
+                <Text style={[styles.detailText, { color: theme.textColor }]}>Rabat, Maroc</Text>
+              </View>
+              
+              <View style={styles.detailRow}>
+                <Ionicons name="time-outline" size={20} color={theme.textColor} />
+                <Text style={[styles.detailText, { color: theme.textColor }]}>
+                  Lun - Sam: 9h00 - 20h00
+                </Text>
+              </View>
+              
+              <View style={styles.detailRow}>
+                <Ionicons name="call-outline" size={20} color={theme.textColor} />
+                <Text style={[styles.detailText, { color: theme.textColor }]}>+212 537 123 456</Text>
+              </View>
             </View>
-            <View style={styles.infoRow}>
-              <Ionicons name="location-outline" size={18} color={theme.textColor} />
-              <Text style={[styles.infoText, { color: theme.textColor }]}>Rabat, Morocco</Text>
+
+            {/* Action Buttons */}
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.primaryButton, { backgroundColor: theme.primary }]}
+                onPress={openDirections}
+              >
+                <Ionicons name="navigate" size={20} color="#fff" />
+                <Text style={styles.primaryButtonText}>Itinéraire</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.actionButton,
+                  styles.secondaryButton,
+                  { borderColor: theme.primary }
+                ]}
+                onPress={makePhoneCall}
+              >
+                <Ionicons name="call" size={20} color={theme.primary} />
+                <Text style={[styles.secondaryButtonText, { color: theme.primary }]}>Appeler</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Additional Actions */}
+            <View style={styles.additionalActions}>
+              <TouchableOpacity
+                style={[styles.additionalAction, { backgroundColor: theme.rowBackground }]}
+                onPress={openWebsite}
+              >
+                <Ionicons name="globe-outline" size={18} color={theme.textColor} />
+                <Text style={[styles.additionalActionText, { color: theme.textColor }]}>Site Web</Text>
+                <Ionicons name="chevron-forward" size={18} color={theme.secondaryTextColor} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.additionalAction, { backgroundColor: theme.rowBackground }]}
+                onPress={() => Alert.alert("Réseaux Sociaux", "Suivez-nous sur Instagram @petcorner_maroc")}
+              >
+                <Ionicons name="logo-instagram" size={18} color={theme.textColor} />
+                <Text style={[styles.additionalActionText, { color: theme.textColor }]}>Nous Suivre</Text>
+                <Ionicons name="chevron-forward" size={18} color={theme.secondaryTextColor} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Quick Info */}
+          <View style={[styles.quickInfo, { backgroundColor: theme.rowBackground }]}>
+            
+             
+            <View style={styles.quickInfoItem}>
+              <Ionicons name="card-outline" size={24} color={theme.primary} />
+              <Text style={[styles.quickInfoText, { color: theme.textColor }]}>Carte Acceptée</Text>
+            </View>
+            <View style={styles.quickInfoDivider} />
+            <View style={styles.quickInfoItem}>
+              <Ionicons name="cube-outline" size={24} color={theme.primary} />
+              <Text style={[styles.quickInfoText, { color: theme.textColor }]}>Livraison</Text>
             </View>
           </View>
         </View>
       </ScrollView>
-
-      {/* Full Screen Map Modal */}
-      <Modal visible={isMapModalVisible} animationType="slide" presentationStyle="fullScreen">
-        <View style={styles.modalContainer}>
-          {/* Modal Header */}
-          <View
-            style={[
-              styles.modalHeader,
-              {
-                backgroundColor: theme.backgroundColor,
-                borderBottomColor: theme.borderColor,
-              },
-            ]}
-          >
-            <TouchableOpacity style={styles.closeButton} onPress={closeMapModal}>
-              <Ionicons name="arrow-back" size={24} color={theme.textColor} />
-            </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: theme.textColor }]}>Pet Corner Location</Text>
-            <View style={styles.placeholder} />
-          </View>
-
-          {/* Full Screen Map */}
-          <MapView
-            style={styles.fullScreenMap}
-            initialRegion={petCornerLocation}
-            provider="apple"
-            showsUserLocation={true}
-            showsMyLocationButton={true}
-          >
-            <Marker
-              coordinate={{
-                latitude: petCornerLocation.latitude,
-                longitude: petCornerLocation.longitude,
-              }}
-              title="Pet Corner"
-              description="Pet Corner Store Location - Your trusted pet supplies destination"
-              pinColor={theme.primary}
-            />
-          </MapView>
-
-          {/* Bottom Info Card */}
-          <View
-            style={[
-              styles.bottomCard,
-              {
-                backgroundColor: theme.backgroundColor,
-                borderTopColor: theme.borderColor,
-              },
-            ]}
-          >
-            <View style={styles.cardContent}>
-              <View style={styles.cardHeader}>
-                <Ionicons name="storefront" size={24} color={theme.primary} />
-                <Text style={[styles.cardTitle, { color: theme.textColor }]}>Pet Corner</Text>
-              </View>
-              <Text style={[styles.cardAddress, { color: theme.secondaryTextColor }]}>Rabat, Morocco</Text>
-              <View style={styles.cardActions}>
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: theme.primary }]}
-                  onPress={openDirections}
-                >
-                  <Ionicons name="navigate" size={18} color="#fff" />
-                  <Text style={styles.actionButtonText}>Directions</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.actionButton,
-                    { backgroundColor: "transparent", borderWidth: 1, borderColor: theme.primary },
-                  ]}
-                  onPress={makePhoneCall}
-                >
-                  <Ionicons name="call" size={18} color={theme.primary} />
-                  <Text style={[styles.actionButtonText, { color: theme.primary }]}>Call</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  mapSection: {
+  locationSection: {
     margin: 16,
-    borderRadius: 16,
-    overflow: "hidden",
   },
-  mapHeader: {
+  sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    marginBottom: 16,
     gap: 8,
   },
-  mapTitle: {
-    fontSize: 18,
+  sectionTitle: {
+    fontSize: 20,
     fontWeight: "600",
   },
-  mapContainer: {
-    borderRadius: 12,
-    overflow: "hidden",
-    marginHorizontal: 16,
+  storeCard: {
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
     shadowOffset: {
       width: 0,
       height: 4,
@@ -289,113 +259,102 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 5,
-    position: "relative",
   },
-  map: {
-    height: 200,
-    width: "100%",
-  },
-  mapOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.1)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  tapIndicator: {
+  storeHeader: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
+    marginBottom: 20,
+    gap: 16,
   },
-  tapText: {
-    color: "#fff",
+  storeHeaderText: {
+    flex: 1,
+  },
+  storeName: {
+    fontSize: 24,
+    fontWeight: "bold",
+    marginBottom: 4,
+  },
+  storeTagline: {
     fontSize: 14,
-    fontWeight: "500",
   },
-  storeInfo: {
-    margin: 16,
-    padding: 16,
+  storeDetails: {
+    marginBottom: 20,
+    gap: 12,
+  },
+  detailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  detailText: {
+    fontSize: 16,
+    flex: 1,
+  },
+  actionButtons: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 16,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
     borderRadius: 12,
     gap: 8,
   },
-  infoRow: {
+  primaryButton: {
+    // backgroundColor set via theme
+  },
+  secondaryButton: {
+    backgroundColor: "transparent",
+    borderWidth: 2,
+  },
+  primaryButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  secondaryButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  additionalActions: {
+    gap: 8,
+  },
+  additionalAction: {
     flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 12,
+  },
+  additionalActionText: {
+    fontSize: 16,
+    flex: 1,
+  },
+  quickInfo: {
+    flexDirection: "row",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+  },
+  quickInfoItem: {
+    flex: 1,
     alignItems: "center",
     gap: 8,
   },
-  infoText: {
-    fontSize: 14,
+  quickInfoDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: "#E0E0E0",
+    marginHorizontal: 8,
+  },
+  quickInfoText: {
+    fontSize: 12,
     fontWeight: "500",
-  },
-  modalContainer: {
-    flex: 1,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingTop: 50,
-    borderBottomWidth: 1,
-  },
-  closeButton: {
-    padding: 8,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  placeholder: {
-    width: 40,
-  },
-  fullScreenMap: {
-    flex: 1,
-  },
-  bottomCard: {
-    borderTopWidth: 1,
-    paddingBottom: 34,
-  },
-  cardContent: {
-    padding: 20,
-  },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 8,
-  },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-  },
-  cardAddress: {
-    fontSize: 16,
-    marginBottom: 16,
-  },
-  cardActions: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  actionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 6,
-    flex: 1,
-    justifyContent: "center",
-  },
-  actionButtonText: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#fff",
+    textAlign: "center",
   },
 })
