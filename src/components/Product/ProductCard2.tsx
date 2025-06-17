@@ -410,21 +410,7 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
           </Text>
         )}
         
-        {productRef && (
-          <Text 
-            numberOfLines={1}
-            style={[
-              styles.productRef, 
-              { 
-                color: secondaryTextColor,
-                fontSize: dimensions.isListMode ? 11 : 10,
-                marginTop: 1,
-              }
-            ]}
-          >
-            Réf: {productRef}
-          </Text>
-        )}
+         
       </View>
       
       {/* Bottom Section: Price and Stock */}
