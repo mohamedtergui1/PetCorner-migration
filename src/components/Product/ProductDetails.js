@@ -517,7 +517,6 @@ export default function ProductDetails({ route, navigation }) {
             styles.iconButton, 
             styles.backButton, 
             { 
-              backgroundColor: theme.primary,
               top: insets.top + 10
             }
           ]} 
@@ -583,8 +582,7 @@ export default function ProductDetails({ route, navigation }) {
           <Text style={styles.tapText}>Tap pour agrandir</Text>
         </View>
         
-        {/* Overlay gradient for better readability of buttons */}
-        <View style={styles.imageOverlay} />
+        
         
         {/* Back Button */}
         <TouchableOpacity 
@@ -592,7 +590,6 @@ export default function ProductDetails({ route, navigation }) {
             styles.iconButton, 
             styles.backButton, 
             { 
-              backgroundColor: theme.primary,
               top: insets.top + 10
             }
           ]} 
@@ -607,7 +604,6 @@ export default function ProductDetails({ route, navigation }) {
             styles.iconButton, 
             styles.heartButton, 
             { 
-              backgroundColor: theme.primary,
               top: insets.top + 10
             }
           ]} 
@@ -626,7 +622,6 @@ export default function ProductDetails({ route, navigation }) {
             styles.iconButton, 
             styles.shareButton, 
             { 
-              backgroundColor: theme.primary,
               top: insets.top + 10
             }
           ]} 
@@ -984,14 +979,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  imageOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 100,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-  },
+  
   iconButton: {
     position: 'absolute',
     padding: 10,
@@ -1002,6 +990,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.3)', // Semi-transparent background
   },
   backButton: {
     left: 15,
