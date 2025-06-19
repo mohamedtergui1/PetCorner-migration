@@ -298,6 +298,7 @@ export default function ProfileScreen({navigation}) {
           <Text style={[styles.sectionTitle, { color: PRIMARY_COLOR }]}>Ressources</Text>
           
           <TouchableOpacity
+            onPress={ () =>  navigation.navigate("SignatureClient")}
             style={[styles.row, { 
               backgroundColor: CARD_BACKGROUND,
               borderLeftWidth: 3,

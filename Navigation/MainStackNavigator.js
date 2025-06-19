@@ -1,7 +1,7 @@
 // MainStackNavigator.js - Single Stack Navigator for ALL app screens
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-
+import SignatureClientScreen from '../src/screens/SignatureClientScreen';
 // Import TabNavigator (from updated Tabs.js)
 import TabNavigator from './Tabs';
 
@@ -110,6 +110,13 @@ export default function MainStackNavigator() {
         name="Signup" 
         component={Signup} 
       />
+
+      <Stack.Screen 
+        name="SignatureClient" 
+        component={SignatureClientScreen}
+        options={{ headerShown: false }}
+      />
     </Stack.Navigator>
+
   );
 }
