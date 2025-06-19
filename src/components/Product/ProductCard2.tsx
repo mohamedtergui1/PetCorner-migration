@@ -1,4 +1,4 @@
-// ProductCard2.tsx - Updated with Direct CartContext Integration
+// ProductCard2.tsx - Fixed Hidden Content Under Price
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
@@ -13,7 +13,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useCart } from '../../context/CartContext'; // ✅ Import CartContext
+import { useCart } from '../../context/CartContext';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -67,7 +67,6 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
   const buttonScaleAnim = useRef(new Animated.Value(1)).current;
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   
-  // ✅ Use CartContext directly
   const { addToCart, getItemQuantityInCart, canAddMoreItems } = useCart();
   const [quantityInCart, setQuantityInCart] = useState(0);
   const [stockInfo, setStockInfo] = useState(null);
@@ -76,7 +75,6 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
   // DATA EXTRACTION AND VALIDATION
   // =====================================
 
-  // Extract product data with fallbacks and validation
   const productName = data?.label || data?.name || data?.ref || 'Produit sans nom';
   const productBrand = data?.array_options?.options_marque || '';
   const productImage = data?.image_link || data?.photo_link;
@@ -84,11 +82,9 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
   const productStock = data?.stock_reel ? parseInt(String(data.stock_reel)) : null;
   const isAvailable = productStock !== null ? productStock > 0 : false;
   
-  // Extract price information
   const productPrice = data?.price_ttc;
   const formattedPrice = productPrice ? parseFloat(String(productPrice)).toFixed(2) : null;
   
-  // Extract description
   const productDescription = data?.description || '';
 
   // =====================================
@@ -118,7 +114,6 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
     }).start();
   }, [fadeAnim]);
 
-  // ✅ Update quantity in cart when cart changes
   useEffect(() => {
     if (data?.id) {
       const quantity = getItemQuantityInCart(data.id);
@@ -126,7 +121,6 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
     }
   }, [data?.id, getItemQuantityInCart]);
 
-  // ✅ Check stock availability when component mounts
   useEffect(() => {
     const checkStockAvailability = async () => {
       if (data?.id) {
@@ -146,7 +140,6 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
   // UTILITY FUNCTIONS
   // =====================================
 
-  // Stock information with improved logic
   const getStockDisplayInfo = () => {
     if (productStock === null || productStock === undefined) {
       return { 
@@ -157,7 +150,6 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
       };
     }
     
-    // ✅ Handle case when product has no stock initially
     if (!isAvailable || productStock <= 0) {
       if (quantityInCart > 0) {
         return { 
@@ -175,10 +167,8 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
       };
     }
     
-    // ✅ Calculate remaining stock after cart items
     const remainingStock = Math.max(0, productStock - quantityInCart);
     
-    // ✅ Show cart quantity and remaining stock status
     if (quantityInCart > 0) {
       if (remainingStock <= 0) {
         return { 
@@ -204,7 +194,6 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
       }
     }
     
-    // ✅ Show stock status when no items in cart
     if (productStock <= 5) {
       return { 
         bg: isDarkMode ? '#78350f' : '#fef3c7', 
@@ -224,13 +213,12 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
 
   const stockDisplayInfo = getStockDisplayInfo();
 
-  // Card layout calculations
   const getCardDimensions = () => {
     const isListMode = viewMode === 'list';
     const cardWidth = isListMode ? screenWidth - 32 : (screenWidth - 44) / 2;
-    const cardHeight = isListMode ? 120 : cardWidth * 1.55;
-    const imageWidth = isListMode ? 90 : cardWidth - 24;
-    const imageHeight = isListMode ? 90 : (cardWidth - 24) * 0.6;
+    const cardHeight = isListMode ? 200 : cardWidth * 1.55; // Increased height from 180 to 200
+    const imageWidth = isListMode ? 120 : cardWidth - 24;
+    const imageHeight = isListMode ? 120 : (cardWidth - 24) * 0.6;
     
     return {
       cardWidth,
@@ -247,7 +235,6 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
   // EVENT HANDLERS
   // =====================================
 
-  // Handle product card press (navigation to details)
   const handlePress = () => {
     if (onPress) {
       onPress(data);
@@ -261,11 +248,9 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
     });
   };
 
-  // ✅ Handle add to cart action using CartContext
   const handleAddToCart = async () => {
     if (!isAvailable || isAddingToCart || !data?.id) return;
 
-    // ✅ Check if we can add more items before attempting
     if (stockInfo && !stockInfo.canAdd) {
       Alert.alert(
         'Stock épuisé', 
@@ -274,7 +259,6 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
       return;
     }
 
-    // Button press animation
     Animated.sequence([
       Animated.timing(buttonScaleAnim, {
         toValue: 0.95,
@@ -291,11 +275,9 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
     setIsAddingToCart(true);
 
     try {
-      // ✅ Use CartContext addToCart method
       const result = await addToCart(data.id);
       
       if (result.success) {
-        // Success feedback animation
         Animated.sequence([
           Animated.timing(buttonScaleAnim, {
             toValue: 1.05,
@@ -309,10 +291,7 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
           }),
         ]).start();
 
-        // ✅ Show success message if provided
         if (result.message) {
-          // Optional: You can show a toast or brief alert
-          // For now, we'll just log it
           console.log('Cart success:', result.message);
         }
       } else {
@@ -330,14 +309,13 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
   // RENDER FUNCTIONS
   // =====================================
 
-  // Render product image
   const renderProductImage = () => (
     <View style={[
       styles.imageContainer,
       {
         width: dimensions.imageWidth,
         height: dimensions.imageHeight,
-        marginRight: dimensions.isListMode ? 12 : 0,
+        marginRight: dimensions.isListMode ? 16 : 0,
         marginBottom: dimensions.isListMode ? 0 : 8,
         backgroundColor: accentColor,
         borderColor: borderColor,
@@ -356,118 +334,251 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
         }}
       />
       
-      {/* Stock Indicator */}
-      <View style={[styles.stockIndicator, { backgroundColor: stockDisplayInfo.bg }]}>
+      <View style={[
+        styles.stockIndicator, 
+        { 
+          backgroundColor: stockDisplayInfo.bg,
+          width: dimensions.isListMode ? 20 : 18,
+          height: dimensions.isListMode ? 20 : 18,
+          borderRadius: dimensions.isListMode ? 10 : 9,
+        }
+      ]}>
         <MaterialCommunityIcons 
           name={stockDisplayInfo.icon} 
-          size={dimensions.isListMode ? 12 : 10} 
+          size={dimensions.isListMode ? 14 : 10}
           color={stockDisplayInfo.textColor}
         />
       </View>
     </View>
   );
 
-  // Render product information
-  const renderProductInfo = () => (
-    <View style={[
-      styles.contentContainer,
-      {
-        flex: dimensions.isListMode ? 1 : 0,
-        justifyContent: 'space-between',
-        height: dimensions.isListMode ? 90 : dimensions.cardHeight - dimensions.imageHeight - 80,
-        marginBottom: dimensions.isListMode ? 0 : 50,
-      }
-    ]}>
-      {/* Product Name and Details */}
-      <View style={styles.nameContainer}>
-        <Text 
-          numberOfLines={dimensions.isListMode ? 2 : 2}
-          style={[
-            styles.productName, 
-            { 
-              color: textColor,
-              fontSize: dimensions.isListMode ? 15 : 13,
-              lineHeight: dimensions.isListMode ? 20 : 18,
-            }
-          ]}
-        >
-          {productName}
-        </Text>
-        
-        {productBrand && (
-          <Text 
-            numberOfLines={1}
-            style={[
-              styles.productBrand, 
+  const renderProductInfo = () => {
+    if (dimensions.isListMode) {
+      // List Mode Layout - Fixed to show all content
+      return (
+        <View style={[styles.listContentContainer]}>
+          {/* Top Section: Name and Brand */}
+          <View style={styles.listTopSection}>
+            <Text 
+              numberOfLines={2}
+              style={[
+                styles.productName, 
+                { 
+                  color: textColor,
+                  fontSize: 15,
+                  lineHeight: 19, // Reduced line height to save space
+                  marginBottom: 3, // Reduced margin
+                }
+              ]}
+            >
+              {productName}
+            </Text>
+            
+            {productBrand && (
+              <Text 
+                numberOfLines={1}
+                style={[
+                  styles.productBrand, 
+                  { 
+                    color: SECONDARY_COLOR,
+                    fontSize: 12,
+                    marginBottom: 8, // Reduced from 12 to 8
+                  }
+                ]}
+              >
+                {productBrand}
+              </Text>
+            )}
+          </View>
+
+          {/* Middle Section: Price */}
+          <View style={styles.listMiddleSection}>
+            {formattedPrice && (
+              <Text style={[
+                styles.priceText,
+                {
+                  color: priceColor,
+                  fontSize: 17,
+                  fontWeight: '700',
+                  marginBottom: 6, // Reduced from 8 to 6
+                  paddingVertical: 2, // Reduced from 4 to 2
+                }
+              ]}>
+                {formattedPrice} DH
+              </Text>
+            )}
+          </View>
+
+          {/* Bottom Section: Stock and Cart Button - Ensured visibility */}
+          <View style={styles.listBottomSection}>
+            <View style={[
+              styles.availabilityContainer,
               { 
-                color: SECONDARY_COLOR,
-                fontSize: dimensions.isListMode ? 12 : 11,
-                marginTop: 2,
+                backgroundColor: stockDisplayInfo.bg,
+                flex: 1,
+                marginRight: 10,
+                minHeight: 28, // Added minimum height to ensure visibility
+              }
+            ]}>
+              <MaterialCommunityIcons 
+                name={stockDisplayInfo.icon}
+                size={11}
+                color={stockDisplayInfo.textColor}
+                style={{ marginRight: 4 }}
+              />
+              <Text 
+                numberOfLines={1}
+                style={[
+                  styles.availabilityText,
+                  {
+                    fontSize: 10,
+                    color: stockDisplayInfo.textColor,
+                    flex: 1,
+                  }
+                ]}
+              >
+                {stockDisplayInfo.status}
+              </Text>
+            </View>
+            
+            {/* Add to Cart Button for List Mode */}
+            {renderListAddToCartButton()}
+          </View>
+        </View>
+      );
+    }
+
+    // Grid Mode Layout (unchanged)
+    return (
+      <View style={[
+        styles.contentContainer,
+        {
+          flex: 0,
+          justifyContent: 'space-between',
+          height: dimensions.cardHeight - dimensions.imageHeight - 80,
+          marginBottom: 50,
+        }
+      ]}>
+        <View style={styles.nameContainer}>
+          <Text 
+            numberOfLines={2}
+            style={[
+              styles.productName, 
+              { 
+                color: textColor,
+                fontSize: 13,
+                lineHeight: 18,
               }
             ]}
           >
-            {productBrand}
+            {productName}
           </Text>
-        )}
-        
-         
-      </View>
-      
-      {/* Bottom Section: Price and Stock */}
-      <View style={[styles.bottomContainer, { marginBottom: 8 }]}>
-        {/* Price Display */}
-        {formattedPrice && (
-          <View style={styles.priceContainer}>
-            <Text style={[
-              styles.priceText,
-              {
-                color: priceColor,
-                fontSize: dimensions.isListMode ? 14 : 12,
-                fontWeight: '700',
-              }
-            ]}>
-              {formattedPrice} DH
+          
+          {productBrand && (
+            <Text 
+              numberOfLines={1}
+              style={[
+                styles.productBrand, 
+                { 
+                  color: SECONDARY_COLOR,
+                  fontSize: 11,
+                  marginTop: 2,
+                }
+              ]}
+            >
+              {productBrand}
             </Text>
-          </View>
-        )}
+          )}
+        </View>
         
-        {/* Stock Status */}
-        <View style={[
-          styles.availabilityContainer,
-          { 
-            backgroundColor: stockDisplayInfo.bg,
-            alignSelf: dimensions.isListMode ? 'flex-end' : 'flex-start',
-          }
-        ]}>
-          <MaterialCommunityIcons 
-            name={stockDisplayInfo.icon}
-            size={dimensions.isListMode ? 11 : 10}
-            color={stockDisplayInfo.textColor}
-            style={{ marginRight: 3 }}
-          />
-          <Text style={[
-            styles.availabilityText,
-            {
-              fontSize: dimensions.isListMode ? 10 : 9,
-              color: stockDisplayInfo.textColor,
+        <View style={[styles.bottomContainer, { marginBottom: 8 }]}>
+          {formattedPrice && (
+            <View style={styles.priceContainer}>
+              <Text style={[
+                styles.priceText,
+                {
+                  color: priceColor,
+                  fontSize: 14,
+                  fontWeight: '700',
+                  marginBottom: 4,
+                }
+              ]}>
+                {formattedPrice} DH
+              </Text>
+            </View>
+          )}
+          
+          <View style={[
+            styles.availabilityContainer,
+            { 
+              backgroundColor: stockDisplayInfo.bg,
+              alignSelf: 'flex-start',
+              marginTop: 2,
             }
           ]}>
-            {stockDisplayInfo.status}
-          </Text>
+            <MaterialCommunityIcons 
+              name={stockDisplayInfo.icon}
+              size={11}
+              color={stockDisplayInfo.textColor}
+              style={{ marginRight: 4 }}
+            />
+            <Text style={[
+              styles.availabilityText,
+              {
+                fontSize: 10,
+                color: stockDisplayInfo.textColor,
+              }
+            ]}>
+              {stockDisplayInfo.status}
+            </Text>
+          </View>
         </View>
       </View>
-    </View>
-  );
+    );
+  };
 
-  // ✅ Render Add to Cart Button
-  const renderAddToCartButton = () => {
-    if (dimensions.isListMode) return null; // Don't show button in list mode
-
-    // ✅ Calculate remaining stock after cart items
+  // New function for list mode add to cart button
+  const renderListAddToCartButton = () => {
     const remainingStock = Math.max(0, (productStock || 0) - quantityInCart);
     const canAdd = isAvailable && remainingStock > 0;
     
-    // ✅ Determine button text based on stock and cart status
+    return (
+      <Animated.View style={{ transform: [{ scale: buttonScaleAnim }] }}>
+        <TouchableOpacity
+          onPress={handleAddToCart}
+          disabled={!canAdd || isAddingToCart}
+          style={[
+            styles.listAddToCartButton,
+            {
+              backgroundColor: canAdd ? PRIMARY_COLOR : (isDarkMode ? '#444' : '#ccc'),
+              opacity: isAddingToCart ? 0.7 : 1,
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+            }
+          ]}
+          activeOpacity={0.8}
+        >
+          {isAddingToCart ? (
+            <ActivityIndicator size="small" color="#ffffff" />
+          ) : (
+            <MaterialCommunityIcons 
+              name={quantityInCart > 0 ? "cart" : "cart-plus"} 
+              size={16}
+              color="#ffffff" 
+            />
+          )}
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+
+  const renderAddToCartButton = () => {
+    if (dimensions.isListMode) return null; // Now handled in renderProductInfo for list mode
+
+    const remainingStock = Math.max(0, (productStock || 0) - quantityInCart);
+    const canAdd = isAvailable && remainingStock > 0;
+    
     let buttonText = 'Ajouter';
     
     if (!isAvailable || (productStock !== null && productStock <= 0)) {
@@ -518,7 +629,6 @@ const ProductCard2: React.FC<ProductCard2Props> = ({
   // MAIN RENDER
   // =====================================
 
-  // Validate product data
   if (!data || !data.id) {
     console.warn('ProductCard2: Invalid product data', data);
     return null;
@@ -587,9 +697,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 6,
     right: 6,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 2,
@@ -599,7 +706,44 @@ const styles = StyleSheet.create({
     height: '85%',
   },
   contentContainer: {
-    // Dimensions set dynamically
+    // Grid mode content container
+  },
+  // Fixed styles for list mode to ensure all content is visible
+  listContentContainer: {
+    flex: 1,
+    justifyContent: 'space-between',
+    paddingVertical: 6, // Reduced from 8 to 6
+    paddingHorizontal: 4,
+    minHeight: 160, // Added minimum height to ensure content fits
+  },
+  listTopSection: {
+    flex: 3, // Increased from 2 to 3 for more space
+    justifyContent: 'flex-start',
+    paddingBottom: 4,
+    minHeight: 60, // Added minimum height
+  },
+  listMiddleSection: {
+    flex: 2, // Increased from 1 to 2
+    justifyContent: 'center',
+    paddingVertical: 4, // Reduced from 8 to 4
+    minHeight: 40, // Added minimum height
+  },
+  listBottomSection: {
+    flex: 2, // Increased from 1 to 2
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 4,
+    minHeight: 40, // Added minimum height to ensure visibility
+  },
+  listAddToCartButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   nameContainer: {
     flex: 1,
@@ -619,13 +763,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   bottomContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    flexDirection: 'column',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
     marginTop: 6,
   },
   priceContainer: {
-    flex: 1,
+    // Price container
   },
   priceText: {
     fontWeight: '700',
@@ -634,10 +778,9 @@ const styles = StyleSheet.create({
   availabilityContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 10,
-    marginLeft: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   availabilityText: {
     fontWeight: '600',
