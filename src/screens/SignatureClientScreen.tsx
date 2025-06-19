@@ -13,18 +13,38 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  Modal,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'react-native-image-picker';
-import { Picker } from '@react-native-picker/picker';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../context/ThemeContext';
 import signatureClientService, { CreateSignatureClientRequest } from '../service/SignatureClientService';
+import apiClient from '../axiosInstance/AxiosInstance';
 
-interface FormData extends CreateSignatureClientRequest {}
+// Extended interface with priority
+interface FormData extends CreateSignatureClientRequest {
+  priority?: 'Faible' | 'Normale' | 'Élevée' | 'Urgente';
+}
 
-const SignatureClientScreen: React.FC = () => {
+// Updated request type options with priority mapping
+const REQUEST_TYPES = [
+  { label: 'Bug dans l\'application', value: 'Application Bug', priority: 'Élevée', icon: '🐞' },
+  { label: 'Demande de fonctionnalité', value: 'Feature Request', priority: 'Normale', icon: '💡' },
+  { label: 'Question à l\'équipe', value: 'Question to the Team', priority: 'Faible', icon: '❓' },
+  { label: 'Autre', value: 'Other', priority: 'Faible', icon: '📌' },
+];
+
+// Priority options
+const PRIORITY_OPTIONS = [
+  { label: 'Faible', value: 'Faible', color: '#28a745', icon: '🟢' },
+  { label: 'Normale', value: 'Normale', color: '#ffc107', icon: '🟡' },
+  { label: 'Élevée', value: 'Élevée', color: '#fd7e14', icon: '🟠' },
+  { label: 'Urgente', value: 'Urgente', color: '#dc3545', icon: '🔴' },
+];
+
+const ReclamationScreen: React.FC = () => {
   const navigation = useNavigation();
   const { theme, isDarkMode, colorTheme } = useTheme();
   
@@ -32,7 +52,6 @@ const SignatureClientScreen: React.FC = () => {
   const PRIMARY_COLOR = colorTheme === 'blue' ? '#007afe' : '#fe9400';
   const SECONDARY_COLOR = colorTheme === 'blue' ? '#fe9400' : '#007afe';
   const BACKGROUND_COLOR = isDarkMode ? '#121212' : '#ffffff';
-  const CARD_BACKGROUND = isDarkMode ? '#1e1e1e' : '#f8f8f8';
   const TEXT_COLOR = isDarkMode ? '#ffffff' : '#000000';
   const TEXT_COLOR_SECONDARY = isDarkMode ? '#b3b3b3' : '#666666';
   const BORDER_COLOR = isDarkMode ? '#2c2c2c' : '#e0e0e0';
@@ -40,32 +59,64 @@ const SignatureClientScreen: React.FC = () => {
   const ERROR_COLOR = '#ff3b30';
   
   const [loading, setLoading] = useState(false);
+  const [userDataLoading, setUserDataLoading] = useState(true);
+  const [showRequestTypePicker, setShowRequestTypePicker] = useState(false);
+  const [showPriorityPicker, setShowPriorityPicker] = useState(false);
+  
   const [formData, setFormData] = useState<FormData>({
     client_id: 0,
     email_client: '',
     description: '',
-    type_probleme: 'Demande de signature',
+    type_probleme: 'Application Bug',
+    priority: 'Élevée',
     images: [],
   });
   
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
 
-  // Fetch client_id from AsyncStorage on component mount
+  // Fetch user data on component mount
   useEffect(() => {
-    const fetchClientId = async () => {
+    const fetchUserData = async () => {
       try {
-        const clientId = await AsyncStorage.getItem('client_id');
-        if (clientId) {
-          setFormData(prev => ({ ...prev, client_id: parseInt(clientId) }));
+        setUserDataLoading(true);
+        
+        const userData = await AsyncStorage.getItem('userData');
+        if (userData) {
+          const parsedUserData = JSON.parse(userData);
+          const clientId = parsedUserData.id;
+          
+          setFormData(prev => ({ ...prev, client_id: clientId }));
+          
+          try {
+            const response = await apiClient.get(`/thirdparties/${clientId}`);
+            setFormData(prev => ({
+              ...prev,
+              client_id: clientId,
+              email_client: response.data.email || '',
+            }));
+          } catch (apiError) {
+            console.warn('Could not fetch email from API, using stored email:', apiError);
+            setFormData(prev => ({
+              ...prev,
+              client_id: clientId,
+              email_client: parsedUserData.email || '',
+            }));
+          }
         } else {
           setErrors(prev => ({ ...prev, client_id: 'Aucun ID client trouvé' }));
         }
       } catch (error) {
-        console.error('Error fetching client_id from AsyncStorage:', error);
-        setErrors(prev => ({ ...prev, client_id: 'Erreur lors de la récupération de l\'ID client' }));
+        console.error('Error fetching user data:', error);
+        setErrors(prev => ({ 
+          ...prev, 
+          client_id: 'Erreur lors de la récupération des données utilisateur' 
+        }));
+      } finally {
+        setUserDataLoading(false);
       }
     };
-    fetchClientId();
+    
+    fetchUserData();
   }, []);
 
   // Handle image picking
@@ -73,16 +124,35 @@ const SignatureClientScreen: React.FC = () => {
     try {
       const result = await ImagePicker.launchImageLibrary({
         mediaType: 'photo',
-        selectionLimit: 0, // Allows multiple image selection
+        selectionLimit: 5,
         includeBase64: true,
+        quality: 0.8,
+        maxWidth: 1024,
+        maxHeight: 1024,
       });
 
       if (!result.didCancel && result.assets) {
-        const imageUris = result.assets.map(asset => asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : '');
+        const imageUris = result.assets.map(asset => {
+          if (asset.base64) {
+            return `data:image/jpeg;base64,${asset.base64}`;
+          }
+          return '';
+        });
+        
+        const validImages = imageUris.filter(uri => uri !== '');
+        
         setFormData(prev => ({
           ...prev,
-          images: [...prev.images, ...imageUris.filter(uri => uri !== '')],
+          images: [...prev.images, ...validImages],
         }));
+
+        if (validImages.length > 0) {
+          Alert.alert(
+            'Images ajoutées',
+            `${validImages.length} image(s) ajoutée(s) avec succès`,
+            [{ text: 'OK' }]
+          );
+        }
       }
     } catch (error) {
       console.error('Error picking images:', error);
@@ -97,6 +167,33 @@ const SignatureClientScreen: React.FC = () => {
     }));
   };
 
+  // Handle request type selection with automatic priority
+  const handleRequestTypeSelect = (requestType: string) => {
+    const selectedType = REQUEST_TYPES.find(type => type.value === requestType);
+    const suggestedPriority = selectedType?.priority || 'Normale';
+    
+    setFormData(prev => ({
+      ...prev,
+      type_probleme: requestType,
+      priority: suggestedPriority as FormData['priority'],
+    }));
+    setShowRequestTypePicker(false);
+    
+    // Clear errors
+    if (errors.type_probleme) {
+      setErrors(prev => ({ ...prev, type_probleme: undefined }));
+    }
+  };
+
+  // Handle priority selection
+  const handlePrioritySelect = (priority: string) => {
+    setFormData(prev => ({
+      ...prev,
+      priority: priority as FormData['priority'],
+    }));
+    setShowPriorityPicker(false);
+  };
+
   const validateForm = (): boolean => {
     const newErrors: Partial<Record<keyof FormData, string>> = {};
     
@@ -105,23 +202,24 @@ const SignatureClientScreen: React.FC = () => {
     }
     
     if (!formData.email_client) {
-      newErrors.email_client = 'L\'email est requis';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email_client)) {
-      newErrors.email_client = 'Email invalide';
+      console.warn('No email found for user');
     }
     
     if (!formData.description || formData.description.trim().length < 10) {
       newErrors.description = 'La description doit contenir au moins 10 caractères';
     }
     
-    if (formData.images && formData.images.length === 0) {
+    if (!formData.images || formData.images.length === 0) {
       newErrors.images = 'Au moins une image est requise';
+    } else if (formData.images.length > 5) {
+      newErrors.images = 'Maximum 5 images autorisées';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  // Send email
   const handleSubmit = async () => {
     if (!validateForm()) {
       return;
@@ -130,12 +228,15 @@ const SignatureClientScreen: React.FC = () => {
     setLoading(true);
     
     try {
-      const response = await signatureClientService.create(formData);
-      
-      if (response.success) {
+      const emailSent = await signatureClientService.sendEmailNotification(
+        formData,
+        'simotergui4@gmail.com'
+      );
+
+      if (emailSent) {
         Alert.alert(
-          'Succès',
-          response.message || 'Demande créée avec succès',
+          'Email envoyé! ✉️',
+          'Votre réclamation a été envoyée avec succès à l\'équipe de support. Vous recevrez une réponse sous peu.',
           [
             {
               text: 'OK',
@@ -143,15 +244,10 @@ const SignatureClientScreen: React.FC = () => {
             },
           ]
         );
-      } else {
-        Alert.alert('Erreur', response.message || 'Une erreur est survenue');
       }
     } catch (error: any) {
-      console.error('Error creating signature client:', error);
-      Alert.alert(
-        'Erreur',
-        error.response?.data?.message || 'Impossible de créer la demande'
-      );
+      console.error('Error sending email:', error);
+      Alert.alert('Erreur', 'Une erreur est survenue lors de l\'envoi de l\'email');
     } finally {
       setLoading(false);
     }
@@ -163,6 +259,103 @@ const SignatureClientScreen: React.FC = () => {
       setErrors(prev => ({ ...prev, [field]: undefined }));
     }
   };
+
+  // Get current selections
+  const selectedRequestType = REQUEST_TYPES.find(type => type.value === formData.type_probleme);
+  const selectedPriority = PRIORITY_OPTIONS.find(priority => priority.value === formData.priority);
+
+  // Custom Picker Modal Component
+  const CustomPickerModal = ({ 
+    visible, 
+    onClose, 
+    title, 
+    options, 
+    onSelect, 
+    selectedValue 
+  }: {
+    visible: boolean;
+    onClose: () => void;
+    title: string;
+    options: any[];
+    onSelect: (value: string) => void;
+    selectedValue?: string;
+  }) => (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContent, { backgroundColor: BACKGROUND_COLOR }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: TEXT_COLOR }]}>{title}</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Ionicons name="close" size={24} color={TEXT_COLOR} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.optionsList}>
+            {options.map((option, index) => (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.optionItem,
+                  {
+                    backgroundColor: selectedValue === option.value ? PRIMARY_COLOR + '20' : 'transparent',
+                    borderColor: BORDER_COLOR,
+                  }
+                ]}
+                onPress={() => onSelect(option.value)}
+              >
+                <Text style={styles.optionIcon}>{option.icon}</Text>
+                <View style={styles.optionTextContainer}>
+                  <Text style={[styles.optionLabel, { color: TEXT_COLOR }]}>
+                    {option.label}
+                  </Text>
+                  {option.priority && (
+                    <Text style={[styles.optionSubtext, { color: TEXT_COLOR_SECONDARY }]}>
+                      Priorité: {option.priority}
+                    </Text>
+                  )}
+                </View>
+                {selectedValue === option.value && (
+                  <Ionicons name="checkmark" size={20} color={PRIMARY_COLOR} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  // Show loading screen while fetching user data
+  if (userDataLoading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: BACKGROUND_COLOR }]}>
+        <StatusBar 
+          barStyle={isDarkMode ? 'light-content' : 'dark-content'} 
+          backgroundColor={isDarkMode ? '#000000' : '#ffffff'} 
+        />
+        <View style={[styles.header, { backgroundColor: PRIMARY_COLOR }]}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Nouvelle Réclamation</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color={PRIMARY_COLOR} />
+          <Text style={[styles.loadingText, { color: TEXT_COLOR }]}>
+            Chargement des données utilisateur...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: BACKGROUND_COLOR }]}>
@@ -178,8 +371,18 @@ const SignatureClientScreen: React.FC = () => {
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Nouvelle Demande</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.headerTitle}>Nouvelle Réclamation</Text>
+        <TouchableOpacity 
+          style={styles.emailButton}
+          onPress={handleSubmit}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name="send" size={20} color="#fff" />
+          )}
+        </TouchableOpacity>
       </View>
 
       <KeyboardAvoidingView 
@@ -191,53 +394,57 @@ const SignatureClientScreen: React.FC = () => {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.form}>
-            {/* Client ID Display (Read-only from AsyncStorage) */}
+            {/* Type de Demande Picker */}
             <View style={styles.inputGroup}>
               <Text style={[styles.label, { color: TEXT_COLOR }]}>
-                ID Client <Text style={styles.required}>*</Text>
+                Type de Demande <Text style={styles.required}>*</Text>
               </Text>
-              <TextInput
+              <TouchableOpacity
                 style={[
-                  styles.input,
+                  styles.customPicker,
                   { 
                     backgroundColor: INPUT_BACKGROUND,
-                    color: TEXT_COLOR,
-                    borderColor: errors.client_id ? ERROR_COLOR : BORDER_COLOR,
-                    opacity: 0.7,
+                    borderColor: BORDER_COLOR
                   }
                 ]}
-                value={formData.client_id.toString()}
-                editable={false}
-              />
-              {errors.client_id && (
-                <Text style={styles.errorText}>{errors.client_id}</Text>
-              )}
+                onPress={() => setShowRequestTypePicker(true)}
+              >
+                <View style={styles.pickerContent}>
+                  <Text style={styles.pickerIcon}>{selectedRequestType?.icon}</Text>
+                  <Text style={[styles.pickerText, { color: TEXT_COLOR }]}>
+                    {selectedRequestType?.label}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-down" size={20} color={TEXT_COLOR_SECONDARY} />
+              </TouchableOpacity>
             </View>
 
-            {/* Email Client Input */}
+            {/* Priority Picker */}
             <View style={styles.inputGroup}>
               <Text style={[styles.label, { color: TEXT_COLOR }]}>
-                Email Client <Text style={styles.required}>*</Text>
+                Priorité <Text style={styles.required}>*</Text>
               </Text>
-              <TextInput
+              <TouchableOpacity
                 style={[
-                  styles.input,
+                  styles.customPicker,
                   { 
                     backgroundColor: INPUT_BACKGROUND,
-                    color: TEXT_COLOR,
-                    borderColor: errors.email_client ? ERROR_COLOR : BORDER_COLOR
+                    borderColor: BORDER_COLOR
                   }
                 ]}
-                placeholder="exemple@email.com"
-                placeholderTextColor={TEXT_COLOR_SECONDARY}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={formData.email_client}
-                onChangeText={(text) => handleInputChange('email_client', text)}
-              />
-              {errors.email_client && (
-                <Text style={styles.errorText}>{errors.email_client}</Text>
-              )}
+                onPress={() => setShowPriorityPicker(true)}
+              >
+                <View style={styles.pickerContent}>
+                  <Text style={styles.pickerIcon}>{selectedPriority?.icon}</Text>
+                  <Text style={[styles.pickerText, { color: selectedPriority?.color || TEXT_COLOR }]}>
+                    {selectedPriority?.label}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-down" size={20} color={TEXT_COLOR_SECONDARY} />
+              </TouchableOpacity>
+              <Text style={[styles.helpText, { color: TEXT_COLOR_SECONDARY }]}>
+                💡 La priorité est suggérée automatiquement selon le type de demande
+              </Text>
             </View>
 
             {/* Description Input */}
@@ -254,7 +461,7 @@ const SignatureClientScreen: React.FC = () => {
                     borderColor: errors.description ? ERROR_COLOR : BORDER_COLOR
                   }
                 ]}
-                placeholder="Décrivez le problème..."
+                placeholder="Décrivez le problème en détail..."
                 placeholderTextColor={TEXT_COLOR_SECONDARY}
                 multiline
                 numberOfLines={4}
@@ -281,7 +488,7 @@ const SignatureClientScreen: React.FC = () => {
               >
                 <Ionicons name="image" size={20} color={TEXT_COLOR} />
                 <Text style={[styles.imagePickerText, { color: TEXT_COLOR }]}>
-                  Sélectionner des images
+                  Sélectionner des images ({formData.images?.length || 0}/5)
                 </Text>
               </TouchableOpacity>
               {errors.images && (
@@ -305,29 +512,6 @@ const SignatureClientScreen: React.FC = () => {
               </View>
             </View>
 
-            {/* Type de Demande Picker */}
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: TEXT_COLOR }]}>Type de Demande</Text>
-              <View style={[styles.pickerContainer, { 
-                backgroundColor: INPUT_BACKGROUND,
-                borderColor: BORDER_COLOR
-              }]}>
-                <Picker
-                  selectedValue={formData.type_probleme}
-                  onValueChange={(value) => handleInputChange('type_probleme', value)}
-                  style={{ color: TEXT_COLOR }}
-                  dropdownIconColor={TEXT_COLOR}
-                >
-                  <Picker.Item label="Demande de signature" value="Demande de signature" />
-                  <Picker.Item label="Demande de modification" value="Demande de modification" />
-                  <Picker.Item label="Demande de fermeture" value="Demande de fermeture" />
-                  <Picker.Item label="Problème technique" value="Problème technique" />
-                  <Picker.Item label="Document manquant" value="Document manquant" />
-                  <Picker.Item label="Autre" value="Autre" />
-                </Picker>
-              </View>
-            </View>
-
             {/* Submit Button */}
             <TouchableOpacity
               style={[
@@ -344,8 +528,8 @@ const SignatureClientScreen: React.FC = () => {
                 <ActivityIndicator color="#fff" />
               ) : (
                 <>
-                  <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                  <Text style={styles.submitButtonText}>Soumettre</Text>
+                  <Ionicons name="send" size={20} color="#fff" />
+                  <Text style={styles.submitButtonText}>Envoyer Réclamation</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -363,11 +547,40 @@ const SignatureClientScreen: React.FC = () => {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Custom Pickers */}
+      <CustomPickerModal
+        visible={showRequestTypePicker}
+        onClose={() => setShowRequestTypePicker(false)}
+        title="Sélectionner le type de demande"
+        options={REQUEST_TYPES}
+        onSelect={handleRequestTypeSelect}
+        selectedValue={formData.type_probleme}
+      />
+
+      <CustomPickerModal
+        visible={showPriorityPicker}
+        onClose={() => setShowPriorityPicker(false)}
+        title="Sélectionner la priorité"
+        options={PRIORITY_OPTIONS}
+        onSelect={handlePrioritySelect}
+        selectedValue={formData.priority}
+      />
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    fontWeight: '500',
+  },
   container: {
     flex: 1,
   },
@@ -392,6 +605,13 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emailButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -431,11 +651,88 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
   },
-  pickerContainer: {
+  // Custom Picker Styles
+  customPicker: {
+    height: 50,
     borderWidth: 1,
     borderRadius: 10,
-    overflow: 'hidden',
+    paddingHorizontal: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
+  pickerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  pickerIcon: {
+    fontSize: 20,
+    marginRight: 10,
+  },
+  pickerText: {
+    fontSize: 16,
+    flex: 1,
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '70%',
+    paddingBottom: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  closeButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  optionsList: {
+    paddingHorizontal: 20,
+  },
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 15,
+    borderRadius: 10,
+    marginVertical: 5,
+    borderWidth: 1,
+  },
+  optionIcon: {
+    fontSize: 24,
+    marginRight: 15,
+  },
+  optionTextContainer: {
+    flex: 1,
+  },
+  optionLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  optionSubtext: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  // Existing styles
   errorText: {
     color: '#ff3b30',
     fontSize: 12,
@@ -508,6 +805,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
+  helpText: {
+    fontSize: 12,
+    marginTop: 5,
+    fontStyle: 'italic',
+  },
 });
 
-export default SignatureClientScreen;
+export default ReclamationScreen;
