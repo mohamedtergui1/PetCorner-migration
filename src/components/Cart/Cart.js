@@ -929,7 +929,7 @@ export default function Cart({ navigation }) {
                   }
                 </View>
 
-                <View style={[styles.containerOrder, { backgroundColor: theme.backgroundColor }]}>
+                <View style={styles.containerOrder}>
                   <Text style={[styles.textDorP, { color: theme.textColor }]}>
                     Détails de la Commande
                   </Text>
@@ -951,20 +951,12 @@ export default function Cart({ navigation }) {
                       </Text>
                     </View>
                   )}
-                  <View style={styles.subtotalContainer}>
-                    <Text style={[styles.titleSbt_or_Tax, { color: theme.secondaryTextColor }]}>
-                      TVA
-                    </Text>
-                    <Text style={[styles.subtotal, { color: theme.textColor }]}>
-                      (20%)
-                    </Text>
-                  </View>
                   <View style={styles.taxContainer}>
                     <Text style={[styles.titleSbt_or_Tax, { color: theme.secondaryTextColor }]}>
-                      Tax
+                      TVA (incluse)
                     </Text>
                     <Text style={[styles.subtotal, { color: theme.textColor }]}>
-                      {((total + deliveryCost) / 5).toFixed(2)} DH
+                      {(total * 0.1667).toFixed(2)} DH {/* This shows the included VAT amount (20% of the net price) */}
                     </Text>
                   </View>
                   <View style={styles.dFlex}>
@@ -972,10 +964,11 @@ export default function Cart({ navigation }) {
                       Total
                     </Text>
                     <Text style={[styles.total, { color: PRIMARY_COLOR }]}>
-                      {(total + deliveryCost + (total + deliveryCost) / 5).toFixed(2)} DH
+                      {(total + deliveryCost).toFixed(2)} DH {/* Remove the additional VAT calculation */}
                     </Text>
                   </View>
                 </View>
+
               </View>
             </ScrollView>
 
@@ -991,7 +984,7 @@ export default function Cart({ navigation }) {
                   style={{ marginRight: 8 }}
                 />
                 <Text style={styles.shopButtonText}>
-                  Paiement ({(total + deliveryCost + (total + deliveryCost) / 5).toFixed(2)} DH)
+                  Paiement ({(total + deliveryCost).toFixed(2)} DH) 
                 </Text>
               </TouchableOpacity>
             </View>
