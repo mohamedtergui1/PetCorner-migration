@@ -17,23 +17,25 @@ export default function Signup({navigation}) {
         email: '',
         fullname: '',
         address: '',
+        city: '', // ✅ New field for city
+        postalCode: '', // ✅ New field for postal code
         phone: '',
         password: '',
       });
       const [errors, setErrors] = useState({});
       const [loading, setLoading] = useState(false);
       const [gettingLocation, setGettingLocation] = useState(false);
-      const [showSuccessToast, setShowSuccessToast] = useState(false); // ✅ New state for success toast
+      const [showSuccessToast, setShowSuccessToast] = useState(false);
       const { theme, isDarkMode, toggleTheme, colorTheme, toggleColorTheme } = useTheme();
       const insets = useSafeAreaInsets();
 
-      // ✅ Animation refs for smooth transitions
+      // Animation refs for smooth transitions
       const fadeAnim = useRef(new Animated.Value(1)).current;
       const slideAnim = useRef(new Animated.Value(0)).current;
       const successToastAnim = useRef(new Animated.Value(0)).current;
       const successToastSlideAnim = useRef(new Animated.Value(-100)).current;
 
-      // ✅ Initialize entrance animations
+      // Initialize entrance animations
       useEffect(() => {
         Animated.timing(fadeAnim, {
           toValue: 1,
@@ -42,7 +44,7 @@ export default function Signup({navigation}) {
         }).start();
       }, []);
 
-      // ✅ Success toast animation functions
+      // Success toast animation functions
       const showSuccessToastWithAnimation = () => {
         setShowSuccessToast(true);
         
@@ -101,7 +103,18 @@ export default function Signup({navigation}) {
         }
 
         if(!inputs.address){
-          handleError('Veuillez saisir votre adresse', 'address');
+          handleError('Veuillez saisir votre quartier', 'address');
+          isValid = false;
+        }
+
+        // ✅ Validate city and postal code
+        if(!inputs.city){
+          handleError('Veuillez saisir votre ville', 'city');
+          isValid = false;
+        }
+
+        if(!inputs.postalCode){
+          handleError('Veuillez saisir votre code postal', 'postalCode');
           isValid = false;
         }
     
@@ -127,6 +140,16 @@ export default function Signup({navigation}) {
       const requestLocationPermission = async () => {
         if (Platform.OS === 'android') {
           try {
+            // First check if permission is already granted
+            const checkResult = await PermissionsAndroid.check(
+              PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+            );
+            
+            if (checkResult === true) {
+              return true;
+            }
+
+            // Request permission
             const granted = await PermissionsAndroid.request(
               PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
               {
@@ -137,19 +160,20 @@ export default function Signup({navigation}) {
                 buttonPositive: 'Accepter',
               }
             );
+            
+            console.log('Permission result:', granted);
             return granted === PermissionsAndroid.RESULTS.GRANTED;
           } catch (err) {
-            console.warn(err);
+            console.warn('Permission error:', err);
             return false;
           }
         }
         return true; // iOS handles permissions automatically
       };
 
-      // Get address from coordinates using reverse geocoding
+      // ✅ Enhanced function to get address details from coordinates
       const getAddressFromCoordinates = async (latitude, longitude) => {
         try {
-          // Using a free geocoding service (you can replace with your preferred service)
           const response = await axios.get(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`,
             {
@@ -159,8 +183,31 @@ export default function Signup({navigation}) {
             }
           );
           
-          if (response.data && response.data.display_name) {
-            return response.data.display_name;
+          if (response.data && response.data.address) {
+            const addressData = response.data.address;
+            
+            // Extract different components
+            const neighbourhood = addressData.neighbourhood || addressData.suburb || addressData.quarter || addressData.district || '';
+            const city = addressData.city || addressData.town || addressData.village || addressData.municipality || '';
+            const postalCode = addressData.postcode || '';
+            
+            // ✅ Use neighbourhood/quartier as the main address
+            const quartierAddress = neighbourhood || city || 'Quartier non spécifié';
+            
+            // ✅ Create full concatenated address for storage (with quartier instead of full street)
+            const fullAddress = [
+              quartierAddress,
+              city,
+              postalCode
+            ].filter(Boolean).join(', ');
+            
+            return {
+              streetAddress: quartierAddress, // ✅ Now returns quartier instead of full street
+              city: city,
+              postalCode: postalCode,
+              fullAddress: fullAddress,
+              displayName: response.data.display_name
+            };
           } else {
             throw new Error('Adresse non trouvée');
           }
@@ -170,15 +217,19 @@ export default function Signup({navigation}) {
         }
       };
 
-      // Get current location and address
+      // ✅ Updated function to get current location and populate all address fields
       const getCurrentLocationAddress = async () => {
+        console.log('GPS button clicked - starting location process');
         setGettingLocation(true);
         
         try {
           // Request permission first
+          console.log('Requesting location permission...');
           const hasPermission = await requestLocationPermission();
+          console.log('Permission granted:', hasPermission);
           
           if (!hasPermission) {
+            console.log('Permission denied by user');
             Toast.show({
               type: 'error',
               text1: 'Permission refusée',
@@ -191,24 +242,36 @@ export default function Signup({navigation}) {
             return;
           }
 
-          // Get current position
+          console.log('Getting current position...');
           Geolocation.getCurrentPosition(
             async (position) => {
               try {
+                console.log('Position received:', position.coords);
                 const { latitude, longitude } = position.coords;
                 
-                // Get address from coordinates
-                const address = await getAddressFromCoordinates(latitude, longitude);
+                // Get detailed address information
+                console.log('Getting address from coordinates...');
+                const addressInfo = await getAddressFromCoordinates(latitude, longitude);
+                console.log('Address info received:', addressInfo);
                 
-                // Update the address input
-                setInputs(prevState => ({...prevState, address: address}));
-                handleError(null, 'address'); // Clear any previous error
+                // ✅ Update all address-related inputs
+                setInputs(prevState => ({
+                  ...prevState, 
+                  address: addressInfo.streetAddress || addressInfo.displayName,
+                  city: addressInfo.city,
+                  postalCode: addressInfo.postalCode
+                }));
+                
+                // Clear any previous errors
+                handleError(null, 'address');
+                handleError(null, 'city');
+                handleError(null, 'postalCode');
                 
                 Toast.show({
                   type: 'success',
-                  text1: 'Adresse récupérée! 📍',
-                  text2: 'Votre adresse actuelle a été ajoutée',
-                  visibilityTime: 2500,
+                  text1: 'Quartier récupéré! 📍',
+                  text2: `${addressInfo.city || 'Ville'} ${addressInfo.postalCode || 'Code postal'}`,
+                  visibilityTime: 3000,
                   autoHide: true,
                   topOffset: 60,
                 });
@@ -228,7 +291,7 @@ export default function Signup({navigation}) {
               }
             },
             (error) => {
-              console.error('Location error:', error);
+              console.error('Geolocation error:', error);
               let errorMessage = 'Erreur lors de la récupération de la localisation';
               
               switch (error.code) {
@@ -236,10 +299,10 @@ export default function Signup({navigation}) {
                   errorMessage = 'Permission de localisation refusée';
                   break;
                 case 2:
-                  errorMessage = 'Position non disponible';
+                  errorMessage = 'Position non disponible. Vérifiez que le GPS est activé';
                   break;
                 case 3:
-                  errorMessage = 'Délai d\'attente dépassé';
+                  errorMessage = 'Délai d\'attente dépassé. Réessayez';
                   break;
                 default:
                   errorMessage = 'Erreur de localisation inconnue';
@@ -249,7 +312,7 @@ export default function Signup({navigation}) {
                 type: 'error',
                 text1: 'Erreur de localisation',
                 text2: errorMessage,
-                visibilityTime: 3000,
+                visibilityTime: 4000,
                 autoHide: true,
                 topOffset: 60,
               });
@@ -257,8 +320,10 @@ export default function Signup({navigation}) {
             },
             {
               enableHighAccuracy: true,
-              timeout: 15000,
+              timeout: 20000, // Increased timeout
               maximumAge: 10000,
+              forceRequestLocation: true, // Force fresh location
+              showLocationDialog: true, // Show system location dialog if needed
             }
           );
         } catch (error) {
@@ -278,16 +343,25 @@ export default function Signup({navigation}) {
       const register = async () => {
         setLoading(true);
     
+        // ✅ Create concatenated address for API submission
+        const concatenatedAddress = [
+          inputs.address,
+          inputs.city,
+          inputs.postalCode
+        ].filter(Boolean).join(', ');
+
         const inputData = {
           module: 'societe',
           name: inputs.fullname,
           phone: inputs.phone,
-          address: inputs.address,
+          address: concatenatedAddress, // ✅ Send concatenated address
           email: inputs.email,
           client: 1,
           code_client: -1,
           array_options: {
             mdpmob: inputs.password,
+            ville: inputs.city, // ✅ Store city separately if needed
+            code_postal: inputs.postalCode, // ✅ Store postal code separately if needed
           }
         };
 
@@ -303,12 +377,9 @@ export default function Signup({navigation}) {
             console.log("User ID:", res.data);
             setLoading(false);
             
-            // ✅ Show custom success toast instead of Toast.show
             showSuccessToastWithAnimation();
 
-            // ✅ Navigate with smooth transition and pass user data
             setTimeout(() => {
-              // Fade out animation before navigation
               Animated.parallel([
                 Animated.timing(fadeAnim, {
                   toValue: 0,
@@ -321,7 +392,6 @@ export default function Signup({navigation}) {
                   useNativeDriver: true,
                 }),
               ]).start(() => {
-                // ✅ Navigate to Login with pre-filled email and phone
                 navigation.replace('Login', {
                   email: inputs.email,
                   phone: inputs.phone,
@@ -335,7 +405,6 @@ export default function Signup({navigation}) {
             if (error.response) {
                 console.log("API Error:", error.response.data);
                 
-                // Show error toast instead of Alert
                 Toast.show({
                   type: 'error',
                   text1: 'Erreur lors de la création',
@@ -365,7 +434,6 @@ export default function Signup({navigation}) {
         setErrors(prevState => ({...prevState, [input]: error}));
       };
 
-      // ✅ Navigate to login with smooth transition
       const navigateToLogin = () => {
         Animated.parallel([
           Animated.timing(fadeAnim, {
@@ -390,10 +458,9 @@ export default function Signup({navigation}) {
         backgroundColor={theme.backgroundColor} 
       />
       
-      {/* ✅ Only show loader during registration process, not after success */}
-      <Loader visible={(loading || gettingLocation) && !showSuccessToast} />
+      <Loader visible={loading && !showSuccessToast} />
       
-      {/* ✅ Beautiful Success Toast */}
+      {/* Beautiful Success Toast */}
       {showSuccessToast && (
         <Animated.View 
           style={[
@@ -446,7 +513,7 @@ export default function Signup({navigation}) {
         </Animated.View>
       )}
       
-      {/* ✅ Animated main content */}
+      {/* Animated main content */}
       <Animated.View 
         style={[
           styles.animatedContainer,
@@ -458,7 +525,6 @@ export default function Signup({navigation}) {
       >
         {/* Theme Controls */}
         <View style={[styles.themeControls, { paddingTop: insets.top + 15 }]}>
-          {/* Dark Mode Toggle */}
           <TouchableOpacity 
             style={[styles.themeButton, { 
               backgroundColor: theme.cardBackground || (isDarkMode ? '#2a2a2a' : '#f0f0f0'),
@@ -477,7 +543,6 @@ export default function Signup({navigation}) {
             </Text>
           </TouchableOpacity>
 
-          {/* Color Theme Toggle */}
           <TouchableOpacity 
             style={[styles.themeButton, { 
               backgroundColor: theme.cardBackground || (isDarkMode ? '#2a2a2a' : '#f0f0f0'),
@@ -540,8 +605,8 @@ export default function Signup({navigation}) {
                   onChangeText={text => handleOnchange(text, 'address')}
                   onFocus={() => handleError(null, 'address')}
                   iconName="map-marker-outline"
-                  label="Adresse"
-                  placeholder="Entrez votre adresse ou utilisez la localisation"
+                  label="Adresse (Quartier)"
+                  placeholder="Entrez votre quartier ou utilisez la localisation"
                   error={errors.address}
                   labelColor={theme.textColor}
                   theme={theme}
@@ -549,27 +614,68 @@ export default function Signup({navigation}) {
                 />
               </View>
               
-              {/* Location Button */}
               <TouchableOpacity
                 style={[styles.locationButton, { 
                   backgroundColor: theme.primary,
-                  opacity: gettingLocation ? 0.6 : 1
+                  opacity: gettingLocation ? 0.7 : 1
                 }]}
                 onPress={getCurrentLocationAddress}
                 disabled={gettingLocation}
               >
-                <MaterialCommunityIcons 
-                  name={gettingLocation ? "loading" : "crosshairs-gps"} 
-                  size={20} 
-                  color="white" 
-                  style={gettingLocation ? styles.spinIcon : null}
-                />
+                {gettingLocation ? (
+                  <MaterialCommunityIcons 
+                    name="loading" 
+                    size={20} 
+                    color="white" 
+                    style={styles.spinIcon}
+                  />
+                ) : (
+                  <MaterialCommunityIcons 
+                    name="crosshairs-gps" 
+                    size={20} 
+                    color="white" 
+                  />
+                )}
               </TouchableOpacity>
+            </View>
+
+            {/* ✅ City and Postal Code Row */}
+            <View style={styles.cityPostalRow}>
+              <View style={styles.cityContainer}>
+                <Input
+                  value={inputs.city}
+                  onChangeText={text => handleOnchange(text, 'city')}
+                  onFocus={() => handleError(null, 'city')}
+                  iconName="city"
+                  label="Ville"
+                  placeholder="Ville"
+                  error={errors.city}
+                  labelColor={theme.textColor}
+                  theme={theme}
+                  isDarkMode={isDarkMode}
+                />
+              </View>
+              
+              <View style={styles.postalContainer}>
+                <Input
+                  value={inputs.postalCode}
+                  onChangeText={text => handleOnchange(text, 'postalCode')}
+                  onFocus={() => handleError(null, 'postalCode')}
+                  iconName="mailbox-outline"
+                  label="Code Postal"
+                  placeholder="Code"
+                  error={errors.postalCode}
+                  keyboardType="numeric"
+                  labelColor={theme.textColor}
+                  theme={theme}
+                  isDarkMode={isDarkMode}
+                />
+              </View>
             </View>
 
             {/* Helper text for location feature */}
             <Text style={[styles.helperText, { color: theme.secondaryTextColor }]}>
-              💡 Appuyez sur le bouton GPS pour obtenir automatiquement votre adresse
+              💡 Appuyez sur le bouton GPS pour obtenir automatiquement votre quartier et informations de localisation
             </Text>
 
             <Input
@@ -618,7 +724,6 @@ export default function Signup({navigation}) {
         </ScrollView>
       </Animated.View>
       
-      {/* Toast component */}
       <Toast />
     </SafeAreaView>
   )
@@ -707,6 +812,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.5,
   },
+  // ✅ New styles for city and postal code row
+  cityPostalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 15,
+    marginBottom: 10,
+  },
+  cityContainer: {
+    flex: 2,
+  },
+  postalContainer: {
+    flex: 1,
+  },
   helperText: {
     fontSize: 12,
     marginBottom: 15,
@@ -714,7 +832,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   spinIcon: {
-    transform: [{ rotate: '45deg' }],
+    animation: 'spin 1s linear infinite',
   },
   loginText: {
     fontWeight: '500',
@@ -727,7 +845,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textDecorationLine: 'underline',
   },
-  // ✅ New styles for success toast
   successToastContainer: {
     position: 'absolute',
     left: 20,
