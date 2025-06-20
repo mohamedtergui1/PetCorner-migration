@@ -33,18 +33,18 @@ import Geolocation from '@react-native-community/geolocation';
 
 export default function Cart({ navigation }) {
   const { theme, isDarkMode, toggleTheme, colorTheme, toggleColorTheme } = useTheme();
-  
+
   // Use cart context instead of local state
-  const { 
-    cartItems, 
-    cartCount, 
-    updateQuantity, 
-    removeFromCart, 
-    clearCart, 
-    loadCartItems, 
-    getQuantities 
+  const {
+    cartItems,
+    cartCount,
+    updateQuantity,
+    removeFromCart,
+    clearCart,
+    loadCartItems,
+    getQuantities
   } = useCart();
-  
+
   const [products, setProducts] = useState([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -59,7 +59,7 @@ export default function Cart({ navigation }) {
   const [errorCity, setErrorCity] = useState('');
   const [errorZipCode, setErrorZipCode] = useState('');
   const [userDetails, setUserDetails] = useState();
-  
+
   // Credit card states
   const [modalCardVisible, setModalCardVisible] = useState(false);
   const [cardNumber, setCardNumber] = useState('');
@@ -71,23 +71,23 @@ export default function Cart({ navigation }) {
   const [errorExpiryDate, setErrorExpiryDate] = useState('');
   const [errorCvv, setErrorCvv] = useState('');
   const [cardDetails, setCardDetails] = useState(null);
-  
+
   // Location states
   const [userLocation, setUserLocation] = useState(null);
   const [distance, setDistance] = useState(null);
   const [locationLoading, setLocationLoading] = useState(false);
   const [deliveryCost, setDeliveryCost] = useState(0);
-  
+
   // Loading states for quantity updates
   const [loadingQuantityUpdates, setLoadingQuantityUpdates] = useState({});
-  
+
   // Store location (set this to your actual store coordinates)
   const STORE_LOCATION = {
     latitude: 33.951371146759776,
     longitude: -6.88501751937855,
     address: "Immeuble 102, Prestigia, Prestigia - Riyad Al Andalous, N° 13 sis, GH4, Rabat 10100"
   };
-  
+
   // Define theme colors matching ProductScreen
   const PRIMARY_COLOR = colorTheme === 'blue' ? '#007afe' : '#fe9400';
   const TEXT_COLOR = isDarkMode ? '#ffffff' : '#000000';
@@ -133,11 +133,11 @@ export default function Cart({ navigation }) {
     const R = 6371; // Radius of the Earth in kilometers
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distance = R * c;
     return distance;
   };
@@ -154,13 +154,13 @@ export default function Cart({ navigation }) {
   const formatCardNumber = (text) => {
     // Remove all non-numeric characters
     const cleaned = text.replace(/\D/g, '');
-    
+
     // Limit to 16 digits maximum
     const limited = cleaned.substring(0, 16);
-    
+
     // Add spaces every 4 digits
     const formatted = limited.replace(/(\d{4})(?=\d)/g, '$1 ');
-    
+
     return formatted;
   };
 
@@ -203,7 +203,7 @@ export default function Cart({ navigation }) {
       const currentDate = new Date();
       const currentYear = currentDate.getFullYear() % 100;
       const currentMonth = currentDate.getMonth() + 1;
-      
+
       if (parseInt(month) < 1 || parseInt(month) > 12) {
         setErrorExpiryDate('Mois invalide');
         isValid = false;
@@ -260,7 +260,7 @@ export default function Cart({ navigation }) {
   // Get user's current location
   const getCurrentLocation = async () => {
     setLocationLoading(true);
-    
+
     const hasPermission = await requestLocationPermission();
     if (!hasPermission) {
       Alert.alert(
@@ -279,21 +279,21 @@ export default function Cart({ navigation }) {
       (position) => {
         const { latitude, longitude } = position.coords;
         setUserLocation({ latitude, longitude });
-        
+
         // Calculate distance to store
         const dist = calculateDistance(
-          latitude, 
-          longitude, 
-          STORE_LOCATION.latitude, 
+          latitude,
+          longitude,
+          STORE_LOCATION.latitude,
           STORE_LOCATION.longitude
         );
-        
+
         setDistance(dist);
         const cost = calculateDeliveryCost(dist);
         setDeliveryCost(cost);
-        
+
         setLocationLoading(false);
-        
+
         if (Platform.OS === 'android') {
           ToastAndroid.show(`Distance: ${dist.toFixed(1)}km - Frais de livraison: ${cost} DH`, ToastAndroid.LONG);
         } else {
@@ -304,7 +304,7 @@ export default function Cart({ navigation }) {
         console.log('Location error:', error);
         setLocationLoading(false);
         Alert.alert(
-          'Erreur de localisation', 
+          'Erreur de localisation',
           'Impossible d\'obtenir votre position. Vérifiez que le GPS est activé.',
           [
             { text: 'OK' },
@@ -312,10 +312,10 @@ export default function Cart({ navigation }) {
           ]
         );
       },
-      { 
-        enableHighAccuracy: true, 
-        timeout: 15000, 
-        maximumAge: 10000 
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 10000
       }
     );
   };
@@ -369,7 +369,7 @@ export default function Cart({ navigation }) {
   const handleUpdateQuantity = async (id, change) => {
     // Set loading state for this specific product
     setLoadingQuantityUpdates(prev => ({ ...prev, [id]: true }));
-    
+
     try {
       const result = await updateQuantity(id, change); // Use context function
       if (result.success) {
@@ -433,7 +433,7 @@ export default function Cart({ navigation }) {
 
     try {
       const quantities = getQuantities(); // Use context function
-      
+
       const inputData = {
         socid: clientID,
         date: new Date().toISOString().split('T')[0],
@@ -466,7 +466,7 @@ export default function Cart({ navigation }) {
 
       // Use context function to clear cart
       await clearCart();
-      
+
       if (Platform.OS === 'android') {
         ToastAndroid.show('Les articles seront livrés BIENTOT !', ToastAndroid.SHORT);
         setIsLoading(true);
@@ -570,8 +570,8 @@ export default function Cart({ navigation }) {
                 onPress={() => handleUpdateQuantity(id, -1)} // Use context function
                 disabled={isUpdatingQuantity}
                 style={[
-                  styles.quantityButton, 
-                  { 
+                  styles.quantityButton,
+                  {
                     borderColor: PRIMARY_COLOR,
                     opacity: isUpdatingQuantity ? 0.6 : 1
                   }
@@ -589,8 +589,8 @@ export default function Cart({ navigation }) {
                 onPress={() => handleUpdateQuantity(id, 1)} // Use context function
                 disabled={isUpdatingQuantity}
                 style={[
-                  styles.quantityButton, 
-                  { 
+                  styles.quantityButton,
+                  {
                     borderColor: PRIMARY_COLOR,
                     opacity: isUpdatingQuantity ? 0.6 : 1
                   }
@@ -736,7 +736,7 @@ export default function Cart({ navigation }) {
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundColor }]}>
       <StatusBar backgroundColor={PRIMARY_COLOR} barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      
+
       {/* Updated Header with cart count from context */}
       <View style={[styles.headerContainer, { backgroundColor: PRIMARY_COLOR }]}>
         <TouchableOpacity
@@ -773,7 +773,7 @@ export default function Cart({ navigation }) {
           />
         </TouchableOpacity>
       </View>
-      
+
       {isEmpty ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: theme.backgroundColor }}>
           <Ionicons name="cart" color={PRIMARY_COLOR} size={60} />
@@ -793,10 +793,10 @@ export default function Cart({ navigation }) {
               <View style={styles.productContainer}>
                 {products ? products.map(renderProducts) : null}
               </View>
-              
+
               {/* Location Section */}
               {renderLocationSection()}
-              
+
               <View>
                 <View style={[styles.deliveryContainer, { backgroundColor: theme.backgroundColor }]}>
                   <Text style={[styles.textDorP, { color: theme.textColor }]}>
@@ -830,7 +830,7 @@ export default function Cart({ navigation }) {
                     </TouchableOpacity>
                   </View>
                 </View>
-                
+
                 <View style={[styles.conatinerPayement, { backgroundColor: theme.backgroundColor }]}>
                   <Text style={[styles.textTitlePay, { color: theme.textColor }]}>
                     Mode de paiement
@@ -897,19 +897,19 @@ export default function Cart({ navigation }) {
                   {modePaiement === "credit_card" && cardDetails && (
                     <View style={[styles.cardDetailsContainer, { backgroundColor: theme.cardBackground, borderColor: PRIMARY_COLOR }]}>
                       <View style={styles.cardDetailsHeader}>
-                        <MaterialCommunityIcons 
-                          name="credit-card" 
-                          size={20} 
-                          color={PRIMARY_COLOR} 
+                        <MaterialCommunityIcons
+                          name="credit-card"
+                          size={20}
+                          color={PRIMARY_COLOR}
                         />
                         <Text style={[styles.cardDetailsTitle, { color: theme.textColor }]}>
                           Carte enregistrée
                         </Text>
                         <TouchableOpacity onPress={() => setModalCardVisible(true)}>
-                          <MaterialCommunityIcons 
-                            name="pencil" 
-                            size={16} 
-                            color={PRIMARY_COLOR} 
+                          <MaterialCommunityIcons
+                            name="pencil"
+                            size={16}
+                            color={PRIMARY_COLOR}
                           />
                         </TouchableOpacity>
                       </View>
@@ -928,7 +928,7 @@ export default function Cart({ navigation }) {
                     ) : null
                   }
                 </View>
-                
+
                 <View style={[styles.containerOrder, { backgroundColor: theme.backgroundColor }]}>
                   <Text style={[styles.textDorP, { color: theme.textColor }]}>
                     Détails de la Commande
@@ -984,8 +984,8 @@ export default function Cart({ navigation }) {
               <TouchableOpacity
                 onPress={() => (total != 0 ? checkOut() : null)}
                 style={[styles.shopButton, { backgroundColor: PRIMARY_COLOR }]}>
-                <FontAwesome 
-                  name="shopping-bag"
+                <Ionicons
+                  name="bag-outline"
                   size={18}
                   color="#fff"
                   style={{ marginRight: 8 }}
@@ -998,7 +998,7 @@ export default function Cart({ navigation }) {
           </>
         )
       )}
-      
+
       {/* Address Modal */}
       <Modal
         isVisible={modalAdresseVisible}
@@ -1183,10 +1183,10 @@ export default function Cart({ navigation }) {
                 Numéro de carte
               </Text>
               <View style={[
-                styles.cardInputWrapper, 
-                { 
+                styles.cardInputWrapper,
+                {
                   borderColor: errorCardNumber ? 'red' : theme.secondaryTextColor,
-                  backgroundColor: theme.backgroundColor 
+                  backgroundColor: theme.backgroundColor
                 }
               ]}>
                 <MaterialCommunityIcons
@@ -1222,10 +1222,10 @@ export default function Cart({ navigation }) {
                 Nom du titulaire
               </Text>
               <View style={[
-                styles.cardInputWrapper, 
-                { 
+                styles.cardInputWrapper,
+                {
                   borderColor: errorCardHolder ? 'red' : theme.secondaryTextColor,
-                  backgroundColor: theme.backgroundColor 
+                  backgroundColor: theme.backgroundColor
                 }
               ]}>
                 <MaterialCommunityIcons
@@ -1259,10 +1259,10 @@ export default function Cart({ navigation }) {
                   Date d'expiration
                 </Text>
                 <View style={[
-                  styles.cardInputWrapper, 
-                  { 
+                  styles.cardInputWrapper,
+                  {
                     borderColor: errorExpiryDate ? 'red' : theme.secondaryTextColor,
-                    backgroundColor: theme.backgroundColor 
+                    backgroundColor: theme.backgroundColor
                   }
                 ]}>
                   <MaterialCommunityIcons
@@ -1298,10 +1298,10 @@ export default function Cart({ navigation }) {
                   CVV
                 </Text>
                 <View style={[
-                  styles.cardInputWrapper, 
-                  { 
+                  styles.cardInputWrapper,
+                  {
                     borderColor: errorCvv ? 'red' : theme.secondaryTextColor,
-                    backgroundColor: theme.backgroundColor 
+                    backgroundColor: theme.backgroundColor
                   }
                 ]}>
                   <MaterialCommunityIcons
@@ -1334,10 +1334,10 @@ export default function Cart({ navigation }) {
 
             {/* Security Notice */}
             <View style={styles.securityNotice}>
-              <MaterialCommunityIcons 
-                name="shield-check" 
-                size={16} 
-                color={PRIMARY_COLOR} 
+              <MaterialCommunityIcons
+                name="shield-check"
+                size={16}
+                color={PRIMARY_COLOR}
               />
               <Text style={[styles.securityText, { color: theme.secondaryTextColor }]}>
                 Vos informations sont sécurisées et cryptées
@@ -1355,7 +1355,7 @@ export default function Cart({ navigation }) {
                 Annuler
               </Text>
             </TouchableOpacity>
-            
+
             <TouchableOpacity
               onPress={handleSaveCard}
               style={[styles.cardSaveButton, { backgroundColor: PRIMARY_COLOR }]}
@@ -1377,7 +1377,7 @@ const styles = StyleSheet.create({
     height: '100%',
     position: 'relative',
   },
-  
+
   // Updated Header styles
   headerContainer: {
     width: '100%',
@@ -1425,7 +1425,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#007afe',
   },
-  
+
   textHeader2: {
     fontSize: 20,
     fontWeight: '500',
@@ -1753,7 +1753,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  
+
   shopButton: {
     width: '100%',
     paddingVertical: 14,

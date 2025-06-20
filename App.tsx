@@ -11,6 +11,7 @@ import Auth from './Navigation/Auth';
 import { COLOURS } from './src/database/Database';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext'; // Importer ThemeProvider
 import { CartProvider } from './src/context/CartContext'; // Importer CartProvider
+import { FavoritesProvider } from './src/context/FavoritesContext'; // Importer FavoritesProvider
 
 // Composant qui utilise le thème pour la navigation
 const NavigationWithTheme = () => {
@@ -65,9 +66,11 @@ export default function App() {
     <SafeAreaProvider>
       <ThemeProvider>
         <CartProvider>
-          <NavigationContainer>
-            <NavigationWithTheme />
-          </NavigationContainer>
+          <FavoritesProvider>
+            <NavigationContainer>
+              <NavigationWithTheme />
+            </NavigationContainer>
+          </FavoritesProvider>
         </CartProvider>
       </ThemeProvider>
     </SafeAreaProvider>

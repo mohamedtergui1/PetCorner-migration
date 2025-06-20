@@ -26,6 +26,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Toast from 'react-native-simple-toast';
 import { useTheme } from '../../context/ThemeContext';
 import { useCart } from '../../context/CartContext';
+import { useFavorites } from '../../context/FavoritesContext';
 import { StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ProductService from '../../service/CustomProductApiService';
@@ -34,6 +35,7 @@ export default function ProductDetails({ route, navigation }) {
   const { width, height } = Dimensions.get('window');
   const { theme } = useTheme();
   const { addToCart } = useCart();
+  const { isFavorite, toggleFavorite } = useFavorites();
   const insets = useSafeAreaInsets();
   
   // Get product ID from route params - simplified approach
@@ -42,7 +44,6 @@ export default function ProductDetails({ route, navigation }) {
   // State management
   const [product, setProduct] = useState(null);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [inSaved, setInSaved] = useState(false);
   const [userDetails, setUserDetails] = useState();
   const [loading, setLoading] = useState(false);
   const [similarProducts, setSimilarProducts] = useState([]);
@@ -120,10 +121,7 @@ export default function ProductDetails({ route, navigation }) {
     if (product.image_link) return product.image_link;
     if (product.photo_link) return product.photo_link;
     
-    // Fallback image URL construction
-    if (product.id && product.ref) {
-      return `https://ipos.ma/fide/documents/produit/${Math.floor(product.id/1000)}/${Math.floor(product.id/100)}/${product.id}/photos/${product.ref}.jpg`;
-    }
+   
     
     return null;
   };
@@ -218,7 +216,6 @@ export default function ProductDetails({ route, navigation }) {
   useEffect(() => {
     if (productId) {
       loadProductData(productId);
-      loadWishlist();
       getUserData();
     } else {
       setError('ID produit manquant');
@@ -228,6 +225,7 @@ export default function ProductDetails({ route, navigation }) {
 
   // Calculate derived values
   const isAvailable = product ? isProductInStock(product) : false;
+  const isInFavorites = product ? isFavorite(product.id.toString()) : false;
 
   // Setup pan responder for image zooming and panning
   const panResponder = useRef(
@@ -312,55 +310,14 @@ export default function ProductDetails({ route, navigation }) {
     lastTap.current = now;
   };
 
-  // Function to check if product is in wishlist
-  const loadWishlist = async () => {
-    if (!productId) return;
-    
-    try {
-      const getWishlist = await AsyncStorage.getItem("wishlistItem");
-      const parsedWishlist = JSON.parse(getWishlist);
-
-      if (Array.isArray(parsedWishlist) && parsedWishlist.includes(parseInt(productId))) {
-        setInSaved(true);
-      } else {
-        setInSaved(false);
-      }
-    } catch (error) {
-      console.error('Error loading wishlist:', error);
-    }
-  };
-
-  // Function to add/remove from wishlist
-  const handleAddToWishlist = async () => {
+  // Function to add/remove from favorites using context
+  const handleAddToFavorites = () => {
     if (!product) return;
     
-    try {
-      const wishlist = await AsyncStorage.getItem("wishlistItem");
-      const parsedWishlist = JSON.parse(wishlist);
-      
-      if (parsedWishlist === null) {
-        const newWishlist = [parseInt(product.id)];
-        await AsyncStorage.setItem("wishlistItem", JSON.stringify(newWishlist));
-        setInSaved(true);
-        showToast('Ajouter à la liste des favoris');
-      } else {
-        const isExist = parsedWishlist.includes(parseInt(product.id));
-        
-        if (isExist) {
-          const newWishlist = parsedWishlist.filter((item) => item !== parseInt(product.id));
-          await AsyncStorage.setItem("wishlistItem", JSON.stringify(newWishlist));
-          setInSaved(false);
-          showToast('Retiré de la liste des favoris');
-        } else {
-          const newWishlist = [...parsedWishlist, parseInt(product.id)];
-          await AsyncStorage.setItem("wishlistItem", JSON.stringify(newWishlist));
-          setInSaved(true);
-          showToast('Ajouter à la liste des favoris');
-        }
-      }
-    } catch (error) {
-      console.error('Error handling wishlist:', error);
-    }
+    toggleFavorite(product.id.toString());
+    
+    const message = isInFavorites ? 'Retiré de la liste des favoris' : 'Ajouté à la liste des favoris';
+    showToast(message);
   };
 
   // Helper function for showing toast
@@ -607,12 +564,12 @@ export default function ProductDetails({ route, navigation }) {
               top: insets.top + 10
             }
           ]} 
-          onPress={handleAddToWishlist}
+          onPress={handleAddToFavorites}
         >
           <MaterialCommunityIcons 
-            name={inSaved ? "heart" : "heart-outline"} 
+            name={isInFavorites ? "heart" : "heart-outline"} 
             size={24} 
-            color={inSaved ? "#e91e63" : "#ffffff"} 
+            color={isInFavorites ? "#e91e63" : "#ffffff"} 
           />
         </TouchableOpacity>
 
