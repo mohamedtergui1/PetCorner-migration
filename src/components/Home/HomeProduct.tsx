@@ -486,7 +486,7 @@ export default function HomeProduct({ navigation }: HomeProductProps) {
             { 
               color: isSelected 
                 ? '#ffffff' 
-                : theme.textSecondary 
+                : (isDarkMode ? '#FFFFFF' : theme.textSecondary) // ✅ Changed to white in dark mode
             }
           ]} 
           numberOfLines={2}
@@ -698,7 +698,7 @@ export default function HomeProduct({ navigation }: HomeProductProps) {
                     {
                       color: indexCheck === item.id
                         ? '#FFFFFF'
-                        : theme.textSecondary
+                        : (isDarkMode ? '#FFFFFF' : theme.textSecondary) // ✅ Changed to white in dark mode
                     }
                   ]}
                   numberOfLines={2}
