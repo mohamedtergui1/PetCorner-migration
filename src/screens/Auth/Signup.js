@@ -605,7 +605,7 @@ export default function Signup({navigation}) {
                   onChangeText={text => handleOnchange(text, 'address')}
                   onFocus={() => handleError(null, 'address')}
                   iconName="map-marker-outline"
-                  label="Adresse (Quartier)"
+                  label="Adresse"
                   placeholder="Entrez votre quartier ou utilisez la localisation"
                   error={errors.address}
                   labelColor={theme.textColor}
@@ -799,8 +799,8 @@ const styles = StyleSheet.create({
   },
   locationButton: {
     position: 'absolute',
-    right: 15,
-    top: 45,
+    right: 10,
+    top: 35,
     width: 40,
     height: 40,
     borderRadius: 20,
