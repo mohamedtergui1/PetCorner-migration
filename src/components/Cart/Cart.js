@@ -733,21 +733,26 @@ export default function Cart({ navigation }) {
           </View>
 
           <View style={styles.productActions}>
+            {/* Updated quantity controls with proper disable logic */}
             <View style={styles.quantityControls}>
               <TouchableOpacity
                 onPress={() => handleUpdateQuantity(id, -1)}
-                disabled={isUpdatingQuantity}
+                disabled={isUpdatingQuantity || quantity <= 1} // Disable when quantity is 1 or less
                 style={[
                   styles.quantityButton,
                   {
-                    borderColor: PRIMARY_COLOR,
-                    opacity: isUpdatingQuantity ? 0.6 : 1
+                    borderColor: (isUpdatingQuantity || quantity <= 1) ? TEXT_COLOR_SECONDARY : PRIMARY_COLOR,
+                    backgroundColor: (isUpdatingQuantity || quantity <= 1) ? 'transparent' : 'transparent',
+                    opacity: (isUpdatingQuantity || quantity <= 1) ? 0.4 : 1
                   }
                 ]}>
                 {isUpdatingQuantity ? (
                   <ActivityIndicator size="small" color={PRIMARY_COLOR} />
                 ) : (
-                  <Text style={[styles.quantityButtonText, { color: PRIMARY_COLOR }]}>-</Text>
+                  <Text style={[
+                    styles.quantityButtonText, 
+                    { color: (quantity <= 1) ? TEXT_COLOR_SECONDARY : PRIMARY_COLOR }
+                  ]}>-</Text>
                 )}
               </TouchableOpacity>
 
@@ -755,21 +760,32 @@ export default function Cart({ navigation }) {
 
               <TouchableOpacity
                 onPress={() => handleUpdateQuantity(id, 1)}
-                disabled={isUpdatingQuantity}
+                disabled={isUpdatingQuantity || quantity >= stock} // Disable when quantity reaches stock limit
                 style={[
                   styles.quantityButton,
                   {
-                    borderColor: PRIMARY_COLOR,
-                    opacity: isUpdatingQuantity ? 0.6 : 1
+                    borderColor: (isUpdatingQuantity || quantity >= stock) ? TEXT_COLOR_SECONDARY : PRIMARY_COLOR,
+                    backgroundColor: (isUpdatingQuantity || quantity >= stock) ? 'transparent' : 'transparent',
+                    opacity: (isUpdatingQuantity || quantity >= stock) ? 0.4 : 1
                   }
                 ]}>
                 {isUpdatingQuantity ? (
                   <ActivityIndicator size="small" color={PRIMARY_COLOR} />
                 ) : (
-                  <Text style={[styles.quantityButtonText, { color: PRIMARY_COLOR }]}>+</Text>
+                  <Text style={[
+                    styles.quantityButtonText, 
+                    { color: (quantity >= stock) ? TEXT_COLOR_SECONDARY : PRIMARY_COLOR }
+                  ]}>+</Text>
                 )}
               </TouchableOpacity>
             </View>
+
+            {/* Add stock indicator below quantity controls */}
+            {quantity >= stock && (
+              <Text style={[styles.stockWarning, { color: '#ff6b6b' }]}>
+                Stock maximum atteint
+              </Text>
+            )}
 
             <TouchableOpacity
               onPress={() => handleRemoveItem(id)}
@@ -2093,5 +2109,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#fff',
+  },
+  stockWarning: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 4,
+    textAlign: 'center',
   },
 });
