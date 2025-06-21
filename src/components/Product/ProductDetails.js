@@ -343,7 +343,7 @@ export default function ProductDetails({ route, navigation }) {
         
         setTimeout(() => {
           setLoading(false);
-          navigation.navigate('Home');
+          navigation.navigate('CartScreen');
         }, 500);
       } else {
         throw new Error(result.error);
