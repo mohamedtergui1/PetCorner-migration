@@ -1,5 +1,5 @@
-import { Alert, Keyboard, SafeAreaView, ScrollView, StyleSheet, Text, View, TouchableOpacity, StatusBar, Platform, PermissionsAndroid } from 'react-native'
-import React, { useState } from 'react'
+import { Alert, Keyboard, SafeAreaView, ScrollView, StyleSheet, Text, View, TouchableOpacity, StatusBar, Platform, PermissionsAndroid, Animated, KeyboardAvoidingView } from 'react-native'
+import React, { useState, useRef, useEffect } from 'react'
 import Toast from 'react-native-toast-message';
 import Geolocation from 'react-native-geolocation-service';
 import Loader from '../Loader';
@@ -17,14 +17,90 @@ export default function Signup({navigation}) {
         email: '',
         fullname: '',
         address: '',
+        city: '',
+        postalCode: '',
         phone: '',
         password: '',
       });
       const [errors, setErrors] = useState({});
       const [loading, setLoading] = useState(false);
       const [gettingLocation, setGettingLocation] = useState(false);
+      const [showSuccessToast, setShowSuccessToast] = useState(false);
+      const [keyboardVisible, setKeyboardVisible] = useState(false);
       const { theme, isDarkMode, toggleTheme, colorTheme, toggleColorTheme } = useTheme();
       const insets = useSafeAreaInsets();
+      const scrollViewRef = useRef(null);
+
+      // Animation refs for smooth transitions
+      const fadeAnim = useRef(new Animated.Value(1)).current;
+      const slideAnim = useRef(new Animated.Value(0)).current;
+      const successToastAnim = useRef(new Animated.Value(0)).current;
+      const successToastSlideAnim = useRef(new Animated.Value(-100)).current;
+
+      // Initialize entrance animations and keyboard listeners
+      useEffect(() => {
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+
+        // Keyboard event listeners
+        const keyboardDidShowListener = Keyboard.addListener(
+          'keyboardDidShow',
+          () => setKeyboardVisible(true)
+        );
+        const keyboardDidHideListener = Keyboard.addListener(
+          'keyboardDidHide',
+          () => setKeyboardVisible(false)
+        );
+
+        return () => {
+          keyboardDidShowListener?.remove();
+          keyboardDidHideListener?.remove();
+        };
+      }, []);
+
+      // Success toast animation functions
+      const showSuccessToastWithAnimation = () => {
+        setShowSuccessToast(true);
+        
+        Animated.parallel([
+          Animated.spring(successToastAnim, {
+            toValue: 1,
+            tension: 120,
+            friction: 8,
+            useNativeDriver: true,
+          }),
+          Animated.spring(successToastSlideAnim, {
+            toValue: 0,
+            tension: 140,
+            friction: 8,
+            useNativeDriver: true,
+          }),
+        ]).start();
+
+        setTimeout(() => {
+          hideSuccessToast();
+        }, 2000);
+      };
+
+      const hideSuccessToast = () => {
+        Animated.parallel([
+          Animated.timing(successToastAnim, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(successToastSlideAnim, {
+            toValue: -100,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          setShowSuccessToast(false);
+        });
+      };
 
       const validate = () => {
         Keyboard.dismiss();
@@ -44,7 +120,17 @@ export default function Signup({navigation}) {
         }
 
         if(!inputs.address){
-          handleError('Veuillez saisir votre adresse', 'address');
+          handleError('Veuillez saisir votre quartier', 'address');
+          isValid = false;
+        }
+
+        if(!inputs.city){
+          handleError('Veuillez saisir votre ville', 'city');
+          isValid = false;
+        }
+
+        if(!inputs.postalCode){
+          handleError('Veuillez saisir votre code postal', 'postalCode');
           isValid = false;
         }
     
@@ -70,6 +156,14 @@ export default function Signup({navigation}) {
       const requestLocationPermission = async () => {
         if (Platform.OS === 'android') {
           try {
+            const checkResult = await PermissionsAndroid.check(
+              PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+            );
+            
+            if (checkResult === true) {
+              return true;
+            }
+
             const granted = await PermissionsAndroid.request(
               PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
               {
@@ -80,48 +174,109 @@ export default function Signup({navigation}) {
                 buttonPositive: 'Accepter',
               }
             );
+            
             return granted === PermissionsAndroid.RESULTS.GRANTED;
           } catch (err) {
-            console.warn(err);
+            console.warn('Permission error:', err);
             return false;
           }
         }
-        return true; // iOS handles permissions automatically
+        return true;
       };
 
-      // Get address from coordinates using reverse geocoding
+      // Multiple geocoding services with fallback
       const getAddressFromCoordinates = async (latitude, longitude) => {
-        try {
-          // Using a free geocoding service (you can replace with your preferred service)
-          const response = await axios.get(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`,
-            {
-              headers: {
-                'User-Agent': 'YourAppName/1.0 (your-email@example.com)'
+        console.log('Starting geocoding for coordinates:', latitude, longitude);
+        
+        // Service 1: OpenStreetMap Nominatim with better headers and rate limiting
+        const tryNominatim = async () => {
+          try {
+            console.log('Trying Nominatim service...');
+            const response = await axios.get(
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1&zoom=18&accept-language=fr`,
+              {
+                headers: {
+                  'User-Agent': 'PetCornerApp/1.0',
+                  'Referer': 'https://your-app-domain.com'
+                },
+                timeout: 10000
               }
+            );
+            
+            if (response.data && response.data.address) {
+              const addressData = response.data.address;
+              console.log('Nominatim response:', addressData);
+              
+              const neighbourhood = addressData.neighbourhood || addressData.suburb || addressData.quarter || addressData.district || '';
+              const city = addressData.city || addressData.town || addressData.village || addressData.municipality || '';
+              const postalCode = addressData.postcode || '';
+              
+              const quartierAddress = neighbourhood || city || 'Quartier non spécifié';
+              const fullAddress = [quartierAddress, city, postalCode].filter(Boolean).join(', ');
+              
+              return {
+                streetAddress: quartierAddress,
+                city: city,
+                postalCode: postalCode,
+                fullAddress: fullAddress,
+                displayName: response.data.display_name,
+                source: 'Nominatim'
+              };
             }
-          );
-          
-          if (response.data && response.data.display_name) {
-            return response.data.display_name;
-          } else {
-            throw new Error('Adresse non trouvée');
+            throw new Error('No address data from Nominatim');
+          } catch (error) {
+            console.log('Nominatim failed:', error.message);
+            throw error;
           }
-        } catch (error) {
-          console.error('Geocoding error:', error);
-          throw new Error('Erreur lors de la récupération de l\'adresse');
+        };
+
+        // Service 4: Simple fallback using coordinates
+        const createFallbackAddress = () => {
+          console.log('Using fallback address generation...');
+          const roundedLat = latitude.toFixed(4);
+          const roundedLon = longitude.toFixed(4);
+          
+          return {
+            streetAddress: `Localisation GPS (${roundedLat}, ${roundedLon})`,
+            city: 'Ville à préciser',
+            postalCode: '',
+            fullAddress: `Coordonnées: ${roundedLat}, ${roundedLon}`,
+            displayName: `Position GPS: ${roundedLat}, ${roundedLon}`,
+            source: 'GPS Coordinates'
+          };
+        };
+
+        // Try services in order with fallback
+        const services = [tryNominatim];
+        
+        for (const service of services) {
+          try {
+            const result = await service();
+            console.log('Geocoding successful with source:', result.source);
+            return result;
+          } catch (error) {
+            console.log('Service failed, trying next...');
+            continue;
+          }
         }
+        
+        // If all services fail, use fallback
+        console.log('All geocoding services failed, using fallback');
+        return createFallbackAddress();
       };
 
-      // Get current location and address
+      // Updated function to get current location with better error handling
       const getCurrentLocationAddress = async () => {
+        console.log('GPS button clicked - starting location process');
         setGettingLocation(true);
         
         try {
-          // Request permission first
+          console.log('Requesting location permission...');
           const hasPermission = await requestLocationPermission();
+          console.log('Permission granted:', hasPermission);
           
           if (!hasPermission) {
+            console.log('Permission denied by user');
             Toast.show({
               type: 'error',
               text1: 'Permission refusée',
@@ -134,24 +289,39 @@ export default function Signup({navigation}) {
             return;
           }
 
-          // Get current position
+          console.log('Getting current position...');
           Geolocation.getCurrentPosition(
             async (position) => {
               try {
+                console.log('Position received:', position.coords);
                 const { latitude, longitude } = position.coords;
                 
-                // Get address from coordinates
-                const address = await getAddressFromCoordinates(latitude, longitude);
+                console.log('Getting address from coordinates...');
+                const addressInfo = await getAddressFromCoordinates(latitude, longitude);
+                console.log('Address info received:', addressInfo);
                 
-                // Update the address input
-                setInputs(prevState => ({...prevState, address: address}));
-                handleError(null, 'address'); // Clear any previous error
+                // Update all address-related inputs
+                setInputs(prevState => ({
+                  ...prevState, 
+                  address: addressInfo.streetAddress || addressInfo.displayName,
+                  city: addressInfo.city,
+                  postalCode: addressInfo.postalCode
+                }));
+                
+                // Clear any previous errors
+                handleError(null, 'address');
+                handleError(null, 'city');
+                handleError(null, 'postalCode');
+                
+                const successMessage = addressInfo.source === 'GPS Coordinates' 
+                  ? 'Position GPS récupérée! Veuillez vérifier les informations.'
+                  : `Adresse récupérée via ${addressInfo.source}! 📍`;
                 
                 Toast.show({
                   type: 'success',
-                  text1: 'Adresse récupérée! 📍',
-                  text2: 'Votre adresse actuelle a été ajoutée',
-                  visibilityTime: 2500,
+                  text1: successMessage,
+                  text2: `${addressInfo.city || 'Ville'} ${addressInfo.postalCode || 'Code postal'}`,
+                  visibilityTime: 4000,
                   autoHide: true,
                   topOffset: 60,
                 });
@@ -159,11 +329,24 @@ export default function Signup({navigation}) {
                 setGettingLocation(false);
               } catch (error) {
                 console.error('Error getting address:', error);
+                
+                // Provide basic GPS coordinates as fallback
+                const { latitude, longitude } = position.coords;
+                const roundedLat = latitude.toFixed(4);
+                const roundedLon = longitude.toFixed(4);
+                
+                setInputs(prevState => ({
+                  ...prevState, 
+                  address: `GPS: ${roundedLat}, ${roundedLon}`,
+                  city: 'À préciser',
+                  postalCode: ''
+                }));
+                
                 Toast.show({
-                  type: 'error',
-                  text1: 'Erreur de géocodage',
-                  text2: error.message || 'Impossible de récupérer l\'adresse',
-                  visibilityTime: 3000,
+                  type: 'info',
+                  text1: 'Position GPS obtenue',
+                  text2: 'Veuillez vérifier et compléter les informations d\'adresse',
+                  visibilityTime: 4000,
                   autoHide: true,
                   topOffset: 60,
                 });
@@ -171,7 +354,7 @@ export default function Signup({navigation}) {
               }
             },
             (error) => {
-              console.error('Location error:', error);
+              console.error('Geolocation error:', error);
               let errorMessage = 'Erreur lors de la récupération de la localisation';
               
               switch (error.code) {
@@ -179,10 +362,10 @@ export default function Signup({navigation}) {
                   errorMessage = 'Permission de localisation refusée';
                   break;
                 case 2:
-                  errorMessage = 'Position non disponible';
+                  errorMessage = 'Position non disponible. Vérifiez que le GPS est activé';
                   break;
                 case 3:
-                  errorMessage = 'Délai d\'attente dépassé';
+                  errorMessage = 'Délai d\'attente dépassé. Réessayez';
                   break;
                 default:
                   errorMessage = 'Erreur de localisation inconnue';
@@ -192,7 +375,7 @@ export default function Signup({navigation}) {
                 type: 'error',
                 text1: 'Erreur de localisation',
                 text2: errorMessage,
-                visibilityTime: 3000,
+                visibilityTime: 4000,
                 autoHide: true,
                 topOffset: 60,
               });
@@ -200,8 +383,10 @@ export default function Signup({navigation}) {
             },
             {
               enableHighAccuracy: true,
-              timeout: 15000,
+              timeout: 20000,
               maximumAge: 10000,
+              forceRequestLocation: true,
+              showLocationDialog: true,
             }
           );
         } catch (error) {
@@ -221,16 +406,24 @@ export default function Signup({navigation}) {
       const register = async () => {
         setLoading(true);
     
+        const concatenatedAddress = [
+          inputs.address,
+          inputs.city,
+          inputs.postalCode
+        ].filter(Boolean).join(', ');
+
         const inputData = {
           module: 'societe',
           name: inputs.fullname,
           phone: inputs.phone,
-          address: inputs.address,
+          address: concatenatedAddress,
           email: inputs.email,
           client: 1,
           code_client: -1,
           array_options: {
             mdpmob: inputs.password,
+            ville: inputs.city,
+            code_postal: inputs.postalCode,
           }
         };
 
@@ -246,27 +439,34 @@ export default function Signup({navigation}) {
             console.log("User ID:", res.data);
             setLoading(false);
             
-            // Show success toast
-            Toast.show({
-              type: 'success',
-              text1: 'Compte créé avec succès! 🎉',
-              text2: 'Vous pouvez maintenant vous connecter',
-              visibilityTime: 3000,
-              autoHide: true,
-              topOffset: 60,
-            });
+            showSuccessToastWithAnimation();
 
-            // Navigate to Login after a short delay to let user see the toast
             setTimeout(() => {
-              navigation.navigate('Login');
-            }, 1500);
+              Animated.parallel([
+                Animated.timing(fadeAnim, {
+                  toValue: 0,
+                  duration: 200,
+                  useNativeDriver: true,
+                }),
+                Animated.timing(slideAnim, {
+                  toValue: -100,
+                  duration: 200,
+                  useNativeDriver: true,
+                }),
+              ]).start(() => {
+                navigation.replace('Login', {
+                  email: inputs.email,
+                  phone: inputs.phone,
+                  fromSignup: true
+                });
+              });
+            }, 2200);
     
         } catch (error) {
             setLoading(false);
             if (error.response) {
                 console.log("API Error:", error.response.data);
                 
-                // Show error toast instead of Alert
                 Toast.show({
                   type: 'error',
                   text1: 'Erreur lors de la création',
@@ -292,8 +492,55 @@ export default function Signup({navigation}) {
       const handleOnchange = (text, input) => {
         setInputs(prevState => ({...prevState, [input]: text}));
       };
+      
       const handleError = (error, input) => {
         setErrors(prevState => ({...prevState, [input]: error}));
+      };
+
+      // Handle input focus with scrolling
+      const handleInputFocus = (inputName) => {
+        handleError(null, inputName);
+        
+        // Scroll to make sure the input is visible when keyboard appears
+        setTimeout(() => {
+          if (scrollViewRef.current) {
+            let scrollOffset = 0;
+            
+            // Calculate scroll offset based on input position
+            switch (inputName) {
+              case 'phone':
+                scrollOffset = 350;
+                break;
+              case 'password':
+                scrollOffset = 450;
+                break;
+              default:
+                scrollOffset = 200;
+            }
+            
+            scrollViewRef.current.scrollTo({ 
+              y: scrollOffset, 
+              animated: true 
+            });
+          }
+        }, 100);
+      };
+
+      const navigateToLogin = () => {
+        Animated.parallel([
+          Animated.timing(fadeAnim, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(slideAnim, {
+            toValue: -100,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          navigation.replace('Login');
+        });
       };
 
   return (
@@ -302,170 +549,302 @@ export default function Signup({navigation}) {
         barStyle={isDarkMode ? 'light-content' : 'dark-content'} 
         backgroundColor={theme.backgroundColor} 
       />
-      <Loader visible={loading || gettingLocation} />
       
-      {/* Theme Controls */}
-      <View style={[styles.themeControls, { paddingTop: insets.top + 15 }]}>
-        {/* Dark Mode Toggle */}
-        <TouchableOpacity 
-          style={[styles.themeButton, { 
-            backgroundColor: theme.cardBackground || (isDarkMode ? '#2a2a2a' : '#f0f0f0'),
-            borderWidth: 1,
-            borderColor: theme.borderColor || (isDarkMode ? '#404040' : '#e0e0e0')
-          }]}
-          onPress={toggleTheme}
+      <Loader visible={loading && !showSuccessToast} />
+      
+      {/* Beautiful Success Toast */}
+      {showSuccessToast && (
+        <Animated.View 
+          style={[
+            styles.successToastContainer,
+            {
+              opacity: successToastAnim,
+              transform: [{ translateY: successToastSlideAnim }],
+              top: insets.top + 20,
+            }
+          ]}
         >
-          <MaterialCommunityIcons 
-            name={isDarkMode ? "weather-sunny" : "weather-night"} 
-            size={22} 
-            color={theme.primary} 
-          />
-          <Text style={[styles.themeButtonText, { color: theme.textColor }]}>
-            {isDarkMode ? 'Clair' : 'Sombre'}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Color Theme Toggle */}
-        <TouchableOpacity 
-          style={[styles.themeButton, { 
-            backgroundColor: theme.cardBackground || (isDarkMode ? '#2a2a2a' : '#f0f0f0'),
-            borderWidth: 1,
-            borderColor: theme.borderColor || (isDarkMode ? '#404040' : '#e0e0e0')
-          }]}
-          onPress={toggleColorTheme}
-        >
-          <View style={[styles.colorIndicator, { backgroundColor: theme.primary }]} />
-          <Text style={[styles.themeButtonText, { color: theme.textColor }]}>
-            {colorTheme === 'blue' ? 'Bleu' : 'Orange'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+          <View style={[styles.successToast, { backgroundColor: '#4CAF50' }]}>
+            <Animated.View
+              style={{
+                transform: [{ 
+                  scale: successToastAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.8, 1],
+                  })
+                }],
+              }}
+            >
+              <MaterialCommunityIcons 
+                name="account-check" 
+                size={28} 
+                color="#ffffff" 
+              />
+            </Animated.View>
+            <View style={styles.successToastTextContainer}>
+              <Text style={styles.successToastTitle}>Compte créé avec succès!</Text>
+              <Text style={styles.successToastSubtitle}>Redirection vers la connexion...</Text>
+            </View>
+            <Animated.View
+              style={{
+                transform: [{ 
+                  rotate: successToastAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', '360deg'],
+                  })
+                }],
+              }}
+            >
+              <MaterialCommunityIcons 
+                name="login" 
+                size={24} 
+                color="#ffffff" 
+              />
+            </Animated.View>
+          </View>
+        </Animated.View>
+      )}
+      
+      {/* KeyboardAvoidingView for better keyboard handling */}
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <View style={styles.headerContainer}>
-          <Text style={[styles.title, { color: theme.textColor }]}>
-            S'inscrire
-          </Text>
-          <Text style={[styles.subtitle, { color: theme.secondaryTextColor }]}>
-            Entrez vos coordonnées pour vous inscrire
-          </Text>
-        </View>
+        {/* Animated main content */}
+        <Animated.View 
+          style={[
+            styles.animatedContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            }
+          ]}
+        >
+          {/* Theme Controls - Hide when keyboard is visible */}
+          {!keyboardVisible && (
+            <View style={[styles.themeControls, { paddingTop: insets.top + 15 }]}>
+              <TouchableOpacity 
+                style={[styles.themeButton, { 
+                  backgroundColor: theme.cardBackground || (isDarkMode ? '#2a2a2a' : '#f0f0f0'),
+                  borderWidth: 1,
+                  borderColor: theme.borderColor || (isDarkMode ? '#404040' : '#e0e0e0')
+                }]}
+                onPress={toggleTheme}
+              >
+                <MaterialCommunityIcons 
+                  name={isDarkMode ? "weather-sunny" : "weather-night"} 
+                  size={22} 
+                  color={theme.primary} 
+                />
+                <Text style={[styles.themeButtonText, { color: theme.textColor }]}>
+                  {isDarkMode ? 'Clair' : 'Sombre'}
+                </Text>
+              </TouchableOpacity>
 
-        <View style={styles.formContainer}>
-          <Input
-            onChangeText={text => handleOnchange(text, 'email')}
-            onFocus={() => handleError(null, 'email')}
-            iconName="email-outline"
-            label="Email"
-            placeholder="Entrez votre adresse email"
-            error={errors.email}
-            labelColor={theme.textColor}
-            theme={theme}
-            isDarkMode={isDarkMode}
-          />
+              <TouchableOpacity 
+                style={[styles.themeButton, { 
+                  backgroundColor: theme.cardBackground || (isDarkMode ? '#2a2a2a' : '#f0f0f0'),
+                  borderWidth: 1,
+                  borderColor: theme.borderColor || (isDarkMode ? '#404040' : '#e0e0e0')
+                }]}
+                onPress={toggleColorTheme}
+              >
+                <View style={[styles.colorIndicator, { backgroundColor: theme.primary }]} />
+                <Text style={[styles.themeButtonText, { color: theme.textColor }]}>
+                  {colorTheme === 'blue' ? 'Bleu' : 'Orange'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
-          <Input
-            onChangeText={text => handleOnchange(text, 'fullname')}
-            onFocus={() => handleError(null, 'fullname')}
-            iconName="account-outline"
-            label="Nom complet"
-            placeholder="Entrez votre nom complet"
-            error={errors.fullname}
-            labelColor={theme.textColor}
-            theme={theme}
-            isDarkMode={isDarkMode}
-          />
+          <ScrollView
+            ref={scrollViewRef}
+            contentContainerStyle={[
+              styles.scrollContent,
+              { paddingTop: keyboardVisible ? 20 : 0 }
+            ]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            enableOnAndroid={true}
+            scrollEventThrottle={16}
+          >
+            {/* Header - Smaller when keyboard is visible */}
+            <View style={[
+              styles.headerContainer, 
+              { marginBottom: keyboardVisible ? 15 : 30 }
+            ]}>
+              <Text style={[
+                styles.title, 
+                { 
+                  color: theme.textColor,
+                  fontSize: keyboardVisible ? 24 : 32
+                }
+              ]}>
+                S'inscrire
+              </Text>
+              {!keyboardVisible && (
+                <Text style={[styles.subtitle, { color: theme.secondaryTextColor }]}>
+                  Entrez vos coordonnées pour vous inscrire
+                </Text>
+              )}
+            </View>
 
-          {/* Address Input with Location Button */}
-          <View style={styles.addressContainer}>
-            <View style={styles.addressInputContainer}>
+            <View style={styles.formContainer}>
               <Input
-                value={inputs.address}
-                onChangeText={text => handleOnchange(text, 'address')}
-                onFocus={() => handleError(null, 'address')}
-                iconName="map-marker-outline"
-                label="Adresse"
-                placeholder="Entrez votre adresse ou utilisez la localisation"
-                error={errors.address}
+                onChangeText={text => handleOnchange(text, 'email')}
+                onFocus={() => handleInputFocus('email')}
+                iconName="email-outline"
+                label="Email"
+                placeholder="Entrez votre adresse email"
+                error={errors.email}
                 labelColor={theme.textColor}
                 theme={theme}
                 isDarkMode={isDarkMode}
               />
-            </View>
-            
-            {/* Location Button */}
-            <TouchableOpacity
-              style={[styles.locationButton, { 
-                backgroundColor: theme.primary,
-                opacity: gettingLocation ? 0.6 : 1
-              }]}
-              onPress={getCurrentLocationAddress}
-              disabled={gettingLocation}
-            >
-              <MaterialCommunityIcons 
-                name={gettingLocation ? "loading" : "crosshairs-gps"} 
-                size={20} 
-                color="white" 
-                style={gettingLocation ? styles.spinIcon : null}
+
+              <Input
+                onChangeText={text => handleOnchange(text, 'fullname')}
+                onFocus={() => handleInputFocus('fullname')}
+                iconName="account-outline"
+                label="Nom complet"
+                placeholder="Entrez votre nom complet"
+                error={errors.fullname}
+                labelColor={theme.textColor}
+                theme={theme}
+                isDarkMode={isDarkMode}
               />
-            </TouchableOpacity>
-          </View>
 
-          {/* Helper text for location feature */}
-          <Text style={[styles.helperText, { color: theme.secondaryTextColor }]}>
-            💡 Appuyez sur le bouton GPS pour obtenir automatiquement votre adresse
-          </Text>
+              {/* Address Input with Location Button */}
+              <View style={styles.addressContainer}>
+                <View style={styles.addressInputContainer}>
+                  <Input
+                    value={inputs.address}
+                    onChangeText={text => handleOnchange(text, 'address')}
+                    onFocus={() => handleInputFocus('address')}
+                    iconName="map-marker-outline"
+                    label="Adresse"
+                    placeholder="Entrez votre quartier ou utilisez la localisation"
+                    error={errors.address}
+                    labelColor={theme.textColor}
+                    theme={theme}
+                    isDarkMode={isDarkMode}
+                  />
+                </View>
+                
+                <TouchableOpacity
+                  style={[styles.locationButton, { 
+                    backgroundColor: theme.primary,
+                    opacity: gettingLocation ? 0.7 : 1
+                  }]}
+                  onPress={getCurrentLocationAddress}
+                  disabled={gettingLocation}
+                >
+                  {gettingLocation ? (
+                    <MaterialCommunityIcons 
+                      name="loading" 
+                      size={20} 
+                      color="white" 
+                      style={styles.spinIcon}
+                    />
+                  ) : (
+                    <MaterialCommunityIcons 
+                      name="crosshairs-gps" 
+                      size={20} 
+                      color="white" 
+                    />
+                  )}
+                </TouchableOpacity>
+              </View>
 
-          <Input
-            keyboardType="phone-pad"
-            onChangeText={text => handleOnchange(text, 'phone')}
-            onFocus={() => handleError(null, 'phone')}
-            iconName="phone-outline"
-            label="Numéro de téléphone"
-            placeholder="Entrez votre numéro de téléphone"
-            error={errors.phone}
-            labelColor={theme.textColor}
-            theme={theme}
-            isDarkMode={isDarkMode}
-          />
+              {/* City and Postal Code Row */}
+              <View style={styles.cityPostalRow}>
+                <View style={styles.cityContainer}>
+                  <Input
+                    value={inputs.city}
+                    onChangeText={text => handleOnchange(text, 'city')}
+                    onFocus={() => handleInputFocus('city')}
+                    iconName="city"
+                    label="Ville"
+                    placeholder="Ville"
+                    error={errors.city}
+                    labelColor={theme.textColor}
+                    theme={theme}
+                    isDarkMode={isDarkMode}
+                  />
+                </View>
+                
+                <View style={styles.postalContainer}>
+                  <Input
+                    value={inputs.postalCode}
+                    onChangeText={text => handleOnchange(text, 'postalCode')}
+                    onFocus={() => handleInputFocus('postalCode')}
+                    iconName="mailbox-outline"
+                    label="Code Postal"
+                    placeholder="Code"
+                    error={errors.postalCode}
+                    keyboardType="numeric"
+                    labelColor={theme.textColor}
+                    theme={theme}
+                    isDarkMode={isDarkMode}
+                  />
+                </View>
+              </View>
 
-          <Input
-            onChangeText={text => handleOnchange(text, 'password')}
-            onFocus={() => handleError(null, 'password')}
-            iconName="lock-outline"
-            label="Mot de passe"
-            placeholder="Entrez votre mot de passe"
-            error={errors.password}
-            password
-            labelColor={theme.textColor}
-            theme={theme}
-            isDarkMode={isDarkMode}
-          />
+              {/* Helper text for location feature - Hide when keyboard is visible */}
+              {!keyboardVisible && (
+                <Text style={[styles.helperText, { color: theme.secondaryTextColor }]}>
+                  💡 Appuyez sur le bouton GPS pour obtenir automatiquement votre quartier et informations de localisation
+                </Text>
+              )}
 
-          <Button 
-            title="S'inscrire" 
-            onPress={validate}
-            theme={theme}
-            isDarkMode={isDarkMode}
-          />
+              <Input
+                keyboardType="phone-pad"
+                onChangeText={text => handleOnchange(text, 'phone')}
+                onFocus={() => handleInputFocus('phone')}
+                iconName="phone-outline"
+                label="Numéro de téléphone"
+                placeholder="Entrez votre numéro de téléphone"
+                error={errors.phone}
+                labelColor={theme.textColor}
+                theme={theme}
+                isDarkMode={isDarkMode}
+              />
 
-          <Text
-            onPress={() => navigation.navigate('Login')}
-            style={[styles.loginText, { color: theme.textColor }]}
-          >
-            Vous avez déjà un compte ? 
-            <Text style={[styles.loginLink, { color: theme.primary }]}>
-              {' '}Connectez-vous
-            </Text>
-          </Text>
-        </View>
-      </ScrollView>
+              <Input
+                onChangeText={text => handleOnchange(text, 'password')}
+                onFocus={() => handleInputFocus('password')}
+                iconName="lock-outline"
+                label="Mot de passe"
+                placeholder="Entrez votre mot de passe"
+                error={errors.password}
+                password
+                labelColor={theme.textColor}
+                theme={theme}
+                isDarkMode={isDarkMode}
+              />
+
+              <Button 
+                title="S'inscrire" 
+                onPress={validate}
+                theme={theme}
+                isDarkMode={isDarkMode}
+              />
+
+              <Text
+                onPress={navigateToLogin}
+                style={[styles.loginText, { color: theme.textColor }]}
+              >
+                Vous avez déjà un compte ? 
+                <Text style={[styles.loginLink, { color: theme.primary }]}>
+                  {' '}Connectez-vous
+                </Text>
+              </Text>
+            </View>
+          </ScrollView>
+        </Animated.View>
+      </KeyboardAvoidingView>
       
-      {/* Toast component */}
       <Toast />
     </SafeAreaView>
   )
@@ -473,6 +852,9 @@ export default function Signup({navigation}) {
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  animatedContainer: {
     flex: 1,
   },
   themeControls: {
@@ -515,10 +897,8 @@ const styles = StyleSheet.create({
   },
   headerContainer: {
     marginTop: 20,
-    marginBottom: 30,
   },
   title: {
-    fontSize: 32,
     fontWeight: 'bold',
     marginBottom: 8,
   },
@@ -538,18 +918,30 @@ const styles = StyleSheet.create({
   },
   locationButton: {
     position: 'absolute',
-    right: 15,
-    top: 45,
+    right: 10,
+    top: 35,
     width: 40,
     height: 40,
     borderRadius: 20,
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'center', 
     elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.5,
+  },
+  cityPostalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 15,
+    marginBottom: 10,
+  },
+  cityContainer: {
+    flex: 2,
+  },
+  postalContainer: {
+    flex: 1,
   },
   helperText: {
     fontSize: 12,
@@ -558,7 +950,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   spinIcon: {
-    transform: [{ rotate: '45deg' }],
+    animation: 'spin 1s linear infinite',
   },
   loginText: {
     fontWeight: '500',
@@ -570,5 +962,39 @@ const styles = StyleSheet.create({
   loginLink: {
     fontWeight: '700',
     textDecorationLine: 'underline',
+  },
+  successToastContainer: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    zIndex: 1000,
+  },
+  successToast: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  successToastTextContainer: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 12,
+  },
+  successToastTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  successToastSubtitle: {
+    color: '#ffffff',
+    fontSize: 14,
+    opacity: 0.9,
   },
 })

@@ -8,6 +8,8 @@ import API_BASE_URL from '../../../config/Api';
 import Token from '../../../config/TokenDolibar';
 import { Avatar } from 'react-native-elements';
 import { useTheme } from '../../context/ThemeContext';
+import { useFavorites } from '../../context/FavoritesContext';
+import { useCart } from '../../context/CartContext';
 
 const { width } = Dimensions.get('window');
 
@@ -25,66 +27,69 @@ const DARK_GRAY = '#333333';
 
 export default function DrawerItems(props) {
   const { theme, isDarkMode, toggleTheme, colorTheme, toggleColorTheme } = useTheme();
-  const { navigation, wishlistItem, cartItem } = props;
-
+  const { favoriteCount } = useFavorites();
+  const { cartItems, getCartItemCount } = useCart();
+  const { navigation } = props;
   const [userDetails, setUserDetails] = React.useState();
-  const [Wishlist, setWishlist] = React.useState();
-  const [Cart, setCart] = React.useState();
-  
+
+  // Calculate cart count - try different possible cart context properties
+  const cartCount = React.useMemo(() => {
+    // Try different possible ways to get cart count
+    if (typeof getCartItemCount === 'function') {
+      return getCartItemCount();
+    }
+    if (cartItems && Array.isArray(cartItems)) {
+      return cartItems.length;
+    }
+    if (cartItems && typeof cartItems === 'object') {
+      return Object.keys(cartItems).length;
+    }
+    return 0;
+  }, [cartItems, getCartItemCount]);
+
   // Dynamically set colors based on the selected color theme
   const PRIMARY_COLOR = colorTheme === 'blue' ? BLUE : ORANGE;
   const SECONDARY_COLOR = colorTheme === 'blue' ? ORANGE : BLUE;
   const DARK_PRIMARY = colorTheme === 'blue' ? DARK_BLUE : DARK_ORANGE;
   const DARK_SECONDARY = colorTheme === 'blue' ? DARK_ORANGE : DARK_BLUE;
-  
+
   // Theme-aware colors
   const BACKGROUND_COLOR = isDarkMode ? DARK_BG : WHITE;
   const SURFACE_COLOR = isDarkMode ? DARK_SURFACE : LIGHT_GRAY;
   const TEXT_COLOR = isDarkMode ? WHITE : BLACK;
   const SECONDARY_TEXT = isDarkMode ? '#B3B3B3' : '#666666';
   const BORDER_COLOR = isDarkMode ? DARK_GRAY : '#E0E0E0';
-  
+
   React.useEffect(() => {
     getUserData();
   }, []);
 
   const getUserData = async () => {
-    const userData = JSON.parse(await AsyncStorage.getItem('userData'));
-    const clientID = userData.id;
-    const wishlist = await AsyncStorage.getItem('wishlistItem');
-    const cart = await AsyncStorage.getItem('cartItems');
-
-    const headers = {
-      'Content-Type': 'application/json',
-      'DOLAPIKEY': Token
-    };
-
-    if (wishlist) {
-      setWishlist(JSON.parse(wishlist));
-    }
-    if (cart) {
-      setCart(JSON.parse(cart));
-    }
-    
     try {
-      const res = await axios.get(API_BASE_URL + 'thirdparties/' + clientID, { headers });
-      setUserDetails(res.data);
+      const userData = JSON.parse(await AsyncStorage.getItem('userData'));
+      if (userData?.id) {
+        const clientID = userData.id;
+        const headers = {
+          'Content-Type': 'application/json',
+          'DOLAPIKEY': Token
+        };
+
+        const res = await axios.get(API_BASE_URL + 'thirdparties/' + clientID, { headers });
+        setUserDetails(res.data);
+      }
     } catch (error) {
-      console.log(error);
+      console.log('Error fetching user data:', error);
     }
   };
 
   const formatEmail = (email) => {
     if (!email) return '';
     if (email.length <= 25) return email;
-    
     const [username, domain] = email.split('@');
     if (!domain) return email.substring(0, 22) + '...';
-    
-    const truncatedUsername = username.length > 15 
-      ? username.substring(0, 12) + '...' 
+    const truncatedUsername = username.length > 15
+      ? username.substring(0, 12) + '...'
       : username;
-      
     return `${truncatedUsername}@${domain}`;
   };
 
@@ -100,14 +105,14 @@ export default function DrawerItems(props) {
 
   return (
     <View style={[styles.container, { backgroundColor: BACKGROUND_COLOR }]}>
-      <DrawerContentScrollView 
+      <DrawerContentScrollView
         {...props}
         style={{ backgroundColor: BACKGROUND_COLOR }}
         contentContainerStyle={styles.scrollViewContent}
         showsVerticalScrollIndicator={false}
       >
         {/* Header - Dynamic Primary Color with dark mode consideration */}
-        <View style={[styles.profileContainer, { 
+        <View style={[styles.profileContainer, {
           backgroundColor: PRIMARY_COLOR,
           shadowColor: isDarkMode ? '#000' : PRIMARY_COLOR,
           shadowOpacity: isDarkMode ? 0.8 : 0.3,
@@ -123,7 +128,6 @@ export default function DrawerItems(props) {
               }]}
               source={require('../../assets/images/inconnu.jpg')}
             />
-
             <View style={styles.userTextContainer}>
               <Text style={styles.userName}>
                 {userDetails && userDetails.name ? userDetails.name : 'Utilisateur'}
@@ -131,7 +135,7 @@ export default function DrawerItems(props) {
               <View style={[styles.emailContainer, {
                 backgroundColor: isDarkMode ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.2)'
               }]}>
-                <Text 
+                <Text
                   style={styles.userEmail}
                   numberOfLines={1}
                   ellipsizeMode="tail"
@@ -143,50 +147,58 @@ export default function DrawerItems(props) {
           </View>
 
           <View style={styles.statsContainer}>
-            <View style={[styles.statItem, { 
-              backgroundColor: isDarkMode ? DARK_PRIMARY : `${DARK_PRIMARY}E6` 
-            }]}>
+            <TouchableOpacity 
+              style={[styles.statItem, {
+                backgroundColor: isDarkMode ? DARK_PRIMARY : `${DARK_PRIMARY}E6`
+              }]}
+              onPress={() => navigation.navigate('WishListScreen')}
+              activeOpacity={0.7}
+            >
               <View style={[styles.statBadge, {
                 backgroundColor: isDarkMode ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.25)'
               }]}>
                 <Text style={styles.statNumber}>
-                  {wishlistItem || 0}
+                  {favoriteCount}
                 </Text>
               </View>
               <Text style={styles.statLabel}>
                 Mes favoris
               </Text>
-            </View>
+            </TouchableOpacity>
 
             <View style={[styles.divider, {
               backgroundColor: isDarkMode ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.4)'
             }]} />
 
-            <View style={[styles.statItem, { 
-              backgroundColor: isDarkMode ? DARK_SECONDARY : `${SECONDARY_COLOR}E6` 
-            }]}>
+            <TouchableOpacity 
+              style={[styles.statItem, {
+                backgroundColor: isDarkMode ? DARK_SECONDARY : `${SECONDARY_COLOR}E6`
+              }]}
+              onPress={() => navigation.navigate('MyCart')}
+              activeOpacity={0.7}
+            >
               <View style={[styles.statBadge, {
                 backgroundColor: isDarkMode ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.25)'
               }]}>
                 <Text style={styles.statNumber}>
-                  {cartItem || 0}
+                  {cartCount}
                 </Text>
               </View>
               <Text style={styles.statLabel}>
                 Mon panier
               </Text>
-            </View>
+            </TouchableOpacity>
           </View>
         </View>
 
         {/* Menu Items - Dynamic Colors with dark mode support */}
         <View style={[styles.menuContainer, { backgroundColor: BACKGROUND_COLOR }]}>
-          <DrawerItemList 
-            {...props} 
+          <DrawerItemList
+            {...props}
             activeTintColor={WHITE} // White text on colored background
             inactiveTintColor={SECONDARY_TEXT}
             activeBackgroundColor={PRIMARY_COLOR} // Use primary color for active state
-            itemStyle={[styles.menuItem, { 
+            itemStyle={[styles.menuItem, {
               backgroundColor: 'transparent'
             }]}
             labelStyle={[styles.menuLabel, { color: TEXT_COLOR }]}
@@ -194,17 +206,17 @@ export default function DrawerItems(props) {
         </View>
 
         {/* Theme Settings with improved dark mode styling */}
-        <View style={[styles.settingsContainer, { 
+        <View style={[styles.settingsContainer, {
           backgroundColor: isDarkMode ? DARK_SURFACE : SURFACE_COLOR,
           borderTopColor: BORDER_COLOR
         }]}>
           <Text style={[styles.settingsHeader, { color: PRIMARY_COLOR }]}>
             Thèmes
           </Text>
-          
+
           {/* Theme color toggle */}
-          <TouchableOpacity 
-            style={[styles.optionButton, { 
+          <TouchableOpacity
+            style={[styles.optionButton, {
               backgroundColor: PRIMARY_COLOR,
               shadowColor: PRIMARY_COLOR,
               shadowOpacity: isDarkMode ? 0.6 : 0.3,
@@ -214,26 +226,25 @@ export default function DrawerItems(props) {
             activeOpacity={0.8}
           >
             <View style={styles.colorSelectorContainer}>
-              <View style={[styles.colorCircle, { 
+              <View style={[styles.colorCircle, {
                 backgroundColor: colorTheme === 'blue' ? DARK_BLUE : DARK_ORANGE,
                 zIndex: 1,
                 borderColor: WHITE,
               }]} />
-              <View style={[styles.colorCircle, { 
+              <View style={[styles.colorCircle, {
                 backgroundColor: colorTheme === 'blue' ? ORANGE : BLUE,
                 marginLeft: -10,
                 borderColor: WHITE,
               }]} />
             </View>
-            
             <Text style={styles.optionText}>
               Thème {colorTheme === 'blue' ? "Orange" : "Bleu"}
             </Text>
           </TouchableOpacity>
 
           {/* Dark mode toggle */}
-          <TouchableOpacity 
-            style={[styles.optionButton, { 
+          <TouchableOpacity
+            style={[styles.optionButton, {
               backgroundColor: SECONDARY_COLOR,
               shadowColor: SECONDARY_COLOR,
               shadowOpacity: isDarkMode ? 0.6 : 0.3,
@@ -243,9 +254,9 @@ export default function DrawerItems(props) {
             activeOpacity={0.8}
           >
             <View style={styles.iconContainer}>
-              <Ionicons 
-                name={isDarkMode ? "sunny" : "moon"} 
-                size={22} 
+              <Ionicons
+                name={isDarkMode ? "sunny" : "moon"}
+                size={22}
                 color={WHITE}
               />
             </View>
@@ -255,10 +266,10 @@ export default function DrawerItems(props) {
           </TouchableOpacity>
         </View>
       </DrawerContentScrollView>
-      
+
       {/* Logout Button with improved styling */}
-      <TouchableOpacity 
-        style={[styles.logoutButton, { 
+      <TouchableOpacity
+        style={[styles.logoutButton, {
           backgroundColor: isDarkMode ? '#DC3545' : SECONDARY_COLOR,
           borderTopColor: BORDER_COLOR,
           shadowColor: isDarkMode ? '#DC3545' : SECONDARY_COLOR,
@@ -268,9 +279,9 @@ export default function DrawerItems(props) {
         activeOpacity={0.8}
       >
         <View style={styles.iconContainer}>
-          <Ionicons 
-            name="log-out-outline" 
-            size={24} 
+          <Ionicons
+            name="log-out-outline"
+            size={24}
             color={WHITE}
           />
         </View>

@@ -14,23 +14,21 @@ import {
 } from 'react-native';
 import React, {useCallback, useEffect, useState} from 'react';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import Feather from 'react-native-vector-icons/Feather';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import Toast from 'react-native-simple-toast';
-import Token from '../../config/TokenDolibar';
-import API_BASE_URL from '../../config/Api';
-import {COLOURS} from '../database/Database';
 import { useTheme } from '../context/ThemeContext';
+import { useFavorites } from '../context/FavoritesContext';
+import { useCart } from '../context/CartContext';
+import ProductService, { Product } from '../service/CustomProductApiService';
 import * as Animatable from 'react-native-animatable';
 
 const { width } = Dimensions.get('window');
 
 export default function WishListScreen({navigation}) {
   const { theme, isDarkMode, colorTheme } = useTheme();
-  const [products, setProducts] = useState([]);
-  const [quantities, setQuantities] = useState({});
-  const [total, setTotal] = useState(0);
+  const { favoriteIds, removeFromFavorites, favoriteCount } = useFavorites();
+  const { addToCart } = useCart();
+  const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEmpty, setIsEmpty] = useState(false);
 
@@ -46,96 +44,110 @@ export default function WishListScreen({navigation}) {
   const BORDER_COLOR = isDarkMode ? '#2c2c2c' : '#e0e0e0';
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', getDataFromDB);
+    const unsubscribe = navigation.addListener('focus', loadFavoriteProducts);
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, favoriteIds]);
 
-  const getDataFromDB = useCallback(async () => {
+  // Load products when favoriteIds change
+  useEffect(() => {
+    loadFavoriteProducts();
+  }, [favoriteIds]);
+
+  const loadFavoriteProducts = useCallback(async () => {
+    setIsLoading(true);
     setIsEmpty(false);
+    
     try {
-      const items = JSON.parse(await AsyncStorage.getItem('wishlistItem')) || [];
-
-      if (items.length === 0) {
+      if (favoriteIds.length === 0) {
         setIsEmpty(true);
+        setProducts([]);
         setIsLoading(false);
         return;
       }
-      
-      const itemIds = items.join(',');
 
-      const response = await axios.get(API_BASE_URL + 'categories/byid', {
-        headers: {
-          'Content-Type': 'application/json',
-          DOLAPIKEY: Token,
-        },
-        params: {
-          sqlfilters: itemIds,
-        },
+      console.log('Loading favorite products with IDs:', favoriteIds);
+      
+      // Fetch products using ProductService
+      const response = await ProductService.getMultipleProducts(favoriteIds, {
+        includestockdata: 1,
+        pagination_data: false
       });
-      const products = response.data.products;
-      setProducts(products);
-      setIsLoading(false);
+      
+      // Handle both paginated and non-paginated responses
+      const productsData = 'data' in response ? response.data : response;
+      
+      console.log('Loaded favorite products:', productsData);
+      setProducts(productsData);
+      
     } catch (error) {
-      console.error('Failed to load wishlist items:', error);
+      console.error('Failed to load favorite products:', error);
+      showToast('Erreur lors du chargement des favoris');
+      setProducts([]);
+    } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [favoriteIds]);
 
-  const removeItemFromCart = async id => {
-    const itemArray = JSON.parse(await AsyncStorage.getItem('wishlistItem')) || [];
-    const updatedArray = itemArray.filter(item => item != id);
-    await AsyncStorage.setItem('wishlistItem', JSON.stringify(updatedArray));
-    getDataFromDB();
+  const removeItemFromFavorites = (productId: string) => {
+    removeFromFavorites(productId);
+    showToast('Produit retiré des favoris');
   };
 
-  const moveItemToCart = async id => {
+  const moveItemToCart = async (productId: string) => {
     try {
-      const wishlistItems = JSON.parse(await AsyncStorage.getItem('wishlistItem')) || [];
+      // Add to cart using context
+      const result = await addToCart(productId);
       
-      // Remove the item from wishlist
-      const updatedWishlist = wishlistItems.filter(item => item !== id);
-      await AsyncStorage.setItem('wishlistItem', JSON.stringify(updatedWishlist));
-  
-      // Add the item to cart
-      const cartItems = JSON.parse(await AsyncStorage.getItem('cartItems')) || [];
-      if (!cartItems.includes(id)) {
-        cartItems.push(id);
-        await AsyncStorage.setItem('cartItems', JSON.stringify(cartItems));
-      }
-  
-      if (Platform.OS === 'android') {
-        ToastAndroid.show('Produit ajouté au panier!', ToastAndroid.SHORT);
+      if (result.success) {
+        // Remove from favorites
+        removeFromFavorites(productId);
+        showToast('Produit ajouté au panier et retiré des favoris!');
       } else {
-        Toast.show('Produit ajouté au panier!', Toast.SHORT);
+        throw new Error(result.error || 'Erreur lors de l\'ajout au panier');
       }
       
-      getDataFromDB();
     } catch (error) {
       console.error('Failed to move item to cart:', error);
+      showToast('Erreur lors de l\'ajout au panier');
     }
-  }
+  };
 
-  const renderProducts = ({
-    id,
-    label,
-    price_ttc,
-    photo_link,
-    description,
-    stock,
-  }, index) => {
-    const quantity = quantities[id] || 1;
-    const data = {
-      id,
-      label,
-      price_ttc,
-      photo_link,
-      description,
-      stock,
-    };
+  const showToast = (message: string) => {
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(message, ToastAndroid.SHORT);
+    } else {
+      Toast.show(message, Toast.SHORT);
+    }
+  };
+
+  const formatPrice = (product: Product) => {
+    const price = parseFloat(product.price_ttc || product.price || '0');
+    return `${price.toFixed(2).replace('.', ',')} DH`;
+  };
+
+  const getProductImageUrl = (product: Product) => {
+    return product.image_link || product.photo_link || null;
+  };
+
+  const isProductInStock = (product: Product) => {
+    return parseInt(product.stock_reel || '0') > 0;
+  };
+
+  const getStockStatusText = (product: Product) => {
+    const stock = parseInt(product.stock_reel || '0');
+    if (stock > 0) {
+      return stock > 5 ? 'En stock' : `Stock limité (${stock})`;
+    }
+    return 'Rupture de stock';
+  };
+
+  const renderProducts = (product: Product, index: number) => {
+    const imageUrl = getProductImageUrl(product);
+    const isInStock = isProductInStock(product);
     
     return (
       <Animatable.View 
-        key={id} 
+        key={product.id} 
         style={[styles.productCard, { 
           backgroundColor: CARD_BACKGROUND,
           borderColor: BORDER_COLOR,
@@ -146,17 +158,17 @@ export default function WishListScreen({navigation}) {
       >
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => navigation.navigate('ProductDetails', {product: data})}
+          onPress={() => navigation.navigate('ProductDetails', { productId: product.id })}
           style={[styles.imageContainer, { backgroundColor: isDarkMode ? '#252525' : '#f5f5f5' }]}>
-          {photo_link ? (
+          {imageUrl ? (
             <Image 
-              source={{uri: photo_link}} 
+              source={{ uri: imageUrl }} 
               style={styles.productImage} 
               resizeMode="contain"
             />
           ) : (
             <View style={styles.noImageContainer}>
-              <Feather name="image" size={24} color={TEXT_COLOR_SECONDARY} />
+              <Ionicons name="image-outline" size={24} color={TEXT_COLOR_SECONDARY} />
             </View>
           )}
         </TouchableOpacity>
@@ -164,13 +176,13 @@ export default function WishListScreen({navigation}) {
         <View style={styles.productInfo}>
           <View style={styles.productHeader}>
             <Text style={[styles.productTitle, { color: TEXT_COLOR }]} numberOfLines={2}>
-              {label}
+              {product.label}
             </Text>
             <TouchableOpacity
-              onPress={() => removeItemFromCart(id)}
+              onPress={() => removeItemFromFavorites(product.id.toString())}
               style={[styles.removeButton, { backgroundColor: 'rgba(244,67,54,0.9)' }]}>
-              <Feather
-                name="trash-2"
+              <Ionicons
+                name="trash-outline"
                 size={16}
                 color="#FFFFFF"
               />
@@ -179,42 +191,51 @@ export default function WishListScreen({navigation}) {
           
           <View style={styles.priceContainer}>
             <Text style={[styles.price, { color: PRIMARY_COLOR }]}>
-              {(parseFloat(price_ttc) || 0).toFixed(2)} DH
+              {formatPrice(product)}
             </Text>
-            <Text style={[styles.originalPrice, { color: TEXT_COLOR_SECONDARY }]}>
-              (~{(price_ttc * quantity + price_ttc / 20).toFixed(2)} DH)
-            </Text>
+            {product.ref && (
+              <Text style={[styles.productRef, { color: TEXT_COLOR_SECONDARY }]}>
+                Réf: {product.ref}
+              </Text>
+            )}
           </View>
           
-          {stock && stock > 0 ? (
+          {isInStock ? (
             <View style={[styles.stockContainer, { backgroundColor: 'rgba(76,175,80,0.1)', borderColor: '#4caf50' }]}>
-              <Feather name="check-circle" size={12} color="#4caf50" style={styles.stockIcon} />
+              <Ionicons name="checkmark-circle-outline" size={12} color="#4caf50" style={styles.stockIcon} />
               <Text style={[styles.inStock, { color: '#4caf50' }]}>
-                En stock
+                {getStockStatusText(product)}
               </Text>
             </View>
           ) : (
             <View style={[styles.stockContainer, { backgroundColor: 'rgba(244,67,54,0.1)', borderColor: '#f44336' }]}>
-              <Feather name="x-circle" size={12} color="#f44336" style={styles.stockIcon} />
+              <Ionicons name="close-circle-outline" size={12} color="#f44336" style={styles.stockIcon} />
               <Text style={[styles.outOfStock, { color: '#f44336' }]}>
-                Rupture de stock
+                {getStockStatusText(product)}
               </Text>
             </View>
           )}
 
           <TouchableOpacity 
             activeOpacity={0.8} 
-            style={[styles.addToCartButton, { backgroundColor: PRIMARY_COLOR }]}
-            onPress={() => moveItemToCart(id)}
+            style={[
+              styles.addToCartButton, 
+              { 
+                backgroundColor: isInStock ? PRIMARY_COLOR : TEXT_COLOR_SECONDARY,
+                opacity: isInStock ? 1 : 0.6 
+              }
+            ]}
+            onPress={() => moveItemToCart(product.id.toString())}
+            disabled={!isInStock}
           >
-            <Feather
-              name="shopping-cart"
+            <Ionicons
+              name="cart-outline"
               size={16}
               color="#FFFFFF"
               style={styles.cartIcon}
             />
             <Text style={styles.addToCartText}>
-              Ajouter au panier
+              {isInStock ? 'Ajouter au panier' : 'Indisponible'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -235,8 +256,8 @@ export default function WishListScreen({navigation}) {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Feather 
-            name="arrow-left" 
+          <Ionicons 
+            name="arrow-back" 
             size={24} 
             color="#fff" 
           />
@@ -249,8 +270,8 @@ export default function WishListScreen({navigation}) {
       {isEmpty ? (
         <View style={styles.centerContent}>
           <View style={[styles.emptyIconContainer, { backgroundColor: isDarkMode ? '#252525' : '#f0f0f0' }]}>
-            <Feather 
-              name="heart" 
+            <Ionicons 
+              name="heart-outline" 
               size={60} 
               color={PRIMARY_COLOR} 
             />
@@ -266,7 +287,7 @@ export default function WishListScreen({navigation}) {
             onPress={() => navigation.navigate('Home')}
             activeOpacity={0.8}
           >
-            <Feather name="shopping-bag" size={18} color="#fff" style={{ marginRight: 8 }} />
+            <Ionicons name="bag-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
             <Text style={styles.shopButtonText}>
               Commencer vos achats
             </Text>
@@ -286,8 +307,8 @@ export default function WishListScreen({navigation}) {
         >
           <View style={styles.sectionHeader}>
             <View style={styles.titleContainer}>
-              <Feather 
-                name="heart" 
+              <Ionicons 
+                name="heart-outline" 
                 size={20} 
                 color={PRIMARY_COLOR} 
                 style={styles.titleIcon}
@@ -298,7 +319,7 @@ export default function WishListScreen({navigation}) {
             </View>
             <View style={[styles.countBadge, { backgroundColor: PRIMARY_COLOR + '15' }]}>
               <Text style={[styles.productCount, { color: PRIMARY_COLOR }]}>
-                {products.length} {products.length > 1 ? 'produits' : 'produit'}
+                {favoriteCount} {favoriteCount > 1 ? 'produits' : 'produit'}
               </Text>
             </View>
           </View>
@@ -482,15 +503,16 @@ const styles = StyleSheet.create({
   priceContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginTop: 8,
   },
   price: {
     fontSize: 18,
     fontWeight: '700',
-    marginRight: 8,
   },
-  originalPrice: {
-    fontSize: 14,
+  productRef: {
+    fontSize: 12,
+    fontStyle: 'italic',
   },
   stockContainer: {
     flexDirection: 'row',

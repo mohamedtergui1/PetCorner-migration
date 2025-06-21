@@ -144,7 +144,7 @@ export default function ProfileScreen({navigation}) {
             }]}
             onPress={() => {
               console.log('Navigating to UserDetails...');
-              navigation.navigate('UserDetails');
+              navigation.navigate('UserDetailsScreen');
             }}
           >
             <View style={[styles.rowIcon, { backgroundColor: PRIMARY_COLOR }]}>
@@ -298,6 +298,7 @@ export default function ProfileScreen({navigation}) {
           <Text style={[styles.sectionTitle, { color: PRIMARY_COLOR }]}>Ressources</Text>
           
           <TouchableOpacity
+            onPress={ () =>  navigation.navigate("SignatureClient")}
             style={[styles.row, { 
               backgroundColor: CARD_BACKGROUND,
               borderLeftWidth: 3,

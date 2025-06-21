@@ -1,20 +1,20 @@
-import { 
-  ActivityIndicator, 
-  Animated, 
-  Dimensions, 
-  Image, 
+import {
+  ActivityIndicator,
+  Animated,
+  Dimensions,
   Modal,
-  Platform, 
-  ScrollView, 
-  Share, 
-  StyleSheet, 
-  Text, 
-  ToastAndroid, 
+  Platform,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  ToastAndroid,
   View,
   TouchableWithoutFeedback,
   TouchableOpacity,
   PanResponder,
-  FlatList
+  FlatList,
+  Image
 } from 'react-native';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { COLOURS } from '../../database/Database';
@@ -24,31 +24,32 @@ import Entypo from 'react-native-vector-icons/Entypo';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Toast from 'react-native-simple-toast';
-import Token from '../../../config/TokenDolibar';
-import API_BASE_URL from '../../../config/Api';
-import axios from 'axios';
 import { useTheme } from '../../context/ThemeContext';
 import { useCart } from '../../context/CartContext';
+import { useFavorites } from '../../context/FavoritesContext';
 import { StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ProductService from '../../service/CustomProductApiService';
 
 export default function ProductDetails({ route, navigation }) {
   const { width, height } = Dimensions.get('window');
   const { theme } = useTheme();
   const { addToCart } = useCart();
+  const { isFavorite, toggleFavorite } = useFavorites();
   const insets = useSafeAreaInsets();
   
-  const { product: rawProduct } = route.params;
+  // Get product ID from route params - simplified approach
+  const { productId } = route.params;
 
-  // State for normalized product data
+  // State management
   const [product, setProduct] = useState(null);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [inSaved, setInSaved] = useState(false);
   const [userDetails, setUserDetails] = useState();
   const [loading, setLoading] = useState(false);
   const [similarProducts, setSimilarProducts] = useState([]);
   const [loadingSimilar, setLoadingSimilar] = useState(false);
-  const [loadingProductDetails, setLoadingProductDetails] = useState(false);
+  const [loadingProduct, setLoadingProduct] = useState(true);
+  const [error, setError] = useState(null);
   
   // Image viewing states
   const [imageViewVisible, setImageViewVisible] = useState(false);
@@ -59,166 +60,172 @@ export default function ProductDetails({ route, navigation }) {
   const [lastTranslateX, setLastTranslateX] = useState(0);
   const [lastTranslateY, setLastTranslateY] = useState(0);
 
-  // Function to detect data format and normalize
-  const normalizeProductData = (productData) => {
-    if (!productData) return null;
-
-    // Detect format type
-    const hasArrayOptions = productData.hasOwnProperty('array_options');
-    const hasPhotoLink = productData.hasOwnProperty('photo_link');
-    const hasImageLink = productData.hasOwnProperty('image_link');
-    const hasSimplifiedFields = productData.hasOwnProperty('Marque') || 
-                               productData.hasOwnProperty('tag') || 
-                               productData.hasOwnProperty('Similaire') ||
-                               productData.hasOwnProperty('stock');
-
-    // Format 1: Full API format (has array_options)
-    if (hasArrayOptions) {
-      return {
-        ...productData,
-        // Ensure consistent image field
-        photo_link: productData.photo_link || productData.image_link,
-        image_link: productData.image_link || productData.photo_link,
-        // Ensure stock_reel is available
-        stock_reel: productData.stock_reel || productData.stock || '0',
-        // Ensure consistent price calculation
-        price: productData.price || (productData.price_ttc ? 
-          (parseFloat(productData.price_ttc) / (1 + (parseFloat(productData.tva_tx || '20') / 100))).toFixed(8) : '0'),
-      };
-    }
+  // Helper functions for product data
+  const formatPrice = (product) => {
+    if (!product) return '0,00 DH';
     
-    // Format 2 & 3: Simplified or Navigation formats
-    if (hasSimplifiedFields || hasPhotoLink) {
-      const normalizedProduct = {
-        id: productData.id,
-        label: productData.label,
-        ref: productData.ref,
-        description: productData.description,
-        price_ttc: productData.price_ttc,
-        price: productData.price || (productData.price_ttc ? 
-          (parseFloat(productData.price_ttc) / (1 + (parseFloat(productData.tva_tx || '20') / 100))).toFixed(8) : '0'),
-        tva_tx: productData.tva_tx || '20.000',
-        barcode: productData.barcode,
-        weight: productData.weight,
-        stock_reel: productData.stock_reel || productData.stock || '0',
-        photo_link: productData.photo_link || productData.image_link,
-        image_link: productData.image_link || productData.photo_link,
-        category_label: productData.category_label || 'Produit',
-        
-        // Create array_options from simplified fields
-        array_options: {
-          options_marque: productData.Marque || productData.marque || 
-                         productData.array_options?.options_marque,
-          options_tags: productData.tag || productData.tags || 
-                       productData.array_options?.options_tags,
-          options_similaire: productData.Similaire || productData.similaire || 
-                            productData.array_options?.options_similaire,
-          options_ecommerceng_short_description_1: productData.description ||
-                                                  productData.array_options?.options_ecommerceng_short_description_1,
-          
-          // Handle additional custom fields
-          options_option_sante: productData['Option Santé'] || productData.option_sante,
-          options_gout: productData['Goût'] || productData.gout,
-          options_option_nutritionnel: productData['Option Nutritionnel'] || productData.option_nutritionnel,
-          options_ages: productData['Ages'] || productData.ages,
-          
-          // Preserve any existing array_options
-          ...productData.array_options
-        },
-        
-        // Preserve other fields that might exist
-        ...Object.keys(productData).reduce((acc, key) => {
-          // Don't override the fields we've already handled
-          if (!['Marque', 'marque', 'tag', 'tags', 'Similaire', 'similaire', 'stock', 
-                'Option Santé', 'option_sante', 'Goût', 'gout', 'Option Nutritionnel', 
-                'option_nutritionnel', 'Ages', 'ages'].includes(key)) {
-            acc[key] = productData[key];
-          }
-          return acc;
-        }, {})
-      };
-
-      return normalizedProduct;
-    }
-
-    // Default: return as-is with minimal processing
-    return {
-      ...productData,
-      stock_reel: productData.stock_reel || productData.stock || '0',
-      photo_link: productData.photo_link || productData.image_link,
-      image_link: productData.image_link || productData.photo_link,
-      array_options: productData.array_options || {}
-    };
+    const price = parseFloat(product.price_ttc || product.price || 0);
+    return `${price.toFixed(2).replace('.', ',')} DH`;
   };
 
-  // Function to fetch full product details if we have simplified data
-  const fetchFullProductDetails = async (productId) => {
+  const getPriceHT = (product) => {
+    if (!product) return '0,00 DH';
+    
+    const priceHT = parseFloat(product.price || 0);
+    return `${priceHT.toFixed(2).replace('.', ',')} DH`;
+  };
+
+  const getTaxAmount = (product) => {
+    if (!product) return '0,00 DH';
+    
+    const priceTTC = parseFloat(product.price_ttc || 0);
+    const priceHT = parseFloat(product.price || 0);
+    const taxAmount = priceTTC - priceHT;
+    
+    return `${taxAmount.toFixed(2).replace('.', ',')} DH`;
+  };
+
+  const getBrand = (product) => {
+    return product?.array_options?.options_marque || null;
+  };
+
+  const getFormattedWeight = (product) => {
+    if (!product?.weight) return null;
+    const weight = parseFloat(product.weight);
+    if (weight >= 1) {
+      return `${weight} kg`;
+    } else {
+      return `${(weight * 1000).toFixed(0)} g`;
+    }
+  };
+
+  const isProductInStock = (product) => {
+    if (!product) return false;
+    return parseInt(product.stock_reel || 0) > 0;
+  };
+
+  const getStockStatusText = (product) => {
+    if (!product) return 'Indisponible';
+    
+    const stock = parseInt(product.stock_reel || 0);
+    if (stock > 0) {
+      return stock > 5 ? 'En stock' : `Stock limité (${stock})`;
+    }
+    return 'Rupture de stock';
+  };
+
+  const getProductImageUrl = (product) => {
+    if (!product) return null;
+    
+    // Try multiple image URL sources
+    if (product.image_link) return product.image_link;
+    if (product.photo_link) return product.photo_link;
+    
+   
+    
+    return null;
+  };
+
+  // Function to load product data using ProductService.getProductById
+  const loadProductData = async (id) => {
+    if (!id) {
+      setError('ID produit manquant');
+      setLoadingProduct(false);
+      return;
+    }
+
     try {
-      setLoadingProductDetails(true);
-      const headers = {
-        'Content-Type': 'application/json',
-        'DOLAPIKEY': Token
-      };
-
-      const response = await axios.get(`${API_BASE_URL}products/${productId}`, { headers });
-      return response.data;
-    } catch (error) {
-      console.log('Error fetching full product details:', error);
-      return null;
-    } finally {
-      setLoadingProductDetails(false);
-    }
-  };
-
-  // Initialize product data
-  useEffect(() => {
-    const initializeProduct = async () => {
-      let normalizedProduct = normalizeProductData(rawProduct);
+      setLoadingProduct(true);
+      setError(null);
       
-      // Determine if we should try to fetch full details
-      const shouldFetchFullDetails = () => {
-        if (!normalizedProduct || !normalizedProduct.id) return false;
-        
-        // If we have array_options, we likely have full details already
-        if (normalizedProduct.array_options && 
-            Object.keys(normalizedProduct.array_options).length > 3) {
-          return false;
-        }
-        
-        // If we're missing key fields that are usually in full API response
-        const missingFields = !normalizedProduct.multiprices || 
-                             !normalizedProduct.date_creation ||
-                             !normalizedProduct.entity;
-        
-        return missingFields;
-      };
+      console.log('Loading product with ID:', id);
       
-      if (shouldFetchFullDetails()) {
-        const fullDetails = await fetchFullProductDetails(normalizedProduct.id);
-        if (fullDetails) {
-          // Merge full details with normalized data, prioritizing full details
-          normalizedProduct = {
-            ...normalizedProduct,
-            ...fullDetails,
-            // But keep any custom fields from normalized data that might not be in API
-            array_options: {
-              ...normalizedProduct.array_options,
-              ...fullDetails.array_options
-            }
-          };
+      // Load product using ProductService.getProductById with stock data
+      const productData = await ProductService.getProductById(id, {
+        includestockdata: 1,
+        includesubproducts: false,
+        includeparentid: false,
+        includetrans: false
+      });
+      
+      console.log('Loaded product data:', productData);
+      
+      if (productData) {
+        setProduct(productData);
+        
+        // Load similar products if available
+        if (productData.array_options?.options_similaire) {
+          // Parse similar product IDs from string
+          const similarIds = productData.array_options.options_similaire
+            .split(',')
+            .map(id => id.trim())
+            .filter(id => id && id !== productData.id.toString());
+          
+          if (similarIds.length > 0) {
+            loadSimilarProducts(similarIds);
+          }
         }
+      } else {
+        setError('Produit non trouvé');
       }
       
-      setProduct(normalizedProduct);
-      console.log('Final Normalized Product:', normalizedProduct);
-    };
+    } catch (error) {
+      console.error('Error loading product:', error);
+      setError(error.message || 'Erreur lors du chargement du produit');
+    } finally {
+      setLoadingProduct(false);
+    }
+  };
 
-    initializeProduct();
-  }, [rawProduct]);
+  // Function to load similar products
+  const loadSimilarProducts = async (similarIds) => {
+    if (!similarIds || similarIds.length === 0) return;
+    
+    try {
+      setLoadingSimilar(true);
+      
+      console.log('Loading similar products with IDs:', similarIds);
+      
+      // Load similar products using ProductService.getMultipleProducts
+      const similarProductsResponse = await ProductService.getMultipleProducts(similarIds, {
+        includestockdata: 0,
+        pagination_data: false
+      });
+      
+      console.log('Loaded similar products:', similarProductsResponse);
+      
+      // Handle both paginated and non-paginated responses
+      const similarProductsData = similarProductsResponse.data || similarProductsResponse;
+      
+      // Filter out current product if present
+      const filteredSimilar = similarProductsData.filter(
+        item => item && item.id.toString() !== productId.toString()
+      );
+      
+      setSimilarProducts(filteredSimilar);
+      
+    } catch (error) {
+      console.error('Error loading similar products:', error);
+      // Don't show error for similar products, just log it
+    } finally {
+      setLoadingSimilar(false);
+    }
+  };
+
+  // Load product data on component mount
+  useEffect(() => {
+    if (productId) {
+      loadProductData(productId);
+      getUserData();
+    } else {
+      setError('ID produit manquant');
+      setLoadingProduct(false);
+    }
+  }, [productId]);
 
   // Calculate derived values
-  const formattedPrice = product?.price_ttc ? parseFloat(product.price_ttc).toFixed(2) : '0.00';
-  const isAvailable = product ? (parseInt(product.stock_reel) || 0) > 0 : false;
+  const isAvailable = product ? isProductInStock(product) : false;
+  const isInFavorites = product ? isFavorite(product.id.toString()) : false;
 
   // Setup pan responder for image zooming and panning
   const panResponder = useRef(
@@ -303,112 +310,14 @@ export default function ProductDetails({ route, navigation }) {
     lastTap.current = now;
   };
 
-  // Load data on component mount
-  useEffect(() => {
-    if (product) {
-      console.log('Main Product Image Link:', product.photo_link || product.image_link);
-      loadWishlist();
-      getUserData();
-      loadSimilarProducts();
-    }
-  }, [product]);
-
-  // Function to load similar products using IDs from response
-  const loadSimilarProducts = async () => {
+  // Function to add/remove from favorites using context
+  const handleAddToFavorites = () => {
     if (!product) return;
     
-    const similarIds = product.array_options?.options_similaire;
+    toggleFavorite(product.id.toString());
     
-    if (!similarIds) {
-      return;
-    }
-    
-    setLoadingSimilar(true);
-    try {
-      const idsArray = similarIds.split(',').map(id => id.trim());
-      
-      const headers = {
-        'Content-Type': 'application/json',
-        'DOLAPIKEY': Token
-      };
-
-      // Fetch each similar product by ID
-      const similarProductsData = await Promise.all(
-        idsArray.map(async (id) => {
-          try {
-            const response = await axios.get(`${API_BASE_URL}products/${id}`, { headers });
-            
-            console.log(`Similar Product ${response.data.label} Image Link:`, response.data.photo_link || response.data.image_link);
-            
-            return response.data;
-          } catch (error) {
-            return null;
-          }
-        })
-      );
-
-      // Filter out null responses and current product
-      const validSimilarProducts = similarProductsData.filter(
-        (item) => item && item.id !== product.id
-      );
-      
-      setSimilarProducts(validSimilarProducts);
-    } catch (error) {
-      // Error handling without logging
-    } finally {
-      setLoadingSimilar(false);
-    }
-  };
-
-  // Function to check if product is in wishlist
-  const loadWishlist = async () => {
-    if (!product) return;
-    
-    try {
-      const getWishlist = await AsyncStorage.getItem("wishlistItem");
-      const parsedWishlist = JSON.parse(getWishlist);
-
-      if (Array.isArray(parsedWishlist) && parsedWishlist.includes(product.id)) {
-        setInSaved(true);
-      } else {
-        setInSaved(false);
-      }
-    } catch (error) {
-      // Error handling without logging
-    }
-  };
-
-  // Function to add/remove from wishlist
-  const handleAddToWishlist = async () => {
-    if (!product) return;
-    
-    try {
-      const wishlist = await AsyncStorage.getItem("wishlistItem");
-      const parsedWishlist = JSON.parse(wishlist);
-      
-      if (parsedWishlist === null) {
-        const newWishlist = [product.id];
-        await AsyncStorage.setItem("wishlistItem", JSON.stringify(newWishlist));
-        setInSaved(true);
-        showToast('Ajouter à la liste des favoris');
-      } else {
-        const isExist = parsedWishlist.includes(product.id);
-        
-        if (isExist) {
-          const newWishlist = parsedWishlist.filter((item) => item !== product.id);
-          await AsyncStorage.setItem("wishlistItem", JSON.stringify(newWishlist));
-          setInSaved(false);
-          showToast('Retiré de la liste des favoris');
-        } else {
-          const newWishlist = [...parsedWishlist, product.id];
-          await AsyncStorage.setItem("wishlistItem", JSON.stringify(newWishlist));
-          setInSaved(true);
-          showToast('Ajouter à la liste des favoris');
-        }
-      }
-    } catch (error) {
-      // Error handling without logging
-    }
+    const message = isInFavorites ? 'Retiré de la liste des favoris' : 'Ajouté à la liste des favoris';
+    showToast(message);
   };
 
   // Helper function for showing toast
@@ -450,17 +359,11 @@ export default function ProductDetails({ route, navigation }) {
   const getUserData = async () => {
     try {
       const userData = JSON.parse(await AsyncStorage.getItem('userData'));
-      if (!userData || !userData.id) return;
-      
-      const headers = {
-        'Content-Type': 'application/json',
-        'DOLAPIKEY': Token
-      };
-
-      const res = await axios.get(`${API_BASE_URL}thirdparties/${userData.id}`, { headers });
-      setUserDetails(res.data);
+      if (userData && userData.id) {
+        setUserDetails(userData);
+      }
     } catch (error) {
-      // Error handling without logging
+      console.error('Error getting user data:', error);
     }
   };
 
@@ -468,23 +371,33 @@ export default function ProductDetails({ route, navigation }) {
   const handleShareProduct = () => {
     if (!product) return;
     
+    const formattedPrice = formatPrice(product);
+    
     Share.share({
-      message: `Découvrez ${product.label} à ${formattedPrice} DH sur notre application!`,
+      message: `Découvrez ${product.label} à ${formattedPrice} sur notre application!`,
       title: 'Partager ce produit',
     })
     .then(result => {})
     .catch(error => {});
   };
 
-  // Function to navigate to similar product
+  // Function to navigate to similar product - FIXED VERSION
   const handleSimilarProductPress = (similarProduct) => {
-    navigation.push('ProductDetails', { product: similarProduct });
+    // Use push instead of reset to maintain navigation stack
+    navigation.push('ProductDetails', { productId: similarProduct.id });
+  };
+
+  // Function to retry loading product
+  const retryLoadProduct = () => {
+    if (productId) {
+      loadProductData(productId);
+    }
   };
 
   // Render similar product item
   const renderSimilarProduct = ({ item }) => {
-    const similarPrice = item.price_ttc ? parseFloat(item.price_ttc).toFixed(2) : '0.00';
-    const similarAvailable = (parseInt(item.stock_reel) || 0) > 0;
+    const similarAvailable = isProductInStock(item);
+    const imageUrl = getProductImageUrl(item);
 
     return (
       <TouchableOpacity 
@@ -492,9 +405,15 @@ export default function ProductDetails({ route, navigation }) {
         onPress={() => handleSimilarProductPress(item)}
       >
         <Image 
-          source={{ uri: item.photo_link || item.image_link || 'https://via.placeholder.com/150' }} 
+          source={{ uri: imageUrl || 'https://via.placeholder.com/150' }}
           style={styles.similarProductImage}
           resizeMode="cover"
+          onError={(error) => {
+            if (__DEV__) {
+              console.log('Similar product image error:', error?.nativeEvent?.error);
+              console.log('Product ID:', item.id);
+            }
+          }}
         />
         <View style={styles.similarProductInfo}>
           <Text 
@@ -504,7 +423,7 @@ export default function ProductDetails({ route, navigation }) {
             {item.label}
           </Text>
           <Text style={[styles.similarProductPrice, { color: theme.primary }]}>
-            {similarPrice} DH
+            {formatPrice(item)}
           </Text>
           <View style={[
             styles.similarProductStatus, 
@@ -514,7 +433,7 @@ export default function ProductDetails({ route, navigation }) {
               styles.similarProductStatusText, 
               { color: similarAvailable ? theme.primary : '#f44336' }
             ]}>
-              {similarAvailable ? 'En stock' : 'Rupture'}
+              {getStockStatusText(item)}
             </Text>
           </View>
         </View>
@@ -522,17 +441,68 @@ export default function ProductDetails({ route, navigation }) {
     );
   };
 
-  // Show loading indicator while product is being normalized/fetched
-  if (!product) {
+  // Show loading indicator while product is being loaded
+  if (loadingProduct) {
     return (
       <View style={[styles.container, styles.loadingContainer, { backgroundColor: theme.backgroundColor }]}>
+        <StatusBar 
+          barStyle={theme.statusBar} 
+          backgroundColor="transparent" 
+          translucent={true}
+        />
         <ActivityIndicator size="large" color={theme.primary} />
         <Text style={[styles.loadingText, { color: theme.textColor }]}>
-          {loadingProductDetails ? 'Chargement des détails...' : 'Préparation du produit...'}
+          Chargement du produit...
         </Text>
       </View>
     );
   }
+
+  // Show error state
+  if (error || !product) {
+    return (
+      <View style={[styles.container, styles.errorContainer, { backgroundColor: theme.backgroundColor }]}>
+        <StatusBar 
+          barStyle={theme.statusBar} 
+          backgroundColor="transparent" 
+          translucent={true}
+        />
+        
+        {/* Back Button */}
+        <TouchableOpacity 
+          style={[
+            styles.iconButton, 
+            styles.backButton, 
+            { 
+              top: insets.top + 10
+            }
+          ]} 
+          onPress={() => navigation.goBack()}
+        >
+           <Ionicons name='arrow-back' size={24} color="#ffffff" />
+        </TouchableOpacity>
+
+        <MaterialCommunityIcons name="alert-circle-outline" size={64} color={theme.primary} />
+        <Text style={[styles.errorTitle, { color: theme.textColor }]}>
+          Produit non disponible
+        </Text>
+        <Text style={[styles.errorMessage, { color: theme.secondaryTextColor }]}>
+          {error || 'Impossible de charger les détails du produit'}
+        </Text>
+        
+        <TouchableOpacity 
+          style={[styles.retryButton, { backgroundColor: theme.primary }]} 
+          onPress={retryLoadProduct}
+        >
+          <Text style={[styles.retryButtonText, { color: '#ffffff' }]}>
+            Réessayer
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const imageUrl = getProductImageUrl(product);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundColor }]}>
@@ -546,9 +516,15 @@ export default function ProductDetails({ route, navigation }) {
       <View style={styles.imageContainer}>
         <TouchableWithoutFeedback onPress={openImageViewer}>
           <Image 
-            source={{ uri: product.photo_link || product.image_link || 'https://via.placeholder.com/400' }} 
-            resizeMode='cover' 
-            style={styles.productImage} 
+            source={{ uri: imageUrl || 'https://via.placeholder.com/400x320' }}
+            style={styles.productImage}
+            resizeMode="cover"
+            onError={(error) => {
+              console.log('Main product image error:', error?.nativeEvent?.error);
+            }}
+            onLoadEnd={() => {
+              console.log('Main product image loaded successfully');
+            }}
           />
         </TouchableWithoutFeedback>
         
@@ -563,8 +539,7 @@ export default function ProductDetails({ route, navigation }) {
           <Text style={styles.tapText}>Tap pour agrandir</Text>
         </View>
         
-        {/* Overlay gradient for better readability of buttons */}
-        <View style={styles.imageOverlay} />
+        
         
         {/* Back Button */}
         <TouchableOpacity 
@@ -572,13 +547,12 @@ export default function ProductDetails({ route, navigation }) {
             styles.iconButton, 
             styles.backButton, 
             { 
-              backgroundColor: theme.primary,
               top: insets.top + 10
             }
           ]} 
           onPress={() => navigation.goBack()}
         >
-          <MaterialIcons name='arrow-back' size={24} color="#ffffff" />
+          <Ionicons name='arrow-back' size={24} color="#ffffff" />
         </TouchableOpacity>
 
         {/* Wishlist Button */}
@@ -587,16 +561,15 @@ export default function ProductDetails({ route, navigation }) {
             styles.iconButton, 
             styles.heartButton, 
             { 
-              backgroundColor: theme.primary,
               top: insets.top + 10
             }
           ]} 
-          onPress={handleAddToWishlist}
+          onPress={handleAddToFavorites}
         >
           <MaterialCommunityIcons 
-            name={inSaved ? "heart" : "heart-outline"} 
+            name={isInFavorites ? "heart" : "heart-outline"} 
             size={24} 
-            color={inSaved ? "#e91e63" : "#ffffff"} 
+            color={isInFavorites ? "#e91e63" : "#ffffff"} 
           />
         </TouchableOpacity>
 
@@ -606,7 +579,6 @@ export default function ProductDetails({ route, navigation }) {
             styles.iconButton, 
             styles.shareButton, 
             { 
-              backgroundColor: theme.primary,
               top: insets.top + 10
             }
           ]} 
@@ -624,10 +596,10 @@ export default function ProductDetails({ route, navigation }) {
         <View style={styles.detailsContainer}>
           {/* Brand and Category */}
           <View style={styles.badgeRow}>
-            {product.array_options?.options_marque && (
+            {getBrand(product) && (
               <View style={[styles.brandBadge, { backgroundColor: theme.primary + '20' }]}>
                 <Text style={[styles.brandText, { color: theme.primary }]}>
-                  {product.array_options.options_marque}
+                  {getBrand(product)}
                 </Text>
               </View>
             )}
@@ -635,7 +607,7 @@ export default function ProductDetails({ route, navigation }) {
             <View style={[styles.categoryBadge, { backgroundColor: theme.primary + '20' }]}>
               <Entypo name="shopping-cart" size={16} color={theme.primary} style={styles.categoryIcon} />
               <Text style={[styles.categoryText, { color: theme.primary }]}>
-                {product.category_label || 'Produit'}
+                Produit
               </Text>
             </View>
             
@@ -679,7 +651,7 @@ export default function ProductDetails({ route, navigation }) {
                 styles.statusText, 
                 { color: isAvailable ? theme.primary : '#f44336' }
               ]}>
-                {isAvailable ? `En stock (${product.stock_reel})` : 'Rupture de stock'}
+                {getStockStatusText(product)}
               </Text>
             </View>
           </View>
@@ -688,22 +660,20 @@ export default function ProductDetails({ route, navigation }) {
           <View style={[styles.priceContainer, { borderColor: theme.border }]}>
             <View>
               <Text style={[styles.price, { color: theme.textColor }]}>
-                {formattedPrice} DH
+                {formatPrice(product)}
               </Text>
-              {product.price && (
-                <Text style={[styles.priceHT, { color: theme.secondaryTextColor }]}>
-                  Prix HT: {parseFloat(product.price).toFixed(2)} DH
-                </Text>
-              )}
+              <Text style={[styles.priceHT, { color: theme.secondaryTextColor }]}>
+                Prix HT: {getPriceHT(product)}
+              </Text>
               <Text style={[styles.taxInfo, { color: theme.secondaryTextColor }]}>
-                TVA ({product.tva_tx}%): {(formattedPrice * (parseFloat(product.tva_tx) / 100) / (1 + parseFloat(product.tva_tx) / 100)).toFixed(2)} DH
+                TVA ({product.tva_tx}%): {getTaxAmount(product)}
               </Text>
             </View>
             
-            {product.weight && (
+            {getFormattedWeight(product) && (
               <View style={[styles.weightBadge, { backgroundColor: theme.primary }]}>
                 <Text style={[styles.weightText, { color: '#ffffff' }]}>
-                  {product.weight} kg
+                  {getFormattedWeight(product)}
                 </Text>
               </View>
             )}
@@ -726,14 +696,7 @@ export default function ProductDetails({ route, navigation }) {
               {product.weight && (
                 <View style={styles.specItem}>
                   <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Poids:</Text>
-                  <Text style={[styles.specValue, { color: theme.textColor }]}>{product.weight} kg</Text>
-                </View>
-              )}
-              
-              {product.cost_price && (
-                <View style={styles.specItem}>
-                  <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Prix de revient:</Text>
-                  <Text style={[styles.specValue, { color: theme.textColor }]}>{parseFloat(product.cost_price).toFixed(2)} DH</Text>
+                  <Text style={[styles.specValue, { color: theme.textColor }]}>{getFormattedWeight(product)}</Text>
                 </View>
               )}
               
@@ -789,7 +752,7 @@ export default function ProductDetails({ route, navigation }) {
           </View>
 
           {/* Similar Products Section */}
-          {(product.array_options?.options_similaire || similarProducts.length > 0) && (
+          {similarProducts.length > 0 && (
             <View style={styles.similarProductsContainer}>
               <Text style={[styles.sectionTitle, { color: theme.textColor }]}>
                 Produits similaires
@@ -797,7 +760,7 @@ export default function ProductDetails({ route, navigation }) {
               
               {loadingSimilar ? (
                 <ActivityIndicator size="large" color={theme.primary} style={styles.loadingIndicator} />
-              ) : similarProducts.length > 0 ? (
+              ) : (
                 <FlatList
                   data={similarProducts}
                   renderItem={renderSimilarProduct}
@@ -806,15 +769,9 @@ export default function ProductDetails({ route, navigation }) {
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.similarProductsList}
                 />
-              ) : (
-                <Text style={[styles.noSimilarText, { color: theme.secondaryTextColor }]}>
-                  Aucun produit similaire trouvé
-                </Text>
               )}
             </View>
           )}
-
-        
           
           {/* Extra padding at bottom for the fixed button */}
           <View style={{ height: 80 }} />
@@ -877,10 +834,9 @@ export default function ProductDetails({ route, navigation }) {
               style={styles.imageViewerContainer} 
               {...panResponder.panHandlers}
             >
-              <Animated.Image
-                source={{ uri: product.photo_link || product.image_link || 'https://via.placeholder.com/400' }}
+              <Animated.View
                 style={[
-                  styles.fullscreenImage,
+                  styles.fullscreenImageContainer,
                   {
                     transform: [
                       { scale: scale },
@@ -889,8 +845,16 @@ export default function ProductDetails({ route, navigation }) {
                     ]
                   }
                 ]}
-                resizeMode="contain"
-              />
+              >
+                <Image 
+                  source={{ uri: imageUrl || 'https://via.placeholder.com/400x400' }}
+                  style={styles.fullscreenImage}
+                  resizeMode="contain"
+                  onError={(error) => {
+                    console.log('Modal image error:', error?.nativeEvent?.error);
+                  }}
+                />
+              </Animated.View>
             </View>
           </TouchableWithoutFeedback>
           
@@ -916,6 +880,31 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     fontWeight: '500',
+  },
+  errorContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorMessage: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  retryButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 20,
+  },
+  retryButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
   imageContainer: {
     width: '100%',
@@ -947,14 +936,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  imageOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 100,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-  },
+  
   iconButton: {
     position: 'absolute',
     padding: 10,
@@ -965,6 +947,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.3)', // Semi-transparent background
   },
   backButton: {
     left: 15,
@@ -986,12 +969,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
     marginBottom: 8,
+    flexWrap: 'wrap',
   },
   brandBadge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
     marginRight: 8,
+    marginBottom: 8,
   },
   brandText: {
     fontSize: 13,
@@ -1003,12 +988,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
+    marginRight: 8,
+    marginBottom: 8,
   },
   categoryIcon: {
     marginRight: 6,
   },
   categoryText: {
     fontSize: 13,
+    fontWeight: '500',
+  },
+  customBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  customBadgeText: {
+    fontSize: 12,
     fontWeight: '500',
   },
   nameContainer: {
@@ -1161,34 +1159,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '500',
   },
-  deliveryContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    marginBottom: 20,
-  },
-  locationDetails: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  locationIconContainer: {
-    padding: 10,
-    borderRadius: 20,
-    marginRight: 12,
-  },
-  deliveryTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  deliveryAddress: {
-    fontSize: 13,
-    flex: 1,
-  },
   bottomContainer: {
     position: 'absolute',
     bottom: 0,
@@ -1233,9 +1203,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  fullscreenImage: {
+  fullscreenImageContainer: {
     width: Dimensions.get('window').width,
     height: Dimensions.get('window').height * 0.8,
+  },
+  fullscreenImage: {
+    width: '100%',
+    height: '100%',
   },
   closeButton: {
     position: 'absolute',
@@ -1253,12 +1227,6 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
     paddingHorizontal: 20,
-  },
-  noSimilarText: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginVertical: 20,
-    fontStyle: 'italic',
   },
   helpText: {
     color: 'rgba(255,255,255,0.7)',
