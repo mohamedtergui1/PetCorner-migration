@@ -14,8 +14,9 @@ import {
   View,
   PermissionsAndroid,
   Linking,
+  Animated,
 } from 'react-native';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { COLOURS, Items } from '../../database/Database';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -25,11 +26,10 @@ import axios from 'axios';
 import API_BASE_URL from '../../../config/Api';
 import Token from '../../../config/TokenDolibar';
 import Toast from 'react-native-simple-toast';
-import { RadioButton } from "react-native-paper";
 import Modal from "react-native-modal";
 import { useTheme } from '../../context/ThemeContext';
 import { useCart } from '../../context/CartContext';
-import Geolocation from '@react-native-community/geolocation';
+import Geolocation from 'react-native-geolocation-service';
 
 export default function Cart({ navigation }) {
   const { theme, isDarkMode, toggleTheme, colorTheme, toggleColorTheme } = useTheme();
@@ -52,6 +52,8 @@ export default function Cart({ navigation }) {
   const [modePaiement, setModePaiement] = useState('');
   const [errorModePaiement, setErrorModePaiement] = useState('');
   const [modalAdresseVisible, setModalAdresseVisible] = useState(false);
+  
+  // Enhanced address fields - split like user details screen
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [zipCode, setZipCode] = useState('');
@@ -59,6 +61,7 @@ export default function Cart({ navigation }) {
   const [errorCity, setErrorCity] = useState('');
   const [errorZipCode, setErrorZipCode] = useState('');
   const [userDetails, setUserDetails] = useState();
+  const [gettingLocation, setGettingLocation] = useState(false);
 
   // Credit card states
   const [modalCardVisible, setModalCardVisible] = useState(false);
@@ -81,6 +84,12 @@ export default function Cart({ navigation }) {
   // Loading states for quantity updates
   const [loadingQuantityUpdates, setLoadingQuantityUpdates] = useState({});
 
+  // Animation refs
+  const paymentAnimations = useRef({
+    cash: new Animated.Value(0),
+    card: new Animated.Value(0),
+  }).current;
+
   // Store location (set this to your actual store coordinates)
   const STORE_LOCATION = {
     latitude: 33.951371146759776,
@@ -88,9 +97,14 @@ export default function Cart({ navigation }) {
     address: "Immeuble 102, Prestigia, Prestigia - Riyad Al Andalous, N° 13 sis, GH4, Rabat 10100"
   };
 
-  // Define theme colors matching ProductScreen
-  const PRIMARY_COLOR = colorTheme === 'blue' ? '#007afe' : '#fe9400';
-  const TEXT_COLOR = isDarkMode ? '#ffffff' : '#000000';
+  // Enhanced theme colors
+  const PRIMARY_COLOR = theme.primary;
+  const SECONDARY_COLOR = colorTheme === 'blue' ? '#4A90E2' : '#FF8A50';
+  const BACKGROUND_COLOR = theme.backgroundColor;
+  const CARD_BACKGROUND = isDarkMode ? '#1e1e1e' : '#ffffff';
+  const TEXT_COLOR = theme.textColor;
+  const TEXT_COLOR_SECONDARY = theme.secondaryTextColor;
+  const BORDER_COLOR = isDarkMode ? '#2c2c2c' : '#f0f0f0';
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', getDataFromDB);
@@ -103,29 +117,244 @@ export default function Cart({ navigation }) {
       const quantities = getQuantities();
       calculateTotal(products, quantities);
     }
-  }, [products, cartItems]); // Listen to cartItems changes from context
+  }, [products, cartItems]);
+
+  // Safe address parsing function - same as user details screen
+  const parseAddress = (addressString) => {
+    if (!addressString || typeof addressString !== 'string') {
+      return {
+        address: '',
+        city: '',
+        postalCode: ''
+      };
+    }
+
+    try {
+      // Split by comma and clean up
+      const parts = addressString.split(',').map(part => part.trim()).filter(Boolean);
+      
+      if (parts.length === 0) {
+        return { address: '', city: '', postalCode: '' };
+      } else if (parts.length === 1) {
+        return { address: parts[0], city: '', postalCode: '' };
+      } else if (parts.length === 2) {
+        return { address: parts[0], city: parts[1], postalCode: '' };
+      } else {
+        // 3 or more parts
+        return {
+          address: parts[0],
+          city: parts[1],
+          postalCode: parts[2]
+        };
+      }
+    } catch (error) {
+      console.log('Error parsing address:', error);
+      return {
+        address: addressString, // Fallback to original string
+        city: '',
+        postalCode: ''
+      };
+    }
+  };
+
+  // Safely concatenate address parts
+  const concatenateAddress = (address, city, postalCode) => {
+    const parts = [address, city, postalCode]
+      .filter(part => part && typeof part === 'string' && part.trim())
+      .map(part => part.trim());
+    return parts.join(', ');
+  };
 
   // Location permission request
   const requestLocationPermission = async () => {
     if (Platform.OS === 'android') {
       try {
+        const checkResult = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+        );
+        
+        if (checkResult === true) {
+          return true;
+        }
+
         const granted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
           {
             title: 'Permission de localisation',
-            message: 'Cette application a besoin d\'accéder à votre localisation pour calculer la distance de livraison.',
-            buttonNeutral: 'Demander plus tard',
-            buttonNegative: 'Annuler',
-            buttonPositive: 'OK',
-          },
+            message: 'Cette application a besoin d\'accéder à votre localisation pour obtenir votre adresse automatiquement.',
+            buttonNeutral: 'Plus tard',
+            buttonNegative: 'Refuser',
+            buttonPositive: 'Accepter',
+          }
         );
+        
         return granted === PermissionsAndroid.RESULTS.GRANTED;
       } catch (err) {
-        console.warn(err);
+        console.warn('Permission error:', err);
         return false;
       }
     }
-    return true; // iOS handles permissions automatically
+    return true;
+  };
+
+  // Enhanced geocoding function - same as user details screen
+  const getAddressFromCoordinates = async (latitude, longitude) => {
+    try {
+      const response = await axios.get(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1&zoom=18&accept-language=fr`,
+        {
+          headers: {
+            'User-Agent': 'PetCornerApp/1.0',
+            'Referer': 'https://your-app-domain.com'
+          },
+          timeout: 10000
+        }
+      );
+      
+      if (response.data && response.data.address) {
+        const addressData = response.data.address;
+        const neighbourhood = addressData.neighbourhood || addressData.suburb || addressData.quarter || addressData.district || '';
+        const city = addressData.city || addressData.town || addressData.village || addressData.municipality || '';
+        const postalCode = addressData.postcode || '';
+        
+        const quartierAddress = neighbourhood || city || 'Quartier non spécifié';
+        const fullAddress = [quartierAddress, city, postalCode].filter(Boolean).join(', ');
+        
+        return {
+          streetAddress: quartierAddress,
+          city: city,
+          postalCode: postalCode,
+          fullAddress: fullAddress,
+          displayName: response.data.display_name,
+          source: 'Nominatim'
+        };
+      }
+      throw new Error('No address data');
+    } catch (error) {
+      console.log('Geocoding failed:', error.message);
+      const roundedLat = latitude.toFixed(4);
+      const roundedLon = longitude.toFixed(4);
+      
+      return {
+        streetAddress: `Localisation GPS (${roundedLat}, ${roundedLon})`,
+        city: 'Ville à préciser',
+        postalCode: '',
+        fullAddress: `Coordonnées: ${roundedLat}, ${roundedLon}`,
+        displayName: `Position GPS: ${roundedLat}, ${roundedLon}`,
+        source: 'GPS Coordinates'
+      };
+    }
+  };
+
+  // Enhanced GPS location function - same as user details screen
+  const getCurrentLocationAddress = async () => {
+    console.log('GPS button clicked - starting location process');
+    setGettingLocation(true);
+    
+    try {
+      console.log('Requesting location permission...');
+      const hasPermission = await requestLocationPermission();
+      console.log('Permission granted:', hasPermission);
+      
+      if (!hasPermission) {
+        console.log('Permission denied by user');
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Permission de localisation requise', ToastAndroid.SHORT);
+        } else {
+          Toast.show('Permission de localisation requise', Toast.SHORT);
+        }
+        setGettingLocation(false);
+        return;
+      }
+
+      console.log('Getting current position...');
+      Geolocation.getCurrentPosition(
+        async (position) => {
+          try {
+            console.log('Position received:', position.coords);
+            const { latitude, longitude } = position.coords;
+            
+            console.log('Getting address from coordinates...');
+            const addressInfo = await getAddressFromCoordinates(latitude, longitude);
+            console.log('Address info received:', addressInfo);
+            
+            // Update all address-related inputs
+            setAddress(addressInfo.streetAddress || addressInfo.displayName);
+            setCity(addressInfo.city);
+            setZipCode(addressInfo.postalCode);
+            
+            // Clear any previous errors
+            setErrorAdresse('');
+            setErrorCity('');
+            setErrorZipCode('');
+            
+            // Calculate distance and delivery cost
+            const dist = calculateDistance(
+              latitude,
+              longitude,
+              STORE_LOCATION.latitude,
+              STORE_LOCATION.longitude
+            );
+
+            setUserLocation({ latitude, longitude });
+            setDistance(dist);
+            const cost = calculateDeliveryCost(dist);
+            setDeliveryCost(cost);
+            
+            if (Platform.OS === 'android') {
+              ToastAndroid.show(`Adresse récupérée! Distance: ${dist.toFixed(1)}km`, ToastAndroid.LONG);
+            } else {
+              Toast.show(`Adresse récupérée! Distance: ${dist.toFixed(1)}km`, Toast.LONG);
+            }
+            
+            setGettingLocation(false);
+          } catch (error) {
+            console.error('Error getting address:', error);
+            setGettingLocation(false);
+          }
+        },
+        (error) => {
+          console.error('Geolocation error:', error);
+          let errorMessage = 'Erreur lors de la récupération de la localisation';
+          
+          switch (error.code) {
+            case 1:
+              errorMessage = 'Permission de localisation refusée';
+              break;
+            case 2:
+              errorMessage = 'Position non disponible. Vérifiez que le GPS est activé';
+              break;
+            case 3:
+              errorMessage = 'Délai d\'attente dépassé. Réessayez';
+              break;
+            default:
+              errorMessage = 'Erreur de localisation inconnue';
+          }
+          
+          if (Platform.OS === 'android') {
+            ToastAndroid.show(errorMessage, ToastAndroid.LONG);
+          } else {
+            Toast.show(errorMessage, Toast.LONG);
+          }
+          setGettingLocation(false);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 20000,
+          maximumAge: 10000,
+          forceRequestLocation: true,
+          showLocationDialog: true,
+        }
+      );
+    } catch (error) {
+      console.error('Permission error:', error);
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Erreur de permission', ToastAndroid.SHORT);
+      } else {
+        Toast.show('Erreur de permission', Toast.SHORT);
+      }
+      setGettingLocation(false);
+    }
   };
 
   // Calculate distance between two coordinates using Haversine formula
@@ -152,15 +381,9 @@ export default function Cart({ navigation }) {
 
   // Format card number with spaces
   const formatCardNumber = (text) => {
-    // Remove all non-numeric characters
     const cleaned = text.replace(/\D/g, '');
-
-    // Limit to 16 digits maximum
     const limited = cleaned.substring(0, 16);
-
-    // Add spaces every 4 digits
     const formatted = limited.replace(/(\d{4})(?=\d)/g, '$1 ');
-
     return formatted;
   };
 
@@ -177,7 +400,6 @@ export default function Cart({ navigation }) {
   const validateCardForm = () => {
     let isValid = true;
 
-    // Card number validation (16 digits)
     const cleanCardNumber = cardNumber.replace(/\s/g, '');
     if (!cleanCardNumber || cleanCardNumber.length !== 16 || !/^\d+$/.test(cleanCardNumber)) {
       setErrorCardNumber('Le numéro de carte doit contenir 16 chiffres');
@@ -186,7 +408,6 @@ export default function Cart({ navigation }) {
       setErrorCardNumber('');
     }
 
-    // Card holder validation
     if (!cardHolder.trim()) {
       setErrorCardHolder('Veuillez entrer le nom du titulaire');
       isValid = false;
@@ -194,7 +415,6 @@ export default function Cart({ navigation }) {
       setErrorCardHolder('');
     }
 
-    // Expiry date validation
     if (!expiryDate || expiryDate.length !== 5) {
       setErrorExpiryDate('Format: MM/AA');
       isValid = false;
@@ -215,7 +435,6 @@ export default function Cart({ navigation }) {
       }
     }
 
-    // CVV validation
     if (!cvv || cvv.length !== 3 || !/^\d+$/.test(cvv)) {
       setErrorCvv('Le CVV doit contenir 3 chiffres');
       isValid = false;
@@ -257,74 +476,32 @@ export default function Cart({ navigation }) {
     setCardDetails(null);
   };
 
-  // Get user's current location
-  const getCurrentLocation = async () => {
-    setLocationLoading(true);
+  // Enhanced payment method selection with animations
+  const handlePaymentMethodSelect = (method) => {
+    setModePaiement(method);
+    setErrorModePaiement('');
 
-    const hasPermission = await requestLocationPermission();
-    if (!hasPermission) {
-      Alert.alert(
-        'Permission refusée',
-        'La permission de localisation est nécessaire pour calculer la distance de livraison.',
-        [
-          { text: 'Annuler', style: 'cancel' },
-          { text: 'Paramètres', onPress: () => Linking.openSettings() }
-        ]
-      );
-      setLocationLoading(false);
-      return;
+    // Animate selection
+    Object.keys(paymentAnimations).forEach(key => {
+      Animated.timing(paymentAnimations[key], {
+        toValue: key === method ? 1 : 0,
+        duration: 200,
+        useNativeDriver: false,
+      }).start();
+    });
+
+    if (method === 'credit_card') {
+      setModalCardVisible(true);
+    } else {
+      clearCardDetails();
     }
-
-    Geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        setUserLocation({ latitude, longitude });
-
-        // Calculate distance to store
-        const dist = calculateDistance(
-          latitude,
-          longitude,
-          STORE_LOCATION.latitude,
-          STORE_LOCATION.longitude
-        );
-
-        setDistance(dist);
-        const cost = calculateDeliveryCost(dist);
-        setDeliveryCost(cost);
-
-        setLocationLoading(false);
-
-        if (Platform.OS === 'android') {
-          ToastAndroid.show(`Distance: ${dist.toFixed(1)}km - Frais de livraison: ${cost} DH`, ToastAndroid.LONG);
-        } else {
-          Toast.show(`Distance: ${dist.toFixed(1)}km - Frais de livraison: ${cost} DH`, Toast.LONG);
-        }
-      },
-      (error) => {
-        console.log('Location error:', error);
-        setLocationLoading(false);
-        Alert.alert(
-          'Erreur de localisation',
-          'Impossible d\'obtenir votre position. Vérifiez que le GPS est activé.',
-          [
-            { text: 'OK' },
-            { text: 'Réessayer', onPress: getCurrentLocation }
-          ]
-        );
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 10000
-      }
-    );
   };
 
   // Updated to use cart context
   const getDataFromDB = useCallback(async () => {
     setIsEmpty(false);
     try {
-      const items = await loadCartItems(); // Use context function
+      const items = await loadCartItems();
 
       if (items.length === 0) {
         setIsEmpty(true);
@@ -347,7 +524,6 @@ export default function Cart({ navigation }) {
       setProducts(products);
       setIsLoading(false);
 
-      // Calculate total immediately after setting products
       const quantities = getQuantities();
       calculateTotal(products, quantities);
     } catch (error) {
@@ -367,33 +543,30 @@ export default function Cart({ navigation }) {
 
   // Updated to use cart context and recalculate total
   const handleUpdateQuantity = async (id, change) => {
-    // Set loading state for this specific product
     setLoadingQuantityUpdates(prev => ({ ...prev, [id]: true }));
 
     try {
-      const result = await updateQuantity(id, change); // Use context function
+      const result = await updateQuantity(id, change);
       if (result.success) {
-        // Immediately recalculate total with updated quantities
         const updatedQuantities = getQuantities();
         calculateTotal(products, updatedQuantities);
       }
     } catch (error) {
       console.error('Error updating quantity:', error);
     } finally {
-      // Clear loading state for this specific product
       setLoadingQuantityUpdates(prev => ({ ...prev, [id]: false }));
     }
   };
 
   // Updated to use cart context
   const handleRemoveItem = async (id) => {
-    const result = await removeFromCart(id); // Use context function
+    const result = await removeFromCart(id);
     if (result.success) {
-      getDataFromDB(); // Refresh data after removal
+      getDataFromDB();
     }
   };
 
-  // Updated checkout to use cart context
+  // Enhanced checkout function
   const checkOut = async () => {
     const userData = JSON.parse(await AsyncStorage.getItem('userData'));
     const clientID = userData.id;
@@ -423,7 +596,6 @@ export default function Cart({ navigation }) {
       isValid = false;
     }
 
-    // Validate card details if credit card is selected
     if (modePaiement === 'credit_card' && !cardDetails) {
       setErrorModePaiement('Veuillez entrer les détails de votre carte');
       isValid = false;
@@ -432,7 +604,7 @@ export default function Cart({ navigation }) {
     if (!isValid) return;
 
     try {
-      const quantities = getQuantities(); // Use context function
+      const quantities = getQuantities();
 
       const inputData = {
         socid: clientID,
@@ -451,7 +623,6 @@ export default function Cart({ navigation }) {
         })),
         cond_reglement_id: 6,
         date_validation: new Date().toISOString().split('T')[0],
-        // Add delivery info if location is available
         ...(userLocation && {
           note_public: `Livraison à: ${address}, ${city} ${zipCode}\nDistance: ${distance?.toFixed(1)}km\nFrais de livraison: ${deliveryCost} DH${modePaiement === 'credit_card' ? `\nPaiement par carte: ****${cardDetails?.number.slice(-4)}` : ''}`
         })
@@ -464,7 +635,6 @@ export default function Cart({ navigation }) {
         }
       });
 
-      // Use context function to clear cart
       await clearCart();
 
       if (Platform.OS === 'android') {
@@ -491,6 +661,7 @@ export default function Cart({ navigation }) {
     }
   };
 
+  // Enhanced address save function
   const handleSaveAdresse = () => {
     let isValid = true;
     if (!address) {
@@ -515,9 +686,9 @@ export default function Cart({ navigation }) {
     updateClient();
   }
 
-  // Updated to use context quantities
+  // Updated to use cart context quantities
   const renderProducts = ({ id, label, price_ttc, photo_link, description, stock }) => {
-    const quantities = getQuantities(); // Use context function
+    const quantities = getQuantities();
     const quantity = quantities[id] || 1;
     const isUpdatingQuantity = loadingQuantityUpdates[id] || false;
     const data = {
@@ -530,8 +701,7 @@ export default function Cart({ navigation }) {
     };
 
     return (
-      <View key={id} style={[styles.productCard, { backgroundColor: theme.cardBackground }]}>
-        {/* Product Image */}
+      <View key={id} style={[styles.productCard, { backgroundColor: CARD_BACKGROUND }]}>
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => navigation.push('ProductDetails', { productId: data.id })}
@@ -543,11 +713,10 @@ export default function Cart({ navigation }) {
           />
         </TouchableOpacity>
 
-        {/* Product Info */}
         <View style={styles.productInfo}>
           <View>
             <Text
-              style={[styles.productTitle, { color: theme.textColor }]}
+              style={[styles.productTitle, { color: TEXT_COLOR }]}
               numberOfLines={1}
             >
               {label}
@@ -557,17 +726,16 @@ export default function Cart({ navigation }) {
               <Text style={[styles.currentPrice, { color: PRIMARY_COLOR }]}>
                 {(parseFloat(price_ttc) || 0).toFixed(2)} DH
               </Text>
-              <Text style={[styles.totalPrice, { color: theme.secondaryTextColor }]}>
+              <Text style={[styles.totalPrice, { color: TEXT_COLOR_SECONDARY }]}>
                 (Total: {((price_ttc * quantity)).toFixed(2)} DH)
               </Text>
             </View>
           </View>
 
-          {/* Product Actions */}
           <View style={styles.productActions}>
             <View style={styles.quantityControls}>
               <TouchableOpacity
-                onPress={() => handleUpdateQuantity(id, -1)} // Use context function
+                onPress={() => handleUpdateQuantity(id, -1)}
                 disabled={isUpdatingQuantity}
                 style={[
                   styles.quantityButton,
@@ -583,10 +751,10 @@ export default function Cart({ navigation }) {
                 )}
               </TouchableOpacity>
 
-              <Text style={[styles.quantityText, { color: theme.textColor }]}>{quantity}</Text>
+              <Text style={[styles.quantityText, { color: TEXT_COLOR }]}>{quantity}</Text>
 
               <TouchableOpacity
-                onPress={() => handleUpdateQuantity(id, 1)} // Use context function
+                onPress={() => handleUpdateQuantity(id, 1)}
                 disabled={isUpdatingQuantity}
                 style={[
                   styles.quantityButton,
@@ -604,7 +772,7 @@ export default function Cart({ navigation }) {
             </View>
 
             <TouchableOpacity
-              onPress={() => handleRemoveItem(id)} // Use context function
+              onPress={() => handleRemoveItem(id)}
               style={styles.removeButton}>
               <MaterialCommunityIcons
                 name="delete-outline"
@@ -618,11 +786,16 @@ export default function Cart({ navigation }) {
     );
   };
 
+  // Enhanced update client function
   const updateClient = async () => {
     const userData = JSON.parse(await AsyncStorage.getItem('userData'));
     const clientID = userData.id;
+    
+    // Concatenate address safely
+    const concatenatedAddress = concatenateAddress(address, city, zipCode);
+    
     const inputData = {
-      address: address,
+      address: concatenatedAddress,
       town: city,
       zip: zipCode,
     }
@@ -644,6 +817,7 @@ export default function Cart({ navigation }) {
     getUserData();
   }, []);
 
+  // Enhanced get user data function with safe address parsing
   const getUserData = async () => {
     const userData = JSON.parse(await AsyncStorage.getItem('userData'));
     const clientID = userData.id;
@@ -656,88 +830,174 @@ export default function Cart({ navigation }) {
     try {
       const res = await axios.get(API_BASE_URL + 'thirdparties/' + clientID, { headers });
       setUserDetails(res.data);
-      setAddress(res.data.address);
-      setCity(res.data.town);
-      setZipCode(res.data.zip);
+      
+      // Parse address safely
+      const addressParts = parseAddress(res.data.address);
+      setAddress(addressParts.address);
+      setCity(addressParts.city || res.data.town || '');
+      setZipCode(addressParts.postalCode || res.data.zip || '');
     } catch (error) {
       console.log(error);
     }
   };
 
-  // Render location section
-  const renderLocationSection = () => (
-    <View style={[styles.deliveryContainer, { backgroundColor: theme.backgroundColor }]}>
-      <View style={styles.locationHeader}>
-        <Text style={[styles.textDorP, { color: theme.textColor }]}>
-          Localisation et livraison
-        </Text>
-        <TouchableOpacity
-          onPress={getCurrentLocation}
-          disabled={locationLoading}
-          style={[styles.locationButton, { backgroundColor: PRIMARY_COLOR }]}
-        >
-          {locationLoading ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <MaterialCommunityIcons name="crosshairs-gps" size={16} color="#fff" />
-          )}
-          <Text style={styles.locationButtonText}>
-            {locationLoading ? 'Recherche...' : 'Ma position'}
-          </Text>
-        </TouchableOpacity>
+  // Enhanced payment method selection component
+  const renderPaymentMethods = () => (
+    <View style={[styles.paymentContainer, { backgroundColor: BACKGROUND_COLOR }]}>
+      <Text style={[styles.textTitlePay, { color: TEXT_COLOR }]}>
+        Mode de paiement
+      </Text>
+
+      <View style={styles.paymentMethodsContainer}>
+        {/* Cash Payment Option */}
+        <Animated.View style={[
+          styles.paymentMethodCard,
+          {
+            backgroundColor: CARD_BACKGROUND,
+            borderColor: paymentAnimations.cash.interpolate({
+              inputRange: [0, 1],
+              outputRange: [BORDER_COLOR, PRIMARY_COLOR],
+            }),
+            borderWidth: paymentAnimations.cash.interpolate({
+              inputRange: [0, 1],
+              outputRange: [1, 2],
+            }),
+            transform: [{
+              scale: paymentAnimations.cash.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 1.02],
+              }),
+            }],
+          }
+        ]}>
+          <TouchableOpacity
+            style={styles.paymentMethodContent}
+            onPress={() => handlePaymentMethodSelect('espèces')}
+          >
+            <View style={[styles.paymentIconContainer, { backgroundColor: PRIMARY_COLOR + '20' }]}>
+              <MaterialCommunityIcons
+                name="cash"
+                size={24}
+                color={PRIMARY_COLOR}
+              />
+            </View>
+            <View style={styles.paymentMethodInfo}>
+              <Text style={[styles.paymentMethodTitle, { color: TEXT_COLOR }]}>
+                Espèces
+              </Text>
+              <Text style={[styles.paymentMethodSubtitle, { color: TEXT_COLOR_SECONDARY }]}>
+                Paiement à la livraison
+              </Text>
+            </View>
+            <View style={[
+              styles.radioButton,
+              {
+                borderColor: modePaiement === 'espèces' ? PRIMARY_COLOR : BORDER_COLOR,
+                backgroundColor: modePaiement === 'espèces' ? PRIMARY_COLOR : 'transparent',
+              }
+            ]}>
+              {modePaiement === 'espèces' && (
+                <MaterialCommunityIcons name="check" size={16} color="#fff" />
+              )}
+            </View>
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Credit Card Payment Option */}
+        <Animated.View style={[
+          styles.paymentMethodCard,
+          {
+            backgroundColor: CARD_BACKGROUND,
+            borderColor: paymentAnimations.card.interpolate({
+              inputRange: [0, 1],
+              outputRange: [BORDER_COLOR, PRIMARY_COLOR],
+            }),
+            borderWidth: paymentAnimations.card.interpolate({
+              inputRange: [0, 1],
+              outputRange: [1, 2],
+            }),
+            transform: [{
+              scale: paymentAnimations.card.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 1.02],
+              }),
+            }],
+          }
+        ]}>
+          <TouchableOpacity
+            style={styles.paymentMethodContent}
+            onPress={() => handlePaymentMethodSelect('credit_card')}
+          >
+            <View style={[styles.paymentIconContainer, { backgroundColor: SECONDARY_COLOR + '20' }]}>
+              <MaterialCommunityIcons
+                name="credit-card"
+                size={24}
+                color={SECONDARY_COLOR}
+              />
+            </View>
+            <View style={styles.paymentMethodInfo}>
+              <Text style={[styles.paymentMethodTitle, { color: TEXT_COLOR }]}>
+                Carte bancaire
+              </Text>
+              <Text style={[styles.paymentMethodSubtitle, { color: TEXT_COLOR_SECONDARY }]}>
+                Paiement sécurisé
+              </Text>
+            </View>
+            <View style={[
+              styles.radioButton,
+              {
+                borderColor: modePaiement === 'credit_card' ? PRIMARY_COLOR : BORDER_COLOR,
+                backgroundColor: modePaiement === 'credit_card' ? PRIMARY_COLOR : 'transparent',
+              }
+            ]}>
+              {modePaiement === 'credit_card' && (
+                <MaterialCommunityIcons name="check" size={16} color="#fff" />
+              )}
+            </View>
+          </TouchableOpacity>
+        </Animated.View>
       </View>
 
-      {/* Store Location */}
-      <View style={[styles.locationCard, { backgroundColor: theme.cardBackground }]}>
-        <MaterialCommunityIcons
-          name="store"
-          size={20}
-          color={PRIMARY_COLOR}
-          style={styles.locationIcon}
-        />
-        <View style={styles.locationInfo}>
-          <Text style={[styles.locationTitle, { color: theme.textColor }]}>Magasin</Text>
-          <Text style={[styles.locationAddress, { color: theme.secondaryTextColor }]}>
-            {STORE_LOCATION.address}
-          </Text>
-        </View>
-      </View>
-
-      {/* User Location & Distance */}
-      {userLocation && (
-        <View style={[styles.locationCard, { backgroundColor: theme.cardBackground }]}>
-          <MaterialCommunityIcons
-            name="map-marker"
-            size={20}
-            color={PRIMARY_COLOR}
-            style={styles.locationIcon}
-          />
-          <View style={styles.locationInfo}>
-            <Text style={[styles.locationTitle, { color: theme.textColor }]}>Votre position</Text>
-            <Text style={[styles.locationAddress, { color: theme.secondaryTextColor }]}>
-              {`${userLocation.latitude.toFixed(4)}, ${userLocation.longitude.toFixed(4)}`}
+      {/* Display saved card details */}
+      {modePaiement === "credit_card" && cardDetails && (
+        <View style={[styles.cardDetailsContainer, { backgroundColor: CARD_BACKGROUND, borderColor: PRIMARY_COLOR }]}>
+          <View style={styles.cardDetailsHeader}>
+            <MaterialCommunityIcons
+              name="credit-card"
+              size={20}
+              color={PRIMARY_COLOR}
+            />
+            <Text style={[styles.cardDetailsTitle, { color: TEXT_COLOR }]}>
+              Carte enregistrée
             </Text>
-            {distance && (
-              <View style={styles.distanceInfo}>
-                <Text style={[styles.distanceText, { color: PRIMARY_COLOR }]}>
-                  Distance: {distance.toFixed(1)} km
-                </Text>
-                <Text style={[styles.deliveryCostText, { color: theme.textColor }]}>
-                  Frais de livraison: {deliveryCost} DH
-                </Text>
-              </View>
-            )}
+            <TouchableOpacity onPress={() => setModalCardVisible(true)}>
+              <MaterialCommunityIcons
+                name="pencil"
+                size={16}
+                color={PRIMARY_COLOR}
+              />
+            </TouchableOpacity>
           </View>
+          <Text style={[styles.cardNumber, { color: TEXT_COLOR }]}>
+            **** **** **** {cardDetails.number.slice(-4)}
+          </Text>
+          <Text style={[styles.cardHolder, { color: TEXT_COLOR_SECONDARY }]}>
+            {cardDetails.holder}
+          </Text>
         </View>
       )}
+
+      {errorModePaiement ? (
+        <Text style={styles.errorText}>{errorModePaiement}</Text>
+      ) : null}
     </View>
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.backgroundColor }]}>
+    <View style={[styles.container, { backgroundColor: BACKGROUND_COLOR }]}>
       <StatusBar backgroundColor={PRIMARY_COLOR} barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
 
-      {/* Updated Header with cart count from context */}
+      {/* Header */}
       <View style={[styles.headerContainer, { backgroundColor: PRIMARY_COLOR }]}>
         <TouchableOpacity
           onPress={() => {
@@ -755,7 +1015,7 @@ export default function Cart({ navigation }) {
 
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle}>Panier</Text>
-          {cartCount > 0 && ( // Use context cart count
+          {cartCount > 0 && (
             <View style={styles.cartBadge}>
               <Text style={styles.cartBadgeText}>{cartCount}</Text>
             </View>
@@ -775,7 +1035,7 @@ export default function Cart({ navigation }) {
       </View>
 
       {isEmpty ? (
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: theme.backgroundColor }}>
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: BACKGROUND_COLOR }}>
           <Ionicons name="cart" color={PRIMARY_COLOR} size={60} />
           <Text style={{ marginTop: 5, color: PRIMARY_COLOR, fontSize: 20 }}>
             Votre panier est vide
@@ -783,196 +1043,118 @@ export default function Cart({ navigation }) {
         </View>
       ) : (
         isLoading ? (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.backgroundColor }}>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: BACKGROUND_COLOR }}>
             <ActivityIndicator size="large" color={PRIMARY_COLOR} />
           </View>
         ) : (
           <>
-            <ScrollView showsVerticalScrollIndicator={false} style={{ backgroundColor: theme.backgroundColor }}>
-              <Text style={[styles.textHeader2, { color: theme.textColor }]}>Produits</Text>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ backgroundColor: BACKGROUND_COLOR }}>
+              <Text style={[styles.textHeader2, { color: TEXT_COLOR }]}>Produits</Text>
               <View style={styles.productContainer}>
                 {products ? products.map(renderProducts) : null}
               </View>
 
-              {/* Location Section */}
-              {renderLocationSection()}
-
-              <View>
-                <View style={[styles.deliveryContainer, { backgroundColor: theme.backgroundColor }]}>
-                  <Text style={[styles.textDorP, { color: theme.textColor }]}>
-                    Adresse de livraison
-                  </Text>
-                  <View style={styles.dFlex}>
-                    <View style={styles.contentDorP}>
-                      <View style={[styles.viewDorP, { backgroundColor: theme.cardBackground }]}>
-                        <MaterialCommunityIcons
-                          name="truck-delivery-outline"
-                          style={[styles.truckIcon, { color: PRIMARY_COLOR }]}
-                        />
-                      </View>
-                      <View>
-                        <Text style={[styles.textAdress, { color: theme.textColor }]}>
-                          {address}
-                        </Text>
-                        <Text style={[styles.textZipCode, { color: theme.secondaryTextColor }]}>
-                          {zipCode}, {city}
-                        </Text>
-                      </View>
+              {/* Enhanced Address Section */}
+              <View style={[styles.deliveryContainer, { backgroundColor: BACKGROUND_COLOR }]}>
+                <Text style={[styles.textDorP, { color: TEXT_COLOR }]}>
+                  Adresse de livraison
+                </Text>
+                <View style={styles.dFlex}>
+                  <View style={styles.contentDorP}>
+                    <View style={[styles.viewDorP, { backgroundColor: CARD_BACKGROUND }]}>
+                      <MaterialCommunityIcons
+                        name="truck-delivery-outline"
+                        style={[styles.truckIcon, { color: PRIMARY_COLOR }]}
+                      />
                     </View>
+                    <View style={styles.addressInfo}>
+                      <Text style={[styles.textAdress, { color: TEXT_COLOR }]}>
+                        {address || 'Adresse non définie'}
+                      </Text>
+                      <Text style={[styles.textZipCode, { color: TEXT_COLOR_SECONDARY }]}>
+                        {zipCode && city ? `${zipCode}, ${city}` : 'Ville et code postal non définis'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.addressActions}>
+                    <TouchableOpacity
+                      style={[styles.gpsButton, { 
+                        backgroundColor: PRIMARY_COLOR,
+                        opacity: gettingLocation ? 0.7 : 1
+                      }]}
+                      onPress={getCurrentLocationAddress}
+                      disabled={gettingLocation}
+                    >
+                      {gettingLocation ? (
+                        <ActivityIndicator size="small" color="white" />
+                      ) : (
+                        <MaterialCommunityIcons 
+                          name="crosshairs-gps" 
+                          size={16} 
+                          color="white" 
+                        />
+                      )}
+                    </TouchableOpacity>
                     <TouchableOpacity
                       activeOpacity={0.5}
                       onPress={() => setModalAdresseVisible(true)}
+                      style={styles.editButton}
                     >
                       <MaterialCommunityIcons
                         name="chevron-right"
-                        style={[styles.chevronRight, { color: theme.textColor }]}
+                        style={[styles.chevronRight, { color: TEXT_COLOR }]}
                       />
                     </TouchableOpacity>
                   </View>
                 </View>
+              </View>
 
-                <View style={[styles.conatinerPayement, { backgroundColor: theme.backgroundColor }]}>
-                  <Text style={[styles.textTitlePay, { color: theme.textColor }]}>
-                    Mode de paiement
+              {/* Enhanced Payment Methods */}
+              {renderPaymentMethods()}
+
+              {/* Order Details */}
+              <View style={styles.containerOrder}>
+                <Text style={[styles.textDorP, { color: TEXT_COLOR }]}>
+                  Détails de la Commande
+                </Text>
+                <View style={styles.subtotalContainer}>
+                  <Text style={[styles.titleSbt_or_Tax, { color: TEXT_COLOR_SECONDARY }]}>
+                    Sous-total
                   </Text>
-
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-evenly' }}>
-                    <View style={{ flexDirection: "row" }}>
-                      <RadioButton
-                        value="espèces"
-                        color={PRIMARY_COLOR}
-                        uncheckedColor={errorModePaiement ? "red" : theme.secondaryTextColor}
-                        status={modePaiement === "espèces" ? "checked" : "unchecked"}
-                        onPress={() => {
-                          setModePaiement("espèces");
-                          setErrorModePaiement("");
-                          clearCardDetails(); // Clear card details when switching to cash
-                        }}
-                      />
-
-                      <Text
-                        style={{
-                          fontWeight: "bold",
-                          alignSelf: "center",
-                          color: modePaiement === "espèces"
-                            ? PRIMARY_COLOR
-                            : errorModePaiement
-                              ? "red"
-                              : theme.secondaryTextColor,
-                        }}
-                      >
-                        Espèces
-                      </Text>
-                    </View>
-                    <View style={{ flexDirection: "row" }}>
-                      <RadioButton
-                        value="credit_card"
-                        color={PRIMARY_COLOR}
-                        uncheckedColor={errorModePaiement ? "red" : theme.secondaryTextColor}
-                        status={modePaiement === "credit_card" ? "checked" : "unchecked"}
-                        onPress={() => {
-                          setModePaiement("credit_card");
-                          setErrorModePaiement("");
-                          setModalCardVisible(true); // Open card modal when selecting card payment
-                        }}
-                      />
-
-                      <Text
-                        style={{
-                          fontWeight: "bold",
-                          alignSelf: "center",
-                          color: modePaiement === "credit_card"
-                            ? PRIMARY_COLOR
-                            : errorModePaiement
-                              ? "red"
-                              : theme.secondaryTextColor,
-                        }}
-                      >
-                        Carte bancaire
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Display saved card details */}
-                  {modePaiement === "credit_card" && cardDetails && (
-                    <View style={[styles.cardDetailsContainer, { backgroundColor: theme.cardBackground, borderColor: PRIMARY_COLOR }]}>
-                      <View style={styles.cardDetailsHeader}>
-                        <MaterialCommunityIcons
-                          name="credit-card"
-                          size={20}
-                          color={PRIMARY_COLOR}
-                        />
-                        <Text style={[styles.cardDetailsTitle, { color: theme.textColor }]}>
-                          Carte enregistrée
-                        </Text>
-                        <TouchableOpacity onPress={() => setModalCardVisible(true)}>
-                          <MaterialCommunityIcons
-                            name="pencil"
-                            size={16}
-                            color={PRIMARY_COLOR}
-                          />
-                        </TouchableOpacity>
-                      </View>
-                      <Text style={[styles.cardNumber, { color: theme.textColor }]}>
-                        **** **** **** {cardDetails.number.slice(-4)}
-                      </Text>
-                      <Text style={[styles.cardHolder, { color: theme.secondaryTextColor }]}>
-                        {cardDetails.holder}
-                      </Text>
-                    </View>
-                  )}
-
-                  {
-                    errorModePaiement != null ? (
-                      <Text style={{ color: 'red', fontSize: 12, textAlign: 'center' }}>{errorModePaiement}</Text>
-                    ) : null
-                  }
+                  <Text style={[styles.subtotal, { color: TEXT_COLOR }]}>
+                    {total.toFixed(2)} DH
+                  </Text>
                 </View>
-
-                <View style={styles.containerOrder}>
-                  <Text style={[styles.textDorP, { color: theme.textColor }]}>
-                    Détails de la Commande
-                  </Text>
+                {deliveryCost > 0 && (
                   <View style={styles.subtotalContainer}>
-                    <Text style={[styles.titleSbt_or_Tax, { color: theme.secondaryTextColor }]}>
-                      Sous-total
+                    <Text style={[styles.titleSbt_or_Tax, { color: TEXT_COLOR_SECONDARY }]}>
+                      Frais de livraison
                     </Text>
-                    <Text style={[styles.subtotal, { color: theme.textColor }]}>
-                      {total.toFixed(2)} DH
-                    </Text>
-                  </View>
-                  {deliveryCost > 0 && (
-                    <View style={styles.subtotalContainer}>
-                      <Text style={[styles.titleSbt_or_Tax, { color: theme.secondaryTextColor }]}>
-                        Frais de livraison
-                      </Text>
-                      <Text style={[styles.subtotal, { color: theme.textColor }]}>
-                        {deliveryCost.toFixed(2)} DH
-                      </Text>
-                    </View>
-                  )}
-                  <View style={styles.taxContainer}>
-                    <Text style={[styles.titleSbt_or_Tax, { color: theme.secondaryTextColor }]}>
-                      TVA (incluse)
-                    </Text>
-                    <Text style={[styles.subtotal, { color: theme.textColor }]}>
-                      {(total * 0.1667).toFixed(2)} DH {/* This shows the included VAT amount (20% of the net price) */}
+                    <Text style={[styles.subtotal, { color: TEXT_COLOR }]}>
+                      {deliveryCost.toFixed(2)} DH
                     </Text>
                   </View>
-                  <View style={styles.dFlex}>
-                    <Text style={[styles.titleTotal, { color: theme.textColor }]}>
-                      Total
-                    </Text>
-                    <Text style={[styles.total, { color: PRIMARY_COLOR }]}>
-                      {(total + deliveryCost).toFixed(2)} DH {/* Remove the additional VAT calculation */}
-                    </Text>
-                  </View>
+                )}
+                <View style={styles.taxContainer}>
+                  <Text style={[styles.titleSbt_or_Tax, { color: TEXT_COLOR_SECONDARY }]}>
+                    TVA (incluse)
+                  </Text>
+                  <Text style={[styles.subtotal, { color: TEXT_COLOR }]}>
+                    {(total * 0.1667).toFixed(2)} DH
+                  </Text>
                 </View>
-
+                <View style={styles.dFlex}>
+                  <Text style={[styles.titleTotal, { color: TEXT_COLOR }]}>
+                    Total
+                  </Text>
+                  <Text style={[styles.total, { color: PRIMARY_COLOR }]}>
+                    {(total + deliveryCost).toFixed(2)} DH
+                  </Text>
+                </View>
               </View>
             </ScrollView>
 
-            {/* Updated Checkout Button */}
+            {/* Checkout Button */}
             <View style={styles.containerCheckout}>
               <TouchableOpacity
                 onPress={() => (total != 0 ? checkOut() : null)}
@@ -992,7 +1174,7 @@ export default function Cart({ navigation }) {
         )
       )}
 
-      {/* Address Modal */}
+      {/* Enhanced Address Modal */}
       <Modal
         isVisible={modalAdresseVisible}
         onBackdropPress={() => setModalAdresseVisible(false)}
@@ -1013,116 +1195,93 @@ export default function Cart({ navigation }) {
           <View style={{
             height: 3,
             width: 30,
-            backgroundColor: theme.textColor,
+            backgroundColor: TEXT_COLOR,
             marginTop: 14,
           }}></View>
         </View>
 
-        <View>
-          <View style={{
-            backgroundColor: theme.cardBackground,
-            height: 300,
-            padding: 20,
-            justifyContent: 'space-between',
-          }}>
-            <Text style={{
-              fontSize: 20,
-              fontWeight: 'bold',
-              color: theme.textColor,
-              textAlign: 'center',
-            }}>
-              Adresse de livraison
-            </Text>
+        <View style={{
+          backgroundColor: CARD_BACKGROUND,
+          minHeight: 350,
+          padding: 20,
+          justifyContent: 'space-between',
+        }}>
+          <View>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: TEXT_COLOR }]}>
+                Adresse de livraison
+              </Text>
+              <TouchableOpacity
+                style={[styles.gpsModalButton, { backgroundColor: PRIMARY_COLOR }]}
+                onPress={getCurrentLocationAddress}
+                disabled={gettingLocation}
+              >
+                {gettingLocation ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <MaterialCommunityIcons 
+                    name="crosshairs-gps" 
+                    size={16} 
+                    color="white" 
+                  />
+                )}
+                <Text style={styles.gpsModalButtonText}>
+                  {gettingLocation ? 'GPS...' : 'GPS'}
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-            <View style={{
-              flexDirection: "row",
-              alignItems: "center",
-              borderRadius: 5,
-              paddingHorizontal: 10,
-              paddingVertical: 8,
-              borderWidth: 0.5,
-              borderColor: errorAdresse ? 'red' : theme.secondaryTextColor,
-              marginTop: 10,
-            }}>
+            {/* Address Input */}
+            <View style={[styles.inputContainer, {
+              borderColor: errorAdresse ? 'red' : BORDER_COLOR,
+            }]}>
               <MaterialCommunityIcons
                 name="map-marker"
                 size={20}
-                color={errorAdresse ? 'red' : theme.secondaryTextColor}
+                color={errorAdresse ? 'red' : TEXT_COLOR_SECONDARY}
               />
               <TextInput
-                style={{
-                  flex: 1,
-                  padding: 0,
-                  margin: 0,
-                  marginLeft: 6,
-                  color: theme.textColor,
-                }}
-                placeholder="Adresse"
-                placeholderTextColor={errorAdresse ? 'red' : theme.secondaryTextColor}
+                style={[styles.textInput, { color: TEXT_COLOR }]}
+                placeholder="Adresse (Quartier)"
+                placeholderTextColor={errorAdresse ? 'red' : TEXT_COLOR_SECONDARY}
                 value={address}
                 onChangeText={setAddress}
                 onFocus={() => setErrorAdresse('')}
               />
             </View>
 
-            <View style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-            }}>
-              <View style={{
-                flexDirection: "row",
-                alignItems: "center",
-                borderRadius: 5,
-                paddingHorizontal: 10,
-                paddingVertical: 8,
-                borderWidth: 0.5,
-                borderColor: errorCity ? 'red' : theme.secondaryTextColor,
-                marginTop: 10,
-                width: '48%',
-              }}>
+            {/* City and Postal Code Row */}
+            <View style={styles.cityPostalRow}>
+              <View style={[styles.inputContainer, styles.cityInput, {
+                borderColor: errorCity ? 'red' : BORDER_COLOR,
+              }]}>
                 <MaterialCommunityIcons
                   name="city"
                   size={20}
-                  color={errorCity ? 'red' : theme.secondaryTextColor}
+                  color={errorCity ? 'red' : TEXT_COLOR_SECONDARY}
                 />
                 <TextInput
-                  style={{
-                    flex: 1,
-                    padding: 0,
-                    margin: 0,
-                    marginLeft: 6,
-                    color: theme.textColor,
-                  }}
+                  style={[styles.textInput, { color: TEXT_COLOR }]}
                   placeholder="Ville"
-                  placeholderTextColor={errorCity ? 'red' : theme.secondaryTextColor}
+                  placeholderTextColor={errorCity ? 'red' : TEXT_COLOR_SECONDARY}
                   value={city}
                   onChangeText={setCity}
                   onFocus={() => setErrorCity('')}
                 />
               </View>
 
-              <View style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                borderRadius: 5,
-                paddingHorizontal: 10,
-                paddingVertical: 8,
-                borderWidth: 0.5,
-                borderColor: errorZipCode ? 'red' : theme.secondaryTextColor,
-                marginTop: 10,
-                width: '48%',
-              }}>
+              <View style={[styles.inputContainer, styles.postalInput, {
+                borderColor: errorZipCode ? 'red' : BORDER_COLOR,
+              }]}>
+                <MaterialCommunityIcons
+                  name="mailbox-outline"
+                  size={20}
+                  color={errorZipCode ? 'red' : TEXT_COLOR_SECONDARY}
+                />
                 <TextInput
-                  style={{
-                    flex: 1,
-                    padding: 0,
-                    margin: 0,
-                    marginLeft: 6,
-                    width: 100,
-                    color: theme.textColor,
-                  }}
-                  placeholder="Code postal"
-                  placeholderTextColor={errorZipCode ? 'red' : theme.secondaryTextColor}
+                  style={[styles.textInput, { color: TEXT_COLOR }]}
+                  placeholder="Code"
+                  placeholderTextColor={errorZipCode ? 'red' : TEXT_COLOR_SECONDARY}
                   value={zipCode}
                   onChangeText={setZipCode}
                   onFocus={() => setErrorZipCode('')}
@@ -1131,24 +1290,24 @@ export default function Cart({ navigation }) {
               </View>
             </View>
 
-            <TouchableOpacity
-              onPress={handleSaveAdresse}
-              style={{
-                backgroundColor: PRIMARY_COLOR,
-                padding: 10,
-                borderRadius: 10,
-                alignItems: 'center',
-              }}
-            >
-              <Text style={{ color: '#ffffff', fontSize: 16 }}>
-                Sauvegarder l'adresse
-              </Text>
-            </TouchableOpacity>
+            {/* Helper text */}
+            <Text style={[styles.helperText, { color: TEXT_COLOR_SECONDARY }]}>
+              💡 Appuyez sur GPS pour obtenir automatiquement votre adresse
+            </Text>
           </View>
+
+          <TouchableOpacity
+            onPress={handleSaveAdresse}
+            style={[styles.saveButton, { backgroundColor: PRIMARY_COLOR }]}
+          >
+            <Text style={styles.saveButtonText}>
+              Sauvegarder l'adresse
+            </Text>
+          </TouchableOpacity>
         </View>
       </Modal>
 
-      {/* Credit Card Modal */}
+      {/* Credit Card Modal - keeping existing implementation */}
       <Modal
         isVisible={modalCardVisible}
         onBackdropPress={() => setModalCardVisible(false)}
@@ -1158,40 +1317,39 @@ export default function Cart({ navigation }) {
         useNativeDriver={true}
         hideModalContentWhileAnimating={true}
       >
-        <View style={[styles.cardModalContainer, { backgroundColor: theme.cardBackground }]}>
-          {/* Modal Header */}
-          <View style={[styles.cardModalHeader, { borderBottomColor: theme.secondaryTextColor }]}>
-            <Text style={[styles.cardModalTitle, { color: theme.textColor }]}>
+        <View style={[styles.cardModalContainer, { backgroundColor: CARD_BACKGROUND }]}>
+          <View style={[styles.cardModalHeader, { borderBottomColor: TEXT_COLOR_SECONDARY }]}>
+            <Text style={[styles.cardModalTitle, { color: TEXT_COLOR }]}>
               Informations de la carte
             </Text>
             <TouchableOpacity onPress={() => setModalCardVisible(false)}>
-              <MaterialCommunityIcons name="close" size={24} color={theme.textColor} />
+              <MaterialCommunityIcons name="close" size={24} color={TEXT_COLOR} />
             </TouchableOpacity>
           </View>
 
           <ScrollView style={styles.cardModalContent} showsVerticalScrollIndicator={false}>
             {/* Card Number */}
             <View style={styles.cardInputContainer}>
-              <Text style={[styles.cardInputLabel, { color: theme.textColor }]}>
+              <Text style={[styles.cardInputLabel, { color: TEXT_COLOR }]}>
                 Numéro de carte
               </Text>
               <View style={[
                 styles.cardInputWrapper,
                 {
-                  borderColor: errorCardNumber ? 'red' : theme.secondaryTextColor,
-                  backgroundColor: theme.backgroundColor
+                  borderColor: errorCardNumber ? 'red' : TEXT_COLOR_SECONDARY,
+                  backgroundColor: BACKGROUND_COLOR
                 }
               ]}>
                 <MaterialCommunityIcons
                   name="credit-card-outline"
                   size={20}
-                  color={errorCardNumber ? 'red' : theme.secondaryTextColor}
+                  color={errorCardNumber ? 'red' : TEXT_COLOR_SECONDARY}
                   style={styles.cardInputIcon}
                 />
                 <TextInput
-                  style={[styles.cardTextInput, { color: theme.textColor }]}
+                  style={[styles.cardTextInput, { color: TEXT_COLOR }]}
                   placeholder="1234 5678 9012 3456"
-                  placeholderTextColor={errorCardNumber ? 'red' : theme.secondaryTextColor}
+                  placeholderTextColor={errorCardNumber ? 'red' : TEXT_COLOR_SECONDARY}
                   value={cardNumber}
                   onChangeText={(text) => {
                     const formatted = formatCardNumber(text);
@@ -1201,7 +1359,7 @@ export default function Cart({ navigation }) {
                     }
                   }}
                   keyboardType="numeric"
-                  maxLength={19} // 16 digits + 3 spaces
+                  maxLength={19}
                 />
               </View>
               {errorCardNumber ? (
@@ -1211,26 +1369,26 @@ export default function Cart({ navigation }) {
 
             {/* Card Holder */}
             <View style={styles.cardInputContainer}>
-              <Text style={[styles.cardInputLabel, { color: theme.textColor }]}>
+              <Text style={[styles.cardInputLabel, { color: TEXT_COLOR }]}>
                 Nom du titulaire
               </Text>
               <View style={[
                 styles.cardInputWrapper,
                 {
-                  borderColor: errorCardHolder ? 'red' : theme.secondaryTextColor,
-                  backgroundColor: theme.backgroundColor
+                  borderColor: errorCardHolder ? 'red' : TEXT_COLOR_SECONDARY,
+                  backgroundColor: BACKGROUND_COLOR
                 }
               ]}>
                 <MaterialCommunityIcons
                   name="account-outline"
                   size={20}
-                  color={errorCardHolder ? 'red' : theme.secondaryTextColor}
+                  color={errorCardHolder ? 'red' : TEXT_COLOR_SECONDARY}
                   style={styles.cardInputIcon}
                 />
                 <TextInput
-                  style={[styles.cardTextInput, { color: theme.textColor }]}
+                  style={[styles.cardTextInput, { color: TEXT_COLOR }]}
                   placeholder="JOHN DOE"
-                  placeholderTextColor={errorCardHolder ? 'red' : theme.secondaryTextColor}
+                  placeholderTextColor={errorCardHolder ? 'red' : TEXT_COLOR_SECONDARY}
                   value={cardHolder}
                   onChangeText={(text) => {
                     setCardHolder(text.toUpperCase());
@@ -1246,28 +1404,27 @@ export default function Cart({ navigation }) {
 
             {/* Expiry Date and CVV Row */}
             <View style={styles.cardRowContainer}>
-              {/* Expiry Date */}
               <View style={[styles.cardInputContainer, { flex: 1, marginRight: 10 }]}>
-                <Text style={[styles.cardInputLabel, { color: theme.textColor }]}>
+                <Text style={[styles.cardInputLabel, { color: TEXT_COLOR }]}>
                   Date d'expiration
                 </Text>
                 <View style={[
                   styles.cardInputWrapper,
                   {
-                    borderColor: errorExpiryDate ? 'red' : theme.secondaryTextColor,
-                    backgroundColor: theme.backgroundColor
+                    borderColor: errorExpiryDate ? 'red' : TEXT_COLOR_SECONDARY,
+                    backgroundColor: BACKGROUND_COLOR
                   }
                 ]}>
                   <MaterialCommunityIcons
                     name="calendar-outline"
                     size={20}
-                    color={errorExpiryDate ? 'red' : theme.secondaryTextColor}
+                    color={errorExpiryDate ? 'red' : TEXT_COLOR_SECONDARY}
                     style={styles.cardInputIcon}
                   />
                   <TextInput
-                    style={[styles.cardTextInput, { color: theme.textColor }]}
+                    style={[styles.cardTextInput, { color: TEXT_COLOR }]}
                     placeholder="MM/AA"
-                    placeholderTextColor={errorExpiryDate ? 'red' : theme.secondaryTextColor}
+                    placeholderTextColor={errorExpiryDate ? 'red' : TEXT_COLOR_SECONDARY}
                     value={expiryDate}
                     onChangeText={(text) => {
                       const formatted = formatExpiryDate(text);
@@ -1285,28 +1442,27 @@ export default function Cart({ navigation }) {
                 ) : null}
               </View>
 
-              {/* CVV */}
               <View style={[styles.cardInputContainer, { flex: 1, marginLeft: 10 }]}>
-                <Text style={[styles.cardInputLabel, { color: theme.textColor }]}>
+                <Text style={[styles.cardInputLabel, { color: TEXT_COLOR }]}>
                   CVV
                 </Text>
                 <View style={[
                   styles.cardInputWrapper,
                   {
-                    borderColor: errorCvv ? 'red' : theme.secondaryTextColor,
-                    backgroundColor: theme.backgroundColor
+                    borderColor: errorCvv ? 'red' : TEXT_COLOR_SECONDARY,
+                    backgroundColor: BACKGROUND_COLOR
                   }
                 ]}>
                   <MaterialCommunityIcons
                     name="lock-outline"
                     size={20}
-                    color={errorCvv ? 'red' : theme.secondaryTextColor}
+                    color={errorCvv ? 'red' : TEXT_COLOR_SECONDARY}
                     style={styles.cardInputIcon}
                   />
                   <TextInput
-                    style={[styles.cardTextInput, { color: theme.textColor }]}
+                    style={[styles.cardTextInput, { color: TEXT_COLOR }]}
                     placeholder="123"
-                    placeholderTextColor={errorCvv ? 'red' : theme.secondaryTextColor}
+                    placeholderTextColor={errorCvv ? 'red' : TEXT_COLOR_SECONDARY}
                     value={cvv}
                     onChangeText={(text) => {
                       if (text.length <= 3 && /^\d*$/.test(text)) {
@@ -1332,19 +1488,18 @@ export default function Cart({ navigation }) {
                 size={16}
                 color={PRIMARY_COLOR}
               />
-              <Text style={[styles.securityText, { color: theme.secondaryTextColor }]}>
+              <Text style={[styles.securityText, { color: TEXT_COLOR_SECONDARY }]}>
                 Vos informations sont sécurisées et cryptées
               </Text>
             </View>
           </ScrollView>
 
-          {/* Modal Footer */}
           <View style={styles.cardModalFooter}>
             <TouchableOpacity
               onPress={() => setModalCardVisible(false)}
-              style={[styles.cardCancelButton, { borderColor: theme.secondaryTextColor }]}
+              style={[styles.cardCancelButton, { borderColor: TEXT_COLOR_SECONDARY }]}
             >
-              <Text style={[styles.cardCancelButtonText, { color: theme.textColor }]}>
+              <Text style={[styles.cardCancelButtonText, { color: TEXT_COLOR }]}>
                 Annuler
               </Text>
             </TouchableOpacity>
@@ -1371,7 +1526,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
 
-  // Updated Header styles
+  // Header styles
   headerContainer: {
     width: '100%',
     flexDirection: 'row',
@@ -1528,86 +1683,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // Location section styles
-  locationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-
-  locationButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-  },
-
-  locationButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-
-  locationCard: {
-    flexDirection: 'row',
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 10,
-    elevation: 1,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
-  },
-
-  locationIcon: {
-    marginRight: 12,
-    alignSelf: 'flex-start',
-    marginTop: 2,
-  },
-
-  locationInfo: {
-    flex: 1,
-  },
-
-  locationTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-
-  locationAddress: {
-    fontSize: 12,
-    lineHeight: 16,
-  },
-
-  distanceInfo: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(128,128,128,0.2)',
-  },
-
-  distanceText: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-
-  deliveryCostText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-
-  // Delivery section styles
+  // Enhanced Delivery section styles
   deliveryContainer: {
     paddingHorizontal: 16,
     marginVertical: 10,
@@ -1625,7 +1701,7 @@ const styles = StyleSheet.create({
   },
   contentDorP: {
     flexDirection: 'row',
-    width: '80%',
+    flex: 1,
     alignItems: 'center',
   },
   viewDorP: {
@@ -1638,6 +1714,9 @@ const styles = StyleSheet.create({
   truckIcon: {
     fontSize: 18,
   },
+  addressInfo: {
+    flex: 1,
+  },
   textAdress: {
     fontSize: 14,
     fontWeight: '500',
@@ -1648,12 +1727,32 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     opacity: 0.5,
   },
+  addressActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  gpsButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  editButton: {
+    padding: 4,
+  },
   chevronRight: {
     fontSize: 22,
   },
 
-  // Payment section styles
-  conatinerPayement: {
+  // Enhanced Payment section styles
+  paymentContainer: {
     paddingHorizontal: 16,
     marginVertical: 10,
   },
@@ -1663,6 +1762,50 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 20,
   },
+  paymentMethodsContainer: {
+    gap: 12,
+  },
+  paymentMethodCard: {
+    borderRadius: 16,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  paymentMethodContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  paymentIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  paymentMethodInfo: {
+    flex: 1,
+  },
+  paymentMethodTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  paymentMethodSubtitle: {
+    fontSize: 12,
+    opacity: 0.7,
+  },
+  radioButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   // Card Details Display Styles
   cardDetailsContainer: {
@@ -1671,30 +1814,34 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
   },
-
   cardDetailsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
   },
-
   cardDetailsTitle: {
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 8,
     flex: 1,
   },
-
   cardNumber: {
     fontSize: 16,
     fontWeight: '500',
     letterSpacing: 2,
     marginBottom: 4,
   },
-
   cardHolder: {
     fontSize: 12,
     fontWeight: '400',
+  },
+
+  // Error text
+  errorText: {
+    color: 'red',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 10,
   },
 
   // Order details section styles
@@ -1737,7 +1884,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Updated Checkout button styles
+  // Checkout button styles
   containerCheckout: {
     position: 'absolute',
     bottom: 10,
@@ -1746,7 +1893,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
   shopButton: {
     width: '100%',
     paddingVertical: 14,
@@ -1767,12 +1913,89 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
 
+  // Enhanced Modal styles
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  gpsModalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  gpsModalButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    borderWidth: 1.5,
+    marginBottom: 15,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 16,
+    marginLeft: 10,
+    fontWeight: '500',
+  },
+  cityPostalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  cityInput: {
+    flex: 2,
+  },
+  postalInput: {
+    flex: 1,
+    minWidth: 100,
+  },
+  helperText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  saveButton: {
+    paddingVertical: 15,
+    borderRadius: 12,
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  saveButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
   // Card Modal Styles
   cardModalStyle: {
     justifyContent: 'center',
     margin: 20,
   },
-
   cardModalContainer: {
     borderRadius: 20,
     maxHeight: '85%',
@@ -1782,7 +2005,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 10,
   },
-
   cardModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1790,26 +2012,21 @@ const styles = StyleSheet.create({
     padding: 20,
     borderBottomWidth: 1,
   },
-
   cardModalTitle: {
     fontSize: 18,
     fontWeight: '600',
   },
-
   cardModalContent: {
     padding: 20,
   },
-
   cardInputContainer: {
     marginBottom: 20,
   },
-
   cardInputLabel: {
     fontSize: 14,
     fontWeight: '500',
     marginBottom: 8,
   },
-
   cardInputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1818,28 +2035,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
-
   cardInputIcon: {
     marginRight: 10,
   },
-
   cardTextInput: {
     flex: 1,
     fontSize: 16,
     fontWeight: '500',
   },
-
   cardErrorText: {
     color: 'red',
     fontSize: 12,
     marginTop: 4,
   },
-
   cardRowContainer: {
     flexDirection: 'row',
     marginBottom: 20,
   },
-
   securityNotice: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1848,19 +2060,16 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginTop: 10,
   },
-
   securityText: {
     fontSize: 12,
     marginLeft: 8,
     flex: 1,
   },
-
   cardModalFooter: {
     flexDirection: 'row',
     padding: 20,
     justifyContent: 'space-between',
   },
-
   cardCancelButton: {
     flex: 1,
     borderWidth: 1,
@@ -1869,12 +2078,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 10,
   },
-
   cardCancelButtonText: {
     fontSize: 14,
     fontWeight: '500',
   },
-
   cardSaveButton: {
     flex: 1,
     borderRadius: 10,
@@ -1882,7 +2089,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 10,
   },
-
   cardSaveButtonText: {
     fontSize: 14,
     fontWeight: '600',
