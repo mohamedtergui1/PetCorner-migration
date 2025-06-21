@@ -63,6 +63,7 @@ interface PaginationResponse {
     total: number;
     page: number;
     page_count: number;
+    limit: number;
   };
 }
 
@@ -108,9 +109,19 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [totalProducts, setTotalProducts] = useState<number>(0);
-  const [currentPage, setCurrentPage] = useState<number>(0);
   const [failedImageLoads, setFailedImageLoads] = useState<Set<string>>(new Set());
+
+  // Pagination states (same as ProductScreen)
+  const [currentPage, setCurrentPage] = useState(0);
+  const [paginationData, setPaginationData] = useState({
+    total: 0,
+    page: 0,
+    page_count: 0,
+    limit: 20,
+    current_count: 0,
+    has_more: false
+  });
+  const [pageSize] = useState(10);
   
   // New filter and search states
   const [showFilterModal, setShowFilterModal] = useState<boolean>(false);
@@ -214,7 +225,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
     return Array.from(uniqueProducts.values());
   }, []);
 
-  // Enhanced loadProducts function with filtering
+  // Enhanced loadProducts function with same logic as ProductScreen
   const loadProducts = useCallback(async (
     categoryId: string, 
     resetPagination: boolean = true,
@@ -228,6 +239,15 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
       if (resetPagination) {
         setLoading(true);
         setCurrentPage(0);
+        setProducts([]);
+        setPaginationData({
+          total: 0,
+          page: 0,
+          page_count: 0,
+          limit: pageSize,
+          current_count: 0,
+          has_more: false
+        });
         setFailedImageLoads(new Set());
       } else {
         setLoadingMore(true);
@@ -238,9 +258,13 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
         (cat: Category) => cat.id === categoryId
       );
 
+      console.log('📦 Chargement des produits - Page:', pageToLoad);
+      console.log('🔍 Filtres:', filters, 'Recherche:', search);
+      console.log('📊 Sort by:', sortBy);
+
       // Enhanced params with filters
       const params: FilterParams = {
-        limit: PAGE_SIZE,
+        limit: pageSize,
         page: pageToLoad,
         category: parseInt(categoryId),
         sortfield: getSortField(sortBy),
@@ -258,31 +282,95 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
 
       const result: Product[] | PaginationResponse = await ProductService.getFilteredProducts(params);
 
-      const newProducts: Product[] = Array.isArray(result) ? result : (result.data || []);
-      const total: number = Array.isArray(result)
-        ? newProducts.length
-        : (result.pagination?.total || newProducts.length);
+      // Handle response (same logic as ProductScreen)
+      let newProducts: Product[] = [];
+      let newPaginationData = {
+        total: 0,
+        page: pageToLoad,
+        page_count: 0,
+        limit: pageSize,
+        current_count: 0,
+        has_more: false
+      };
+
+      if (Array.isArray(result)) {
+        // Simple array response
+        newProducts = result;
+        newPaginationData = {
+          total: newProducts.length,
+          page: 0,
+          page_count: 1,
+          limit: pageSize,
+          current_count: newProducts.length,
+          has_more: false
+        };
+      } else if (result && typeof result === 'object') {
+        // Paginated response
+        newProducts = result.data || [];
+        newPaginationData = {
+          total: result.pagination?.total || 0,
+          page: result.pagination?.page || pageToLoad,
+          page_count: result.pagination?.page_count || 0,
+          limit: result.pagination?.limit || pageSize,
+          current_count: newProducts.length,
+          has_more: (result.pagination?.page || 0) < (result.pagination?.page_count || 0) - 1
+        };
+      }
+
+      console.log('📊 Résultat pagination:', newPaginationData);
+      console.log('📦 Produits reçus:', newProducts.length);
 
       // Apply local sorting
       const sortedProducts = sortProducts(newProducts, sortBy);
 
-      // Remove duplicates before setting state
       if (resetPagination) {
-        const uniqueProducts = removeDuplicateProducts(sortedProducts);
-        setProducts(uniqueProducts);
+        setProducts(sortedProducts);
+        setCurrentPage(0);
+        setPaginationData(newPaginationData);
       } else {
-        setProducts((prev: Product[]) => {
-          const combinedProducts = [...prev, ...sortedProducts];
-          return removeDuplicateProducts(combinedProducts);
+        setProducts(prevProducts => {
+          const combinedProducts = [...prevProducts, ...sortedProducts];
+          console.log('🔄 Combined products:', {
+            previousCount: prevProducts.length,
+            newCount: sortedProducts.length,
+            totalCount: combinedProducts.length
+          });
+          return combinedProducts;
         });
+        setCurrentPage(pageToLoad + 1);
+        setPaginationData(prev => ({
+          ...newPaginationData,
+          current_count: prev.current_count + newProducts.length
+        }));
       }
       
-      setTotalProducts(total);
       setCategoryName(selectedCategory?.name || '');
-      setCurrentPage(pageToLoad + 1);
       setActiveFilters(filters);
+
+      console.log('✅ Produits chargés:', {
+        nouveaux: newProducts.length,
+        total_affichés: resetPagination ? newProducts.length : products.length + newProducts.length,
+        total_disponible: newPaginationData.total,
+        page_actuelle: newPaginationData.page,
+        total_pages: newPaginationData.page_count,
+        tri_appliqué: sortBy
+      });
+
     } catch (error) {
-      console.error('Error loading products:', error);
+      console.error('❌ Error loading products:', error);
+      
+      if (resetPagination) {
+        setProducts([]);
+        setPaginationData({
+          total: 0,
+          page: 0,
+          page_count: 0,
+          limit: pageSize,
+          current_count: 0,
+          has_more: false
+        });
+        setCurrentPage(0);
+      }
       
     } finally {
       setLoading(false);
@@ -291,7 +379,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
       setSearchLoading(false);
       isLoadingRef.current = false;
     }
-  }, [removeDuplicateProducts, sortBy]);
+  }, [removeDuplicateProducts, sortBy, pageSize]);
 
   // Search functionality
   const handleSearchInputChange = (text: string) => {
@@ -393,12 +481,15 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
     };
   }, []);
 
-  // Load more products
+  // Load more products (exact same logic as ProductScreen)
   const loadMoreProducts = useCallback((): void => {
-    if (!loadingMore && products.length < totalProducts && !isLoadingRef.current) {
+    const hasMore = (currentPage + 1) < paginationData.page_count;
+    
+    if (!loadingMore && hasMore && !loading) {
+      console.log('📄 Chargement de la page suivante:', currentPage + 1);
       loadProducts(selectedCategoryId, false, activeFilters, searchQuery);
     }
-  }, [loadingMore, products.length, totalProducts, selectedCategoryId, activeFilters, searchQuery, loadProducts]);
+  }, [loadingMore, loading, currentPage, paginationData.page_count, selectedCategoryId, activeFilters, searchQuery, loadProducts]);
 
   // Refresh functionality
   const onRefresh = () => {
@@ -411,12 +502,19 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
     if (selectedCategoryId !== categoryId) {
       setLoading(true);
       setProducts([]);
-      setTotalProducts(0);
+      setPaginationData({
+        total: 0,
+        page: 0,
+        page_count: 0,
+        limit: pageSize,
+        current_count: 0,
+        has_more: false
+      });
       setCurrentPage(0);
       setFailedImageLoads(new Set());
       setSelectedCategoryId(categoryId);
     }
-  }, [selectedCategoryId]);
+  }, [selectedCategoryId, pageSize]);
 
   const handleImageError = useCallback((productId: string): void => {
     setFailedImageLoads((prev: Set<string>) => {
@@ -621,11 +719,11 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
         <View style={styles.headerCenter}>
           <View style={styles.headerTitleContainer}>
             <Text style={styles.headerTitle}>Catégories</Text>
-            {totalProducts > 0 && (
-              <Text style={styles.headerCount}>({totalProducts})</Text>
+            {paginationData.total > 0 && (
+              <Text style={styles.headerCount}>({paginationData.total})</Text>
             )}
           </View>
-          {totalProducts > 0 && (
+          {paginationData.total > 0 && (
             <Text style={styles.headerSubtitle}>
               {products.length} chargés
             </Text>
@@ -690,7 +788,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
           </Text>
           <View style={[styles.countBadge, { backgroundColor: PRIMARY_COLOR }]}>
             <Text style={styles.countText}>
-              {totalProducts}
+              {paginationData.total}
             </Text>
           </View>
         </View>
@@ -726,7 +824,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
               />
             }
             onEndReached={loadMoreProducts}
-            onEndReachedThreshold={0.5}
+            onEndReachedThreshold={0.3}
             removeClippedSubviews={true}
             maxToRenderPerBatch={10}
             windowSize={10}
