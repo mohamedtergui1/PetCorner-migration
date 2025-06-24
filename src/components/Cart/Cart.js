@@ -644,7 +644,7 @@ export default function Cart({ navigation }) {
         Toast.show('Les articles seront livrés BIENTOT !', Toast.SHORT);
         setIsLoading(true);
       }
-      navigation.navigate('Accueil');
+      navigation.navigate('OrderScreen');
     } catch (error) {
       console.log("Error:", error);
       if (error.response) {
