@@ -17,8 +17,8 @@ import Feather from 'react-native-vector-icons/Feather';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../context/ThemeContext';
-import { Order, OrderLine, OrderStatusInfo } from '../types/order.types.ts';
-import OrderService from '../service/order.service.ts/index.ts';
+import { Order, OrderLine, OrderStatusInfo } from '../types/order.types';
+import OrderService from '../service/order.service';
 import { OrderUtils } from '../utils/order.utils';
 
 interface OrderScreenProps {
