@@ -822,7 +822,7 @@ const FilterModal: React.FC<FilterModalProps> = ({
         {/* Header */}
         <View style={[styles.header, { backgroundColor: PRIMARY_COLOR }]}>
           <TouchableOpacity style={styles.backButton} onPress={onClose}>
-            <Feather name="arrow-left" size={20} color="#fff" />
+            <Ionicons name="arrow-back" size={20} color="#fff" />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>Filtres</Text>
