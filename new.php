@@ -2252,262 +2252,6 @@ $product_static->image_link=$obj->photo_link;
         return $this->_cleanObjectDatas($this->product);
     }
     
-/**
-     * Get dynamic base URL for product images
-     *
-     * @return string Base URL for images
-     */
-    private function getImageBaseUrl()
-    {
-        global $dolibarr_main_url_root, $conf;
-        
-        // Priority order for base URL:
-        // 1. Custom configuration in conf
-        // 2. Dolibarr main URL root
-        // 3. Current server protocol and host
-        // 4. Default fallback
-        
-        if (!empty($conf->global->PRODUCT_IMAGE_BASE_URL)) {
-            return rtrim($conf->global->PRODUCT_IMAGE_BASE_URL, '/');
-        }
-        
-        if (!empty($dolibarr_main_url_root)) {
-            return rtrim($dolibarr_main_url_root, '/');
-        }
-        
-        // Auto-detect current domain
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
-        if (!empty($_SERVER['HTTP_HOST'])) {
-            $domain = $_SERVER['HTTP_HOST'];
-            // Remove port if it's standard (80 for HTTP, 443 for HTTPS)
-            if (($_SERVER['SERVER_PORT'] == 80 && $protocol == 'http://') ||
-                ($_SERVER['SERVER_PORT'] == 443 && $protocol == 'https://')) {
-                $domain = preg_replace('/:\d+$/', '', $domain);
-            }
-            return $protocol . $domain;
-        }
-        
-        // Fallback to default
-        return 'https://ipos.ma/fide';
-    }
-
-/**
- * Enhanced product search with multi-category filtering and search capabilities
- *
- * @param  string $sortfield              Sort field
- * @param  string $sortorder              Sort order
- * @param  int    $limit                  Limit for list
- * @param  int    $page                   Page number
- * @param  int    $mode                   Use this param to filter list (0 for all, 1 for only product, 2 for only service)
- * @param  string $categories           Comma-separated list of category IDs to filter by (e.g., "1,2,3")
- * @param  string $search_query         Search query to filter by product name/label
- * @param  string $brand_filter         Filter by brand (extrafield or custom field)
- * @param  string $game_filter             Filter by game category
- * @param  string $taste_filter         Filter by taste/flavor (goût)
- * @param  bool   $sale_filter          Filter by sale criteria (true = only products for sale, false = all products)
- * @param  string $sqlfilters             Other criteria to filter answers separated by a comma
- * @param  bool   $ids_only               Return only IDs of product instead of all properties
- * @param  int    $variant_filter       Use this param to filter list (0 = all, 1=products without variants, 2=parent of variants, 3=variants only)
- * @param  bool   $pagination_data       If this parameter is set to true the response will include pagination data
- * @param  int    $includestockdata        Load also information about stock (slower)
- * @return array                        Array of product objects
- */
-public function getProductsWithFilters($sortfield = "t.ref", $sortorder = 'ASC', $limit = 100, $page = 0, $mode = 0, $categories = '', $search_query = '', $brand_filter = '', $game_filter = '', $taste_filter = '', $sale_filter = true, $sqlfilters = '', $ids_only = false, $variant_filter = 0, $pagination_data = false, $includestockdata = 0)
-{
-    global $db, $conf;
-
-    if (!DolibarrApiAccess::$user->rights->produit->lire) {
-        throw new RestException(403);
-    }
-
-    $obj_ret = array();
-    $socid = DolibarrApiAccess::$user->socid ? DolibarrApiAccess::$user->socid : '';
-
-    // Base SQL query
-    $sql = "SELECT DISTINCT t.rowid, t.ref, t.ref_ext, t.label, t.description, t.price, t.price_ttc, t.tva_tx";
-    
-    // Get dynamic base URL for images
-    $base_url = $this->getImageBaseUrl();
-    
-    // Add photo link subquery with dynamic URL
-    $sql .= ",(SELECT CONCAT('".$base_url."/documents/',ecm.filepath,'/',ecm.filename) FROM 
-".MAIN_DB_PREFIX."ecm_files ecm, ".MAIN_DB_PREFIX."product pr WHERE pr.barcode = t.barcode
- AND ecm.src_object_type='product' and ecm.src_object_id=pr.rowid LIMIT 1) as photo_link ";
-    
-    $sql .= " FROM ".$this->db->prefix()."product as t";
-    $sql .= " LEFT JOIN ".MAIN_DB_PREFIX."product_extrafields AS ef ON ef.fk_object = t.rowid";
-    
-    // Handle multi-category filtering
-    $category_joins = '';
-    $category_conditions = '';
-    if (!empty($categories)) {
-        $category_array = explode(',', $categories);
-        $category_array = array_map('intval', array_filter($category_array, 'is_numeric'));
-        
-        if (!empty($category_array)) {
-            $sql .= " INNER JOIN ".MAIN_DB_PREFIX."categorie_product AS cp ON cp.fk_product = t.rowid";
-            $category_conditions = " AND cp.fk_categorie IN (".implode(',', $category_array).")";
-        }
-    }
-    
-    $sql .= ' WHERE t.entity IN ('.getEntity('product').')';
-
-    // Apply variant filters
-    if ($variant_filter == 1) {
-        $sql .= ' AND t.rowid not in (select distinct fk_product_parent from '.$this->db->prefix().'product_attribute_combination)';
-        $sql .= ' AND t.rowid not in (select distinct fk_product_child from '.$this->db->prefix().'product_attribute_combination)';
-    }
-    if ($variant_filter == 2) {
-        $sql .= ' AND t.rowid in (select distinct fk_product_parent from '.$this->db->prefix().'product_attribute_combination)';
-    }
-    if ($variant_filter == 3) {
-        $sql .= ' AND t.rowid in (select distinct fk_product_child from '.$this->db->prefix().'product_attribute_combination)';
-    }
-
-    // Apply category conditions
-    $sql .= $category_conditions;
-
-    // Apply product type filter (mode)
-    if ($mode == 1) {
-        $sql .= " AND t.fk_product_type = 0"; // Products only
-    } elseif ($mode == 2) {
-        $sql .= " AND t.fk_product_type = 1"; // Services only
-    }
-
-    // Apply search query filter (search by name/label/description)
-    if (!empty($search_query)) {
-        $search_query = $this->db->escape($search_query);
-        $sql .= " AND (t.label LIKE '%".$search_query."%' OR t.ref LIKE '%".$search_query."%' OR t.description LIKE '%".$search_query."%')";
-    }
-
-    // Apply brand filter (assuming brand is stored in extrafields or a custom field)
-    if (!empty($brand_filter)) {
-        $brand_filter = $this->db->escape($brand_filter);
-        // Adjust this based on your actual brand field name in extrafields
-        $sql .= " AND (ef.brand LIKE '%".$brand_filter."%' OR t.ref LIKE '%".$brand_filter."%')";
-    }
-
-    // Apply game filter (assuming game category is stored in extrafields or custom field)
-    if (!empty($game_filter)) {
-        $game_filter = $this->db->escape($game_filter);
-        // Adjust this based on your actual game field name in extrafields
-        $sql .= " AND (ef.game_category LIKE '%".$game_filter."%' OR ef.game LIKE '%".$game_filter."%')";
-    }
-
-    // Apply taste/flavor filter (goût)
-    if (!empty($taste_filter)) {
-        $taste_filter = $this->db->escape($taste_filter);
-        // Adjust this based on your actual taste field name in extrafields
-        $sql .= " AND (ef.taste LIKE '%".$taste_filter."%' OR ef.flavor LIKE '%".$taste_filter."%' OR ef.gout LIKE '%".$taste_filter."%')";
-    }
-
-    // Apply sale criteria filter (tosell field)
-    if ($sale_filter === true || $sale_filter === 'true' || $sale_filter === '1' || $sale_filter === 1) {
-        $sql .= " AND t.tosell = 1"; // Only products marked for sale
-    } elseif ($sale_filter === false || $sale_filter === 'false' || $sale_filter === '0' || $sale_filter === 0) {
-        $sql .= " AND t.tosell = 0"; // Only products NOT marked for sale
-    }
-    // If $sale_filter is null or empty, no filter is applied (show all products)
-
-    // Apply additional SQL filters
-    if (!empty($sqlfilters)) {
-        $errormessage = '';
-        // Enhanced filter processing for backward compatibility
-        if (strpos($sqlfilters, '(') === false && strpos($sqlfilters, ')') === false) {
-            // Simple search filter (legacy support)
-            $sql .= " AND t.label LIKE '%".$this->db->escape($sqlfilters)."%'";
-        } else {
-            // Complex SQL filters
-            $sql .= forgeSQLFromUniversalSearchCriteria($sqlfilters, $errormessage);
-            if ($errormessage) {
-                throw new RestException(400, 'Error when validating parameter sqlfilters -> '.$errormessage);
-            }
-        }
-    }
-
-    // Count query for pagination
-    $sqlTotals = str_replace('SELECT DISTINCT t.rowid, t.ref, t.ref_ext, t.label, t.description, t.price, t.price_ttc, t.tva_tx', 'SELECT count(DISTINCT t.rowid) as total', $sql);
-    $sqlTotals = preg_replace('/,\(SELECT CONCAT.*?\) as photo_link/', '', $sqlTotals);
-
-    // Add ordering
-    $sql .= $this->db->order($sortfield, $sortorder);
-    
-    // Add pagination
-    if ($limit) {
-        if ($page < 0) {
-            $page = 0;
-        }
-        $offset = $limit * $page;
-        $sql .= $this->db->plimit($limit + 1, $offset);
-    }
-
-    // Execute query
-    $result = $this->db->query($sql);
-    if ($result) {
-        $num = $this->db->num_rows($result);
-        $min = min($num, ($limit <= 0 ? $num : $limit));
-        $i = 0;
-        while ($i < $min) {
-            $obj = $this->db->fetch_object($result);
-            if (!$ids_only) {
-                $product_static = new Product($this->db);
-                if ($product_static->fetch($obj->rowid)) {
-                    // Load stock data if requested
-                    if (!empty($includestockdata) && DolibarrApiAccess::$user->rights->stock->lire) {
-                        $product_static->load_stock();
-
-                        if (is_array($product_static->stock_warehouse)) {
-                            foreach ($product_static->stock_warehouse as $keytmp => $valtmp) {
-                                if (isset($product_static->stock_warehouse[$keytmp]->detail_batch) && is_array($product_static->stock_warehouse[$keytmp]->detail_batch)) {
-                                    foreach ($product_static->stock_warehouse[$keytmp]->detail_batch as $keytmp2 => $valtmp2) {
-                                        unset($product_static->stock_warehouse[$keytmp]->detail_batch[$keytmp2]->db);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Add photo link
-                    $product_static->image_link = $obj->photo_link;
-                    
-                    // Handle price levels correctly
-                    $this->addCorrectPricing($product_static);
-                    
-                    $obj_ret[] = $this->_cleanObjectDatas($product_static);
-                }
-            } else {
-                $obj_ret[] = $obj->rowid;
-            }
-            $i++;
-        }
-    } else {
-        throw new RestException(503, 'Error when retrieve product list : '.$this->db->lasterror());
-    }
-    
-    if (!count($obj_ret)) {
-        throw new RestException(404, 'No product found');
-    }
-
-    // Add pagination data if requested
-    if ($pagination_data) {
-        $totalsResult = $this->db->query($sqlTotals);
-        $total = $this->db->fetch_object($totalsResult)->total;
-
-        $tmp = $obj_ret;
-        $obj_ret = array();
-
-        $obj_ret['data'] = $tmp;
-        $obj_ret['pagination'] = array(
-            'total' => (int) $total,
-            'page' => $page,
-            'page_count' => ceil((int) $total/$limit),
-            'limit' => $limit
-        );
-    }
-
-    return $obj_ret;
-}
-
 
 
 
@@ -3388,16 +3132,287 @@ public function getProductsWithFilters($sortfield = "t.ref", $sortorder = 'ASC',
 
         return $suggestions;
     }
-  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/**
+ * Get dynamic base URL for product images
+ *
+ * @return string Base URL for images
+ */
+private function getImageBaseUrl()
+{
+    global $dolibarr_main_url_root, $conf;
+    
+    // Priority order for base URL:
+    // 1. Custom configuration in conf
+    // 2. Dolibarr main URL root
+    // 3. Current server protocol and host
+    // 4. Default fallback
+    
+    if (!empty($conf->global->PRODUCT_IMAGE_BASE_URL)) {
+        return rtrim($conf->global->PRODUCT_IMAGE_BASE_URL, '/');
+    }
+    
+    if (!empty($dolibarr_main_url_root)) {
+        return rtrim($dolibarr_main_url_root, '/');
+    }
+    
+    // Auto-detect current domain
+    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+    if (!empty($_SERVER['HTTP_HOST'])) {
+        $domain = $_SERVER['HTTP_HOST'];
+        // Remove port if it's standard (80 for HTTP, 443 for HTTPS)
+        if (($_SERVER['SERVER_PORT'] == 80 && $protocol == 'http://') ||
+            ($_SERVER['SERVER_PORT'] == 443 && $protocol == 'https://')) {
+            $domain = preg_replace('/:\d+$/', '', $domain);
+        }
+        return $protocol . $domain;
+    }
+    
+    // Fallback to default
+    return 'https://ipos.ma/fide';
+}
+
+/**
+ * Enhanced product search with multi-category filtering and search capabilities
+ *
+ * @param  string $sortfield              Sort field
+ * @param  string $sortorder              Sort order
+ * @param  int    $limit                  Limit for list
+ * @param  int    $page                   Page number
+ * @param  int    $mode                   Use this param to filter list (0 for all, 1 for only product, 2 for only service)
+ * @param  string $categories           Comma-separated list of category IDs to filter by (e.g., "1,2,3")
+ * @param  string $search_query         Search query to filter by product name/label
+ * @param  string $brand_filter         Filter by brand (marque extrafield)
+ * @param  string $game_filter             Filter by game category
+ * @param  string $taste_filter         Filter by taste/flavor (goût)
+ * @param  string $ages_filter          Filter by ages/functionalities (ftfonctionnalites)
+ * @param  bool   $sale_filter          Filter by sale criteria (true = only products for sale, false = all products)
+ * @param  string $sqlfilters             Multi-criteria filters using Dolibarr syntax
+ * @param  bool   $ids_only               Return only IDs of product instead of all properties
+ * @param  int    $variant_filter       Use this param to filter list (0 = all, 1=products without variants, 2=parent of variants, 3=variants only)
+ * @param  bool   $pagination_data       If this parameter is set to true the response will include pagination data
+ * @param  int    $includestockdata        Load also information about stock (slower)
+ * @return array                        Array of product objects
+ */
+public function getProductsWithFilters($sortfield = "t.ref", $sortorder = 'ASC', $limit = 100, $page = 0, $mode = 0, $categories = '', $search_query = '', $brand_filter = '', $game_filter = '', $taste_filter = '', $ages_filter = '', $sale_filter = true, $sqlfilters = '', $ids_only = false, $variant_filter = 0, $pagination_data = false, $includestockdata = 0)
+{
+    global $db, $conf;
+
+    if (!DolibarrApiAccess::$user->rights->produit->lire) {
+        throw new RestException(403);
+    }
+
+    $obj_ret = array();
+    $socid = DolibarrApiAccess::$user->socid ? DolibarrApiAccess::$user->socid : '';
+
+    // Base SQL query
+    $sql = "SELECT DISTINCT t.rowid, t.ref, t.ref_ext, t.label, t.description, t.price, t.price_ttc, t.tva_tx";
+    
+    // Get dynamic base URL for images
+    $base_url = $this->getImageBaseUrl();
+    
+    // Add photo link subquery with dynamic URL
+    $sql .= ",(SELECT CONCAT('".$base_url."/documents/',ecm.filepath,'/',ecm.filename) FROM 
+".MAIN_DB_PREFIX."ecm_files ecm, ".MAIN_DB_PREFIX."product pr WHERE pr.barcode = t.barcode
+ AND ecm.src_object_type='product' and ecm.src_object_id=pr.rowid LIMIT 1) as photo_link ";
+    
+    $sql .= " FROM ".$this->db->prefix()."product as t";
+    $sql .= " LEFT JOIN ".MAIN_DB_PREFIX."product_extrafields AS ef ON ef.fk_object = t.rowid";
+    
+    // Handle multi-category filtering
+    $category_joins = '';
+    $category_conditions = '';
+    if (!empty($categories)) {
+        $category_array = explode(',', $categories);
+        $category_array = array_map('intval', array_filter($category_array, 'is_numeric'));
+        
+        if (!empty($category_array)) {
+            $sql .= " INNER JOIN ".MAIN_DB_PREFIX."categorie_product AS cp ON cp.fk_product = t.rowid";
+            $category_conditions = " AND cp.fk_categorie IN (".implode(',', $category_array).")";
+        }
+    }
+    
+    $sql .= ' WHERE t.entity IN ('.getEntity('product').')';
+
+    // Apply variant filters
+    if ($variant_filter == 1) {
+        $sql .= ' AND t.rowid not in (select distinct fk_product_parent from '.$this->db->prefix().'product_attribute_combination)';
+        $sql .= ' AND t.rowid not in (select distinct fk_product_child from '.$this->db->prefix().'product_attribute_combination)';
+    }
+    if ($variant_filter == 2) {
+        $sql .= ' AND t.rowid in (select distinct fk_product_parent from '.$this->db->prefix().'product_attribute_combination)';
+    }
+    if ($variant_filter == 3) {
+        $sql .= ' AND t.rowid in (select distinct fk_product_child from '.$this->db->prefix().'product_attribute_combination)';
+    }
+
+    // Apply category conditions
+    $sql .= $category_conditions;
+
+    // Apply product type filter (mode)
+    if ($mode == 1) {
+        $sql .= " AND t.fk_product_type = 0"; // Products only
+    } elseif ($mode == 2) {
+        $sql .= " AND t.fk_product_type = 1"; // Services only
+    }
+
+    // Apply sale criteria filter (tosell field)
+    if ($sale_filter === true || $sale_filter === 'true' || $sale_filter === '1' || $sale_filter === 1) {
+        $sql .= " AND t.tosell = 1"; // Only products marked for sale
+    } elseif ($sale_filter === false || $sale_filter === 'false' || $sale_filter === '0' || $sale_filter === 0) {
+        $sql .= " AND t.tosell = 0"; // Only products NOT marked for sale
+    }
+    // If $sale_filter is null or empty, no filter is applied (show all products)
+
+    // Apply search query filter (search by name/label/description)
+    if (!empty($search_query)) {
+        $search_query = $this->db->escape($search_query);
+        $sql .= " AND (t.label LIKE '%".$search_query."%' OR t.ref LIKE '%".$search_query."%' OR t.description LIKE '%".$search_query."%')";
+    }
+
+    // Apply brand filter (brand is stored in extrafields as 'marque' - position 100)
+    if (!empty($brand_filter)) {
+        $brand_filter = $this->db->escape($brand_filter);
+        // Using 'marque' field code from extrafields where the actual brand data is stored
+        $sql .= " AND ef.marque LIKE '%".$brand_filter."%'";
+    }
+
+    // Apply game filter (assuming game category is stored in extrafields or custom field)
+    if (!empty($game_filter)) {
+        $game_filter = $this->db->escape($game_filter);
+        // Adjust this based on your actual game field name in extrafields
+        $sql .= " AND (ef.game_category LIKE '%".$game_filter."%' OR ef.game LIKE '%".$game_filter."%')";
+    }
+
+    // Apply taste/flavor filter (goût)
+    if (!empty($taste_filter)) {
+        $taste_filter = $this->db->escape($taste_filter);
+        // Adjust this based on your actual taste field name in extrafields
+        $sql .= " AND (ef.taste LIKE '%".$taste_filter."%' OR ef.flavor LIKE '%".$taste_filter."%' OR ef.gout LIKE '%".$taste_filter."%')";
+    }
+
+    // Apply ages/functionalities filter (ftfonctionnalites)
+    if (!empty($ages_filter)) {
+        $ages_filter = $this->db->escape($ages_filter);
+        // Filter by functionalities/ages - can search for specific values in checkbox field
+        $sql .= " AND ef.ftfonctionnalites LIKE '%".$ages_filter."%'";
+    }
+
+    // Apply additional multi-criteria filters using Dolibarr's system
+    if (!empty($sqlfilters)) {
+        $errormessage = '';
+        // Use Dolibarr's built-in multi-criteria parser
+        $sql .= forgeSQLFromUniversalSearchCriteria($sqlfilters, $errormessage);
+        if ($errormessage) {
+            throw new RestException(400, 'Error when validating parameter sqlfilters -> '.$errormessage);
+        }
+    }
+
+    // Count query for pagination
+    $sqlTotals = str_replace('SELECT DISTINCT t.rowid, t.ref, t.ref_ext, t.label, t.description, t.price, t.price_ttc, t.tva_tx', 'SELECT count(DISTINCT t.rowid) as total', $sql);
+    $sqlTotals = preg_replace('/,\(SELECT CONCAT.*?\) as photo_link/', '', $sqlTotals);
+
+    // Add ordering
+    $sql .= $this->db->order($sortfield, $sortorder);
+    
+    // Add pagination
+    if ($limit) {
+        if ($page < 0) {
+            $page = 0;
+        }
+        $offset = $limit * $page;
+        $sql .= $this->db->plimit($limit + 1, $offset);
+    }
+
+    // Execute query
+    $result = $this->db->query($sql);
+    if ($result) {
+        $num = $this->db->num_rows($result);
+        $min = min($num, ($limit <= 0 ? $num : $limit));
+        $i = 0;
+        while ($i < $min) {
+            $obj = $this->db->fetch_object($result);
+            if (!$ids_only) {
+                $product_static = new Product($this->db);
+                if ($product_static->fetch($obj->rowid)) {
+                    // Load stock data if requested
+                    if (!empty($includestockdata) && DolibarrApiAccess::$user->rights->stock->lire) {
+                        $product_static->load_stock();
+
+                        if (is_array($product_static->stock_warehouse)) {
+                            foreach ($product_static->stock_warehouse as $keytmp => $valtmp) {
+                                if (isset($product_static->stock_warehouse[$keytmp]->detail_batch) && is_array($product_static->stock_warehouse[$keytmp]->detail_batch)) {
+                                    foreach ($product_static->stock_warehouse[$keytmp]->detail_batch as $keytmp2 => $valtmp2) {
+                                        unset($product_static->stock_warehouse[$keytmp]->detail_batch[$keytmp2]->db);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Add photo link
+                    $product_static->image_link = $obj->photo_link;
+                    
+                    // Handle price levels correctly
+                    $this->addCorrectPricing($product_static);
+                    
+                    $obj_ret[] = $this->_cleanObjectDatas($product_static);
+                }
+            } else {
+                $obj_ret[] = $obj->rowid;
+            }
+            $i++;
+        }
+    } else {
+        throw new RestException(503, 'Error when retrieve product list : '.$this->db->lasterror());
+    }
+    
+    if (!count($obj_ret)) {
+        throw new RestException(404, 'No product found');
+    }
+
+    // Add pagination data if requested
+    if ($pagination_data) {
+        $totalsResult = $this->db->query($sqlTotals);
+        $total = $this->db->fetch_object($totalsResult)->total;
+
+        $tmp = $obj_ret;
+        $obj_ret = array();
+
+        $obj_ret['data'] = $tmp;
+        $obj_ret['pagination'] = array(
+            'total' => (int) $total,
+            'page' => $page,
+            'page_count' => ceil((int) $total/$limit),
+            'limit' => $limit
+        );
+    }
+
+    return $obj_ret;
+}
 
 /**
  * Search products with simplified parameters (API endpoint version)
  *
  * @param  string $search_name             Search by product name/label
  * @param  string $categories           Comma-separated list of category IDs
- * @param  string $brand                 Filter by brand
+ * @param  string $brand                 Filter by brand (marque)
  * @param  string $game                 Filter by game category
  * @param  string $taste                 Filter by taste/flavor (goût)
+ * @param  string $ages                  Filter by ages/functionalities (ftfonctionnalites)
  * @param  bool   $sale                  Filter by sale criteria (true = only products for sale)
  * @param  string $sqlfilters            Multi-criteria filters using Dolibarr syntax
  * @param  int    $limit                  Limit for list (default 50)
@@ -3408,7 +3423,7 @@ public function getProductsWithFilters($sortfield = "t.ref", $sortorder = 'ASC',
  *
  * @url GET search_filtered
  */
-public function searchFilteredProducts($search_name = '', $categories = '', $brand = '', $game = '', $taste = '', $sale = true, $sqlfilters = '', $limit = 50, $page = 0, $sortfield = "t.label", $sortorder = 'ASC')
+public function searchFilteredProducts($search_name = '', $categories = '', $brand = '', $game = '', $taste = '', $ages = '', $sale = true, $sqlfilters = '', $limit = 50, $page = 0, $sortfield = "t.label", $sortorder = 'ASC')
 {
     return $this->getProductsWithFilters(
         $sortfield,
@@ -3421,6 +3436,7 @@ public function searchFilteredProducts($search_name = '', $categories = '', $bra
         $brand,
         $game,
         $taste,
+        $ages, // ages_filter
         $sale, // sale_filter
         $sqlfilters, // sqlfilters
         false, // ids_only
@@ -3440,10 +3456,11 @@ public function searchFilteredProducts($search_name = '', $categories = '', $bra
  * @param  int    $page                   Page number
  * @param  int    $animal_category        Animal category ID
  * @param  int    $category               Product category ID
- * @param  string $brand                  Brand name filter
+ * @param  string $brand                  Brand name filter (marque)
  * @param  string $search                 Search query for product name/label
  * @param  float  $price_min              Minimum price TTC
  * @param  float  $price_max              Maximum price TTC
+ * @param  string $ages                   Filter by ages/functionalities (ftfonctionnalites)
  * @param  bool   $sale_filter            Filter by sale criteria (true = only products for sale)
  * @param  string $sqlfilters             Multi-criteria filters using Dolibarr syntax
  * @param  bool   $pagination_data        Include pagination data
@@ -3452,7 +3469,7 @@ public function searchFilteredProducts($search_name = '', $categories = '', $bra
  *
  * @url GET filtered
  */
-public function getFilteredProducts($sortfield = "t.ref", $sortorder = 'ASC', $limit = 100, $page = 0, $animal_category = 0, $category = 0, $brand = '', $search = '', $price_min = 0, $price_max = 0, $sale_filter = true, $sqlfilters = '', $pagination_data = true, $includestockdata = 0)
+public function getFilteredProducts($sortfield = "t.ref", $sortorder = 'ASC', $limit = 100, $page = 0, $animal_category = 0, $category = 0, $brand = '', $search = '', $price_min = 0, $price_max = 0, $ages = '', $sale_filter = true, $sqlfilters = '', $pagination_data = true, $includestockdata = 0)
 {
     global $db, $conf;
 
@@ -3510,7 +3527,7 @@ public function getFilteredProducts($sortfield = "t.ref", $sortorder = 'ASC', $l
         }
     }
 
-    // Filter by brand
+    // Filter by brand (brand is stored as 'marque' in extrafields - position 100)
     if (!empty($brand)) {
         $brand = $this->db->escape($brand);
         $sql .= " AND ef.marque LIKE '%".$brand."%'";
@@ -3528,6 +3545,13 @@ public function getFilteredProducts($sortfield = "t.ref", $sortorder = 'ASC', $l
     }
     if ($price_max > 0) {
         $sql .= " AND t.price_ttc <= ".((float) $price_max);
+    }
+
+    // Apply ages/functionalities filter (ftfonctionnalites)
+    if (!empty($ages)) {
+        $ages = $this->db->escape($ages);
+        // Filter by functionalities/ages - can search for specific values in checkbox field
+        $sql .= " AND ef.ftfonctionnalites LIKE '%".$ages."%'";
     }
 
     // Apply additional multi-criteria filters using Dolibarr's system
@@ -3676,7 +3700,6 @@ private function addCorrectPricing(&$product_static)
         }
     }
 }
-
 
     
 
