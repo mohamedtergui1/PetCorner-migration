@@ -17,7 +17,6 @@ import {
   Image
 } from 'react-native';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { COLOURS } from '../../database/Database';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Entypo from 'react-native-vector-icons/Entypo';
@@ -29,105 +28,336 @@ import { useCart } from '../../context/CartContext';
 import { useFavorites } from '../../context/FavoritesContext';
 import { StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import ProductService from '../../service/CustomProductApiService';
+import ProductService, { Product } from '../../service/CustomProductApiService';
 
-export default function ProductDetails({ route, navigation }) {
+// =====================================
+// TYPES AND INTERFACES
+// =====================================
+
+interface ProductDetailsProps {
+  route: {
+    params: {
+      productId: string | number;
+      product?: Product;
+    };
+  };
+  navigation: any;
+}
+
+interface UserDetails {
+  id: string;
+  name?: string;
+  email?: string;
+}
+
+interface ExtendedOptions {
+  health_option_id?: string;
+  game_id?: string;
+  age_id?: string;
+  taste_id?: string;
+  nutritional_option_id?: string;
+  brand_id?: string;
+  category_ids?: number[];
+}
+
+interface EnhancedProduct extends Product {
+  extended_options?: ExtendedOptions;
+}
+
+// Updated mapping objects based on your data structure
+const HEALTH_OPTIONS: { [key: string]: string } = {
+  '1': 'Stérilisés',
+  '2': 'Allergies',
+  '3': 'Vessies',
+  '4': 'Croissances',
+  '5': 'Vieillissements',
+  '6': 'Respirations',
+  '7': 'Poils et peaux',
+  '8': 'Digestifs',
+  '9': 'Surpoids',
+  '10': 'Sensibles',
+  '11': 'Allaitantes ou gestantes',
+  '12': 'Immunités',
+  '13': 'Dentaires'
+};
+
+const AGE_OPTIONS: { [key: string]: string } = {
+  '1': 'Adulte',
+  '2': 'Senior',
+  '3': 'Junior',
+  '4': 'Première âge',
+  '5': 'Chatons',
+  '6': 'Chiots'
+};
+
+const TASTE_OPTIONS: { [key: string]: string } = {
+  '1': 'Bœuf',
+  '2': 'Poulet',
+  '3': 'Canard',
+  '4': 'Poisson',
+  '5': 'Agneau',
+  '6': 'Autre'
+};
+
+const NUTRITIONAL_OPTIONS: { [key: string]: string } = {
+  '1': 'Sans céréales',
+  '2': 'Ingrédient limité',
+  '3': 'Bio',
+  '4': 'Sans OGM',
+  '5': 'Sans gluten',
+  '6': 'Sans sucre',
+  '7': 'Végétarien',
+  '8': 'Riche en protéines',
+  '9': 'Équilibré'
+};
+
+const GAME_OPTIONS: { [key: string]: string } = {
+  '1': 'Premium Line',
+  '2': 'Classic Line',
+  '3': 'Veterinary Line',
+  '4': 'Natural Line'
+};
+
+// Updated brand mapping - you'll need to get the complete list from your API
+const BRAND_OPTIONS: { [key: string]: string } = {
+  'MANITOBA': 'Manitoba',
+  'SANTA': 'Santa',
+  '1': 'Royal Canin',
+  '2': 'Hill\'s',
+  '3': 'Purina',
+  '4': 'Whiskas',
+  '5': 'Pedigree',
+  '6': 'Manitoba',
+  '7': 'Santa'
+};
+
+const CATEGORY_NAMES: { [key: number]: string } = {
+  1: 'Général',
+  2: 'Chien',
+  3: 'Chat',
+  4: 'Gamme Gold', // Based on your data showing "gamme": "4"
+  8: 'Tranche d\'âge adulte', // Based on "trancheage": "8,9"
+  9: 'Tranche d\'âge senior',
+  20: 'Oiseau',
+  21: 'Poisson',
+  31: 'Reptile',
+  184: 'Lapin'
+};
+
+// Functionality mapping based on your data
+const FUNCTIONALITY_OPTIONS: { [key: string]: string } = {
+  '1': 'Nutrition complète',
+  '2': 'Supplément nutritionnel',
+  '3': 'Friandise saine'
+};
+
+// =====================================
+// MAIN COMPONENT
+// =====================================
+
+export default function ProductDetails({ route, navigation }: ProductDetailsProps) {
   const { width, height } = Dimensions.get('window');
   const { theme } = useTheme();
   const { addToCart } = useCart();
   const { isFavorite, toggleFavorite } = useFavorites();
   const insets = useSafeAreaInsets();
   
-  // Get product ID from route params - simplified approach
+  // Get product ID from route params
   const { productId } = route.params;
 
   // State management
-  const [product, setProduct] = useState(null);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [userDetails, setUserDetails] = useState();
-  const [loading, setLoading] = useState(false);
-  const [similarProducts, setSimilarProducts] = useState([]);
-  const [loadingSimilar, setLoadingSimilar] = useState(false);
-  const [loadingProduct, setLoadingProduct] = useState(true);
-  const [error, setError] = useState(null);
+  const [product, setProduct] = useState<EnhancedProduct | null>(null);
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
+  const [userDetails, setUserDetails] = useState<UserDetails | undefined>();
+  const [loading, setLoading] = useState<boolean>(false);
+  const [similarProducts, setSimilarProducts] = useState<Product[]>([]);
+  const [loadingSimilar, setLoadingSimilar] = useState<boolean>(false);
+  const [loadingProduct, setLoadingProduct] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
   
   // Image viewing states
-  const [imageViewVisible, setImageViewVisible] = useState(false);
-  const [scale, setScale] = useState(new Animated.Value(1));
-  const [translateX, setTranslateX] = useState(new Animated.Value(0));
-  const [translateY, setTranslateY] = useState(new Animated.Value(0));
-  const [lastScale, setLastScale] = useState(1);
-  const [lastTranslateX, setLastTranslateX] = useState(0);
-  const [lastTranslateY, setLastTranslateY] = useState(0);
+  const [imageViewVisible, setImageViewVisible] = useState<boolean>(false);
+  const [scale, setScale] = useState<Animated.Value>(new Animated.Value(1));
+  const [translateX, setTranslateX] = useState<Animated.Value>(new Animated.Value(0));
+  const [translateY, setTranslateY] = useState<Animated.Value>(new Animated.Value(0));
+  const [lastScale, setLastScale] = useState<number>(1);
+  const [lastTranslateX, setLastTranslateX] = useState<number>(0);
+  const [lastTranslateY, setLastTranslateY] = useState<number>(0);
 
-  // Helper functions for product data
-  const formatPrice = (product) => {
+  // =====================================
+  // HELPER FUNCTIONS FOR PRODUCT DATA
+  // =====================================
+
+  const formatPrice = (product: EnhancedProduct | null): string => {
     if (!product) return '0,00 DH';
     
-    const price = parseFloat(product.price_ttc || product.price || 0);
+    const price = parseFloat(String(product.price_ttc || product.price || 0));
     return `${price.toFixed(2).replace('.', ',')} DH`;
   };
 
-  const getPriceHT = (product) => {
+  const getPriceHT = (product: EnhancedProduct | null): string => {
     if (!product) return '0,00 DH';
     
-    const priceHT = parseFloat(product.price || 0);
+    const priceHT = parseFloat(String(product.price || 0));
     return `${priceHT.toFixed(2).replace('.', ',')} DH`;
   };
 
-  const getTaxAmount = (product) => {
+  const getTaxAmount = (product: EnhancedProduct | null): string => {
     if (!product) return '0,00 DH';
     
-    const priceTTC = parseFloat(product.price_ttc || 0);
-    const priceHT = parseFloat(product.price || 0);
+    const priceTTC = parseFloat(String(product.price_ttc || 0));
+    const priceHT = parseFloat(String(product.price || 0));
     const taxAmount = priceTTC - priceHT;
     
     return `${taxAmount.toFixed(2).replace('.', ',')} DH`;
   };
 
-  const getBrand = (product) => {
-    return product?.array_options?.options_marque || null;
+  // Enhanced functions using both extended_options and array_options
+  const getBrand = (product: EnhancedProduct | null): string | null => {
+    if (!product) return null;
+    
+    // First try extended_options
+    if (product.extended_options?.brand_id) {
+      return BRAND_OPTIONS[product.extended_options.brand_id] || product.extended_options.brand_id;
+    }
+    
+    // Then try array_options
+    if (product.array_options?.options_marque) {
+      const brandKey = product.array_options.options_marque;
+      return BRAND_OPTIONS[brandKey] || brandKey;
+    }
+    
+    return null;
   };
 
-  const getFormattedWeight = (product) => {
+  const getHealthOption = (product: EnhancedProduct | null): string | null => {
+    if (!product?.extended_options?.health_option_id) return null;
+    return HEALTH_OPTIONS[product.extended_options.health_option_id] || product.extended_options.health_option_id;
+  };
+
+  const getAge = (product: EnhancedProduct | null): string | null => {
+    if (!product?.extended_options?.age_id) return null;
+    return AGE_OPTIONS[product.extended_options.age_id] || product.extended_options.age_id;
+  };
+
+  const getTaste = (product: EnhancedProduct | null): string | null => {
+    if (!product?.extended_options?.taste_id) return null;
+    return TASTE_OPTIONS[product.extended_options.taste_id] || product.extended_options.taste_id;
+  };
+
+  const getNutritionalOption = (product: EnhancedProduct | null): string | null => {
+    if (!product?.extended_options?.nutritional_option_id) return null;
+    return NUTRITIONAL_OPTIONS[product.extended_options.nutritional_option_id] || product.extended_options.nutritional_option_id;
+  };
+
+  const getGame = (product: EnhancedProduct | null): string | null => {
+    if (!product) return null;
+    
+    // Try extended_options first
+    if (product.extended_options?.game_id) {
+      return GAME_OPTIONS[product.extended_options.game_id] || product.extended_options.game_id;
+    }
+    
+    // Try array_options gamme field
+    if (product.array_options?.options_gamme) {
+      const gameKey = product.array_options.options_gamme;
+      return GAME_OPTIONS[gameKey] || `Gamme ${gameKey}`;
+    }
+    
+    return null;
+  };
+
+  const getCategories = (product: EnhancedProduct | null): string[] => {
+    if (!product) return [];
+    
+    const categories: string[] = [];
+    
+    // From extended_options
+    if (product.extended_options?.category_ids) {
+      const extendedCategories = product.extended_options.category_ids.map(id => 
+        CATEGORY_NAMES[id] || `Catégorie ${id}`
+      );
+      categories.push(...extendedCategories);
+    }
+    
+    // From array_options gamme
+    if (product.array_options?.options_gamme) {
+      const gammeId = parseInt(product.array_options.options_gamme);
+      if (CATEGORY_NAMES[gammeId]) {
+        categories.push(CATEGORY_NAMES[gammeId]);
+      }
+    }
+    
+    // From array_options trancheage (age ranges)
+    if (product.array_options?.options_trancheage) {
+      const trancheIds = product.array_options.options_trancheage.split(',').map(id => parseInt(id.trim()));
+      trancheIds.forEach(id => {
+        if (CATEGORY_NAMES[id]) {
+          categories.push(CATEGORY_NAMES[id]);
+        }
+      });
+    }
+    
+    return [...new Set(categories)]; // Remove duplicates
+  };
+
+  const getFunctionalities = (product: EnhancedProduct | null): string[] => {
+    if (!product?.array_options?.options_ftfonctionnalites) return [];
+    
+    const functionalityIds = product.array_options.options_ftfonctionnalites.split(',').map(id => id.trim());
+    return functionalityIds.map(id => FUNCTIONALITY_OPTIONS[id] || `Fonctionnalité ${id}`);
+  };
+
+  const getTags = (product: EnhancedProduct | null): string[] => {
+    if (!product?.array_options?.options_tags) return [];
+    
+    return product.array_options.options_tags
+      .split(',')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0);
+  };
+
+  const getFormattedWeight = (product: EnhancedProduct | null): string | null => {
     if (!product?.weight) return null;
-    const weight = parseFloat(product.weight);
-    if (weight >= 1) {
-      return `${weight} kg`;
+    const weight = parseFloat(String(product.weight));
+    if (weight >= 1000) {
+      return `${(weight / 1000).toFixed(1)} kg`;
     } else {
-      return `${(weight * 1000).toFixed(0)} g`;
+      return `${weight} g`;
     }
   };
 
-  const isProductInStock = (product) => {
+  const isProductInStock = (product: EnhancedProduct | null): boolean => {
     if (!product) return false;
-    return parseInt(product.stock_reel || 0) > 0;
+    return parseInt(String(product.stock_reel || 0)) > 0;
   };
 
-  const getStockStatusText = (product) => {
+  const getStockStatusText = (product: EnhancedProduct | null): string => {
     if (!product) return 'Indisponible';
     
-    const stock = parseInt(product.stock_reel || 0);
+    const stock = parseInt(String(product.stock_reel || 0));
     if (stock > 0) {
       return stock > 5 ? 'En stock' : `Stock limité (${stock})`;
     }
     return 'Rupture de stock';
   };
 
-  const getProductImageUrl = (product) => {
+  const getProductImageUrl = (product: EnhancedProduct | null): string | null => {
     if (!product) return null;
     
     // Try multiple image URL sources
     if (product.image_link) return product.image_link;
     if (product.photo_link) return product.photo_link;
     
-   
-    
     return null;
   };
 
-  // Function to load product data using ProductService.getProductById
-  const loadProductData = async (id) => {
+  // =====================================
+  // API FUNCTIONS
+  // =====================================
+
+  // Function to load product data using enhanced endpoint
+  const loadProductData = async (id: string | number): Promise<void> => {
     if (!id) {
       setError('ID produit manquant');
       setLoadingProduct(false);
@@ -138,28 +368,31 @@ export default function ProductDetails({ route, navigation }) {
       setLoadingProduct(true);
       setError(null);
       
-      console.log('Loading product with ID:', id);
+      console.log('Loading enhanced product with ID:', id);
       
-      // Load product using ProductService.getProductById with stock data
-      const productData = await ProductService.getProductById(id, {
+      // Use the enhanced endpoint to get all product data including extended_options
+      const productData = await ProductService.getEnhancedProduct(id, {
         includestockdata: 1,
         includesubproducts: false,
         includeparentid: false,
-        includetrans: false
+        includetrans: false,
+        includeextendedoptions: true
       });
       
-      console.log('Loaded product data:', productData);
+      console.log('Loaded enhanced product data:', productData);
+      console.log('Extended options:', productData.extended_options);
+      console.log('Array options:', productData.array_options);
       
       if (productData) {
-        setProduct(productData);
+        setProduct(productData as EnhancedProduct);
         
         // Load similar products if available
         if (productData.array_options?.options_similaire) {
           // Parse similar product IDs from string
-          const similarIds = productData.array_options.options_similaire
+          const similarIds = String(productData.array_options.options_similaire)
             .split(',')
             .map(id => id.trim())
-            .filter(id => id && id !== productData.id.toString());
+            .filter(id => id && id !== String(productData.id));
           
           if (similarIds.length > 0) {
             loadSimilarProducts(similarIds);
@@ -169,8 +402,8 @@ export default function ProductDetails({ route, navigation }) {
         setError('Produit non trouvé');
       }
       
-    } catch (error) {
-      console.error('Error loading product:', error);
+    } catch (error: any) {
+      console.error('Error loading enhanced product:', error);
       setError(error.message || 'Erreur lors du chargement du produit');
     } finally {
       setLoadingProduct(false);
@@ -178,7 +411,7 @@ export default function ProductDetails({ route, navigation }) {
   };
 
   // Function to load similar products
-  const loadSimilarProducts = async (similarIds) => {
+  const loadSimilarProducts = async (similarIds: string[]): Promise<void> => {
     if (!similarIds || similarIds.length === 0) return;
     
     try {
@@ -195,22 +428,28 @@ export default function ProductDetails({ route, navigation }) {
       console.log('Loaded similar products:', similarProductsResponse);
       
       // Handle both paginated and non-paginated responses
-      const similarProductsData = similarProductsResponse.data || similarProductsResponse;
+      const similarProductsData = Array.isArray(similarProductsResponse) 
+        ? similarProductsResponse 
+        : similarProductsResponse.data || [];
       
       // Filter out current product if present
       const filteredSimilar = similarProductsData.filter(
-        item => item && item.id.toString() !== productId.toString()
+        (item: Product) => item && String(item.id) !== String(productId)
       );
       
       setSimilarProducts(filteredSimilar);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading similar products:', error);
       // Don't show error for similar products, just log it
     } finally {
       setLoadingSimilar(false);
     }
   };
+
+  // =====================================
+  // EFFECTS
+  // =====================================
 
   // Load product data on component mount
   useEffect(() => {
@@ -225,7 +464,11 @@ export default function ProductDetails({ route, navigation }) {
 
   // Calculate derived values
   const isAvailable = product ? isProductInStock(product) : false;
-  const isInFavorites = product ? isFavorite(product.id.toString()) : false;
+  const isInFavorites = product ? isFavorite(String(product.id)) : false;
+
+  // =====================================
+  // EVENT HANDLERS
+  // =====================================
 
   // Setup pan responder for image zooming and panning
   const panResponder = useRef(
@@ -249,11 +492,11 @@ export default function ProductDetails({ route, navigation }) {
         }
       },
       onPanResponderRelease: () => {
-        setLastScale(scale._value);
-        setLastTranslateX(translateX._value);
-        setLastTranslateY(translateY._value);
+        setLastScale((scale as any)._value);
+        setLastTranslateX((translateX as any)._value);
+        setLastTranslateY((translateY as any)._value);
         
-        if (scale._value < 1.1) {
+        if ((scale as any)._value < 1.1) {
           Animated.parallel([
             Animated.spring(scale, { toValue: 1, useNativeDriver: true }),
             Animated.spring(translateX, { toValue: 0, useNativeDriver: true }),
@@ -269,7 +512,7 @@ export default function ProductDetails({ route, navigation }) {
   ).current;
 
   // Function to open image viewer
-  const openImageViewer = () => {
+  const openImageViewer = (): void => {
     scale.setValue(1);
     translateX.setValue(0);
     translateY.setValue(0);
@@ -280,13 +523,13 @@ export default function ProductDetails({ route, navigation }) {
   };
 
   // Function to close image viewer
-  const closeImageViewer = () => {
+  const closeImageViewer = (): void => {
     setImageViewVisible(false);
   };
 
   // Double tap handler for image
-  const lastTap = useRef(0);
-  const handleDoubleTap = () => {
+  const lastTap = useRef<number>(0);
+  const handleDoubleTap = (): void => {
     const now = Date.now();
     const DOUBLE_TAP_DELAY = 300;
     
@@ -311,17 +554,17 @@ export default function ProductDetails({ route, navigation }) {
   };
 
   // Function to add/remove from favorites using context
-  const handleAddToFavorites = () => {
+  const handleAddToFavorites = (): void => {
     if (!product) return;
     
-    toggleFavorite(product.id.toString());
+    toggleFavorite(String(product.id));
     
     const message = isInFavorites ? 'Retiré de la liste des favoris' : 'Ajouté à la liste des favoris';
     showToast(message);
   };
 
   // Helper function for showing toast
-  const showToast = (message) => {
+  const showToast = (message: string): void => {
     if (Platform.OS === 'android') {
       ToastAndroid.show(message, ToastAndroid.SHORT);
     } else {
@@ -330,7 +573,7 @@ export default function ProductDetails({ route, navigation }) {
   };
 
   // Function to add product to cart using context
-  const handleAddToCart = useCallback(async () => {
+  const handleAddToCart = useCallback(async (): Promise<void> => {
     if (!product || !isAvailable || loading) return;
     
     setLoading(true);
@@ -349,18 +592,21 @@ export default function ProductDetails({ route, navigation }) {
         throw new Error(result.error);
       }
       
-    } catch (error) {
+    } catch (error: any) {
       showToast('Erreur lors de l\'ajout au panier');
       setLoading(false);
     }
   }, [addToCart, product, isAvailable, loading, navigation]);
 
   // Function to get user data
-  const getUserData = async () => {
+  const getUserData = async (): Promise<void> => {
     try {
-      const userData = JSON.parse(await AsyncStorage.getItem('userData'));
-      if (userData && userData.id) {
-        setUserDetails(userData);
+      const userData = await AsyncStorage.getItem('userData');
+      if (userData) {
+        const parsedUserData = JSON.parse(userData);
+        if (parsedUserData && parsedUserData.id) {
+          setUserDetails(parsedUserData);
+        }
       }
     } catch (error) {
       console.error('Error getting user data:', error);
@@ -368,7 +614,7 @@ export default function ProductDetails({ route, navigation }) {
   };
 
   // Function to share product
-  const handleShareProduct = () => {
+  const handleShareProduct = (): void => {
     if (!product) return;
     
     const formattedPrice = formatPrice(product);
@@ -381,21 +627,25 @@ export default function ProductDetails({ route, navigation }) {
     .catch(error => {});
   };
 
-  // Function to navigate to similar product - FIXED VERSION
-  const handleSimilarProductPress = (similarProduct) => {
+  // Function to navigate to similar product
+  const handleSimilarProductPress = (similarProduct: Product): void => {
     // Use push instead of reset to maintain navigation stack
     navigation.push('ProductDetails', { productId: similarProduct.id });
   };
 
   // Function to retry loading product
-  const retryLoadProduct = () => {
+  const retryLoadProduct = (): void => {
     if (productId) {
       loadProductData(productId);
     }
   };
 
+  // =====================================
+  // RENDER FUNCTIONS
+  // =====================================
+
   // Render similar product item
-  const renderSimilarProduct = ({ item }) => {
+  const renderSimilarProduct = ({ item }: { item: Product }) => {
     const similarAvailable = isProductInStock(item);
     const imageUrl = getProductImageUrl(item);
 
@@ -440,6 +690,184 @@ export default function ProductDetails({ route, navigation }) {
       </TouchableOpacity>
     );
   };
+
+  
+
+  // Render enhanced badges section
+  const renderEnhancedBadges = () => {
+    if (!product) return null;
+
+    const brand = getBrand(product);
+    const healthOption = getHealthOption(product);
+    const age = getAge(product);
+    const taste = getTaste(product);
+    const nutritionalOption = getNutritionalOption(product);
+    const game = getGame(product);
+    const categories = getCategories(product);
+
+    return (
+      <View style={styles.badgeRow}>
+        {brand && (
+          <View style={[styles.brandBadge, { backgroundColor: theme.primary + '20' }]}>
+            <Ionicons name="business" size={14} color={theme.primary} style={styles.badgeIcon} />
+            <Text style={[styles.brandText, { color: theme.primary }]}>
+              {brand}
+            </Text>
+          </View>
+        )}
+
+        {categories.map((category, index) => (
+          <View key={index} style={[styles.categoryBadge, { backgroundColor: theme.primary + '20' }]}>
+            <Entypo name="tag" size={14} color={theme.primary} style={styles.badgeIcon} />
+            <Text style={[styles.categoryText, { color: theme.primary }]}>
+              {category}
+            </Text>
+          </View>
+        ))}
+
+        {healthOption && (
+          <View style={[styles.customBadge, { backgroundColor: '#4CAF5020' }]}>
+            <Ionicons name="medical" size={14} color="#4CAF50" style={styles.badgeIcon} />
+            <Text style={[styles.customBadgeText, { color: '#4CAF50' }]}>
+              Santé: {healthOption}
+            </Text>
+          </View>
+        )}
+
+        {age && (
+          <View style={[styles.customBadge, { backgroundColor: '#2196F320' }]}>
+            <Ionicons name="time" size={14} color="#2196F3" style={styles.badgeIcon} />
+            <Text style={[styles.customBadgeText, { color: '#2196F3' }]}>
+              Âge: {age}
+            </Text>
+          </View>
+        )}
+
+        {taste && (
+          <View style={[styles.customBadge, { backgroundColor: '#FF980020' }]}>
+            <Ionicons name="restaurant" size={14} color="#FF9800" style={styles.badgeIcon} />
+            <Text style={[styles.customBadgeText, { color: '#FF9800' }]}>
+              Goût: {taste}
+            </Text>
+          </View>
+        )}
+
+        {nutritionalOption && (
+          <View style={[styles.customBadge, { backgroundColor: '#9C27B020' }]}>
+            <Ionicons name="leaf" size={14} color="#9C27B0" style={styles.badgeIcon} />
+            <Text style={[styles.customBadgeText, { color: '#9C27B0' }]}>
+              {nutritionalOption}
+            </Text>
+          </View>
+        )}
+
+        {game && (
+          <View style={[styles.customBadge, { backgroundColor: '#00BCD420' }]}>
+            <Ionicons name="star" size={14} color="#00BCD4" style={styles.badgeIcon} />
+            <Text style={[styles.customBadgeText, { color: '#00BCD4' }]}>
+              Gamme: {game}
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  // Enhanced specifications render
+  const renderEnhancedSpecifications = () => {
+    if (!product) return null;
+
+    const brand = getBrand(product);
+    const healthOption = getHealthOption(product);
+    const age = getAge(product);
+    const taste = getTaste(product);
+    const nutritionalOption = getNutritionalOption(product);
+    const game = getGame(product);
+
+    return (
+      <View style={styles.specificationsContainer}>
+        <Text style={[styles.sectionTitle, { color: theme.textColor }]}>
+          Spécifications détaillées
+        </Text>
+        
+        <View style={[styles.specGrid, { backgroundColor: theme.cardBackground }]}>
+          {product.barcode && (
+            <View style={styles.specItem}>
+              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Code-barres:</Text>
+              <Text style={[styles.specValue, { color: theme.textColor }]}>{product.barcode}</Text>
+            </View>
+          )}
+          
+          {product.weight && (
+            <View style={styles.specItem}>
+              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Poids:</Text>
+              <Text style={[styles.specValue, { color: theme.textColor }]}>{getFormattedWeight(product)}</Text>
+            </View>
+          )}
+
+          {brand && (
+            <View style={styles.specItem}>
+              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Marque:</Text>
+              <Text style={[styles.specValue, { color: theme.textColor }]}>{brand}</Text>
+            </View>
+          )}
+
+          {age && (
+            <View style={styles.specItem}>
+              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Tranche d'âge:</Text>
+              <Text style={[styles.specValue, { color: theme.textColor }]}>{age}</Text>
+            </View>
+          )}
+
+          {taste && (
+            <View style={styles.specItem}>
+              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Goût:</Text>
+              <Text style={[styles.specValue, { color: theme.textColor }]}>{taste}</Text>
+            </View>
+          )}
+
+          {healthOption && (
+            <View style={styles.specItem}>
+              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Option santé:</Text>
+              <Text style={[styles.specValue, { color: theme.textColor }]}>{healthOption}</Text>
+            </View>
+          )}
+
+          {nutritionalOption && (
+            <View style={styles.specItem}>
+              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Option nutritionnelle:</Text>
+              <Text style={[styles.specValue, { color: theme.textColor }]}>{nutritionalOption}</Text>
+            </View>
+          )}
+
+          {game && (
+            <View style={styles.specItem}>
+              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Gamme produit:</Text>
+              <Text style={[styles.specValue, { color: theme.textColor }]}>{game}</Text>
+            </View>
+          )}
+          
+          {product.ref && (
+            <View style={styles.specItem}>
+              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Référence:</Text>
+              <Text style={[styles.specValue, { color: theme.textColor }]}>{product.ref}</Text>
+            </View>
+          )}
+
+          {product.stock_reel !== undefined && (
+            <View style={styles.specItem}>
+              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Stock:</Text>
+              <Text style={[styles.specValue, { color: theme.textColor }]}>{product.stock_reel} unités</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  };
+
+  // =====================================
+  // MAIN RENDER
+  // =====================================
 
   // Show loading indicator while product is being loaded
   if (loadingProduct) {
@@ -539,8 +967,6 @@ export default function ProductDetails({ route, navigation }) {
           <Text style={styles.tapText}>Tap pour agrandir</Text>
         </View>
         
-        
-        
         {/* Back Button */}
         <TouchableOpacity 
           style={[
@@ -594,40 +1020,8 @@ export default function ProductDetails({ route, navigation }) {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.detailsContainer}>
-          {/* Brand and Category */}
-          <View style={styles.badgeRow}>
-            {getBrand(product) && (
-              <View style={[styles.brandBadge, { backgroundColor: theme.primary + '20' }]}>
-                <Text style={[styles.brandText, { color: theme.primary }]}>
-                  {getBrand(product)}
-                </Text>
-              </View>
-            )}
-            
-            <View style={[styles.categoryBadge, { backgroundColor: theme.primary + '20' }]}>
-              <Entypo name="shopping-cart" size={16} color={theme.primary} style={styles.categoryIcon} />
-              <Text style={[styles.categoryText, { color: theme.primary }]}>
-                Produit
-              </Text>
-            </View>
-            
-            {/* Additional Custom Fields */}
-            {product.array_options?.options_option_sante && (
-              <View style={[styles.customBadge, { backgroundColor: '#4CAF5020' }]}>
-                <Text style={[styles.customBadgeText, { color: '#4CAF50' }]}>
-                  Santé: {product.array_options.options_option_sante}
-                </Text>
-              </View>
-            )}
-            
-            {product.array_options?.options_gout && (
-              <View style={[styles.customBadge, { backgroundColor: '#FF980020' }]}>
-                <Text style={[styles.customBadgeText, { color: '#FF9800' }]}>
-                  Goût: {product.array_options.options_gout}
-                </Text>
-              </View>
-            )}
-          </View>
+          {/* Enhanced Badges with all product data */}
+          {renderEnhancedBadges()}
 
           {/* Product Name and Status */}
           <View style={styles.nameContainer}>
@@ -666,7 +1060,7 @@ export default function ProductDetails({ route, navigation }) {
                 Prix HT: {getPriceHT(product)}
               </Text>
               <Text style={[styles.taxInfo, { color: theme.secondaryTextColor }]}>
-                TVA ({product.tva_tx}%): {getTaxAmount(product)}
+                TVA ({product.tva_tx || 20}%): {getTaxAmount(product)}
               </Text>
             </View>
             
@@ -679,49 +1073,8 @@ export default function ProductDetails({ route, navigation }) {
             )}
           </View>
 
-          {/* Product Specifications */}
-          <View style={styles.specificationsContainer}>
-            <Text style={[styles.sectionTitle, { color: theme.textColor }]}>
-              Spécifications
-            </Text>
-            
-            <View style={styles.specGrid}>
-              {product.barcode && (
-                <View style={styles.specItem}>
-                  <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Code-barres:</Text>
-                  <Text style={[styles.specValue, { color: theme.textColor }]}>{product.barcode}</Text>
-                </View>
-              )}
-              
-              {product.weight && (
-                <View style={styles.specItem}>
-                  <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Poids:</Text>
-                  <Text style={[styles.specValue, { color: theme.textColor }]}>{getFormattedWeight(product)}</Text>
-                </View>
-              )}
-              
-              {product.array_options?.options_ages && (
-                <View style={styles.specItem}>
-                  <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Âge:</Text>
-                  <Text style={[styles.specValue, { color: theme.textColor }]}>{product.array_options.options_ages}</Text>
-                </View>
-              )}
-              
-              {product.array_options?.options_option_nutritionnel && (
-                <View style={styles.specItem}>
-                  <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Option nutritionnelle:</Text>
-                  <Text style={[styles.specValue, { color: theme.textColor }]}>{product.array_options.options_option_nutritionnel}</Text>
-                </View>
-              )}
-              
-              {product.ref && (
-                <View style={styles.specItem}>
-                  <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Référence:</Text>
-                  <Text style={[styles.specValue, { color: theme.textColor }]}>{product.ref}</Text>
-                </View>
-              )}
-            </View>
-          </View>
+          {/* Enhanced Product Specifications */}
+          {renderEnhancedSpecifications()}
 
           {/* Description */}
           <View style={styles.descriptionContainer}>
@@ -764,7 +1117,7 @@ export default function ProductDetails({ route, navigation }) {
                 <FlatList
                   data={similarProducts}
                   renderItem={renderSimilarProduct}
-                  keyExtractor={(item) => item.id.toString()}
+                  keyExtractor={(item) => String(item.id)}
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.similarProductsList}
@@ -868,6 +1221,10 @@ export default function ProductDetails({ route, navigation }) {
   );
 }
 
+// =====================================
+// ENHANCED STYLES
+// =====================================
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -947,7 +1304,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     zIndex: 10,
-    backgroundColor: 'rgba(0,0,0,0.3)', // Semi-transparent background
+    backgroundColor: 'rgba(0,0,0,0.3)',
   },
   backButton: {
     left: 15,
@@ -972,6 +1329,8 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   brandBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -991,14 +1350,13 @@ const styles = StyleSheet.create({
     marginRight: 8,
     marginBottom: 8,
   },
-  categoryIcon: {
-    marginRight: 6,
-  },
   categoryText: {
     fontSize: 13,
     fontWeight: '500',
   },
   customBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -1008,6 +1366,9 @@ const styles = StyleSheet.create({
   customBadgeText: {
     fontSize: 12,
     fontWeight: '500',
+  },
+  badgeIcon: {
+    marginRight: 6,
   },
   nameContainer: {
     marginVertical: 8,
@@ -1068,25 +1429,32 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   specGrid: {
-    backgroundColor: 'rgba(0,0,0,0.02)',
     borderRadius: 12,
-    padding: 12,
+    padding: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   specItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    paddingVertical: 8,
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
   },
   specLabel: {
     fontSize: 14,
     flex: 1,
+    fontWeight: '500',
   },
   specValue: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
     flex: 1,
     textAlign: 'right',
   },
@@ -1095,7 +1463,7 @@ const styles = StyleSheet.create({
   },
   description: {
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   showMoreButton: {
     alignSelf: 'center',

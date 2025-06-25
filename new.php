@@ -2370,60 +2370,7 @@ $product_static->image_link=$obj->photo_link;
     }
 
 
-    /**
-     * Get product by ID with enhanced data structure
-     *
-     * @param  int    $id                   ID of product
-     * @param  int    $includestockdata     Load also information about stock (slower)
-     * @param  bool   $includesubproducts   Load information about subproducts
-     * @param  bool   $includeparentid      Load also ID of parent product (if product is a variant of a parent product)
-     * @param  bool   $includetrans         Load also the translations of product label and description
-     * @return array                        Product object with enhanced data
-     *
-     * @url GET enhanced/{id}
-     */
-    public function getEnhancedProduct($id, $includestockdata = 0, $includesubproducts = false, $includeparentid = false, $includetrans = false)
-    {
-        if (!DolibarrApiAccess::$user->rights->produit->lire) {
-            throw new RestException(403);
-        }
 
-        if (empty($id)) {
-            throw new RestException(400, 'Product ID is required');
-        }
-
-        // Get dynamic base URL for images
-        $base_url = $this->getImageBaseUrl();
-
-        // Get product using existing _fetch method
-        $product = $this->_fetch($id, '', '', '', $includestockdata, $includesubproducts, $includeparentid, false, $includetrans);
-
-        // Add enhanced image link if not already present
-        if (empty($product->image_link) && !empty($product->barcode)) {
-            $sql = "SELECT CONCAT('".$base_url."/documents/',ecm.filepath,'/',ecm.filename) as photo_link 
-                    FROM ".MAIN_DB_PREFIX."ecm_files ecm, ".MAIN_DB_PREFIX."product pr 
-                    WHERE pr.barcode = '".$this->db->escape($product->barcode)."'
-                    AND ecm.src_object_type='product' and ecm.src_object_id=pr.rowid LIMIT 1";
-            
-            $result = $this->db->query($sql);
-            if ($result) {
-                $obj = $this->db->fetch_object($result);
-                if ($obj && $obj->photo_link) {
-                    $product->image_link = $obj->photo_link;
-                }
-            }
-        }
-
-        // Add creation and modification dates in readable format
-        if (!empty($product->date_creation)) {
-            $product->date_creation_formatted = date('Y-m-d H:i:s', $product->date_creation);
-        }
-        if (!empty($product->date_modification)) {
-            $product->date_modification_formatted = date('Y-m-d H:i:s', $product->date_modification);
-        }
-
-        return $product;
-    }
 
     /**
      * Get multiple products by array of IDs with enhanced data structure
@@ -3751,6 +3698,102 @@ public function getFilteredProducts($sortfield = "t.ref", $sortorder = 'ASC', $l
 }
 
 
+/**
+ * Get product by ID with enhanced data structure including health options, games, and ages IDs
+ *
+ * @param int $id ID of product
+ * @param int $includestockdata Load also information about stock (slower)
+ * @param bool $includesubproducts Load information about subproducts
+ * @param bool $includeparentid Load also ID of parent product (if product is a variant of a parent product)
+ * @param bool $includetrans Load also the translations of product label and description
+ * @param bool $includeextendedoptions Load health options, games, ages, and other extended data IDs
+ * @return array Product object with enhanced data
+ *
+ * @url GET enhanced/{id}
+ */
+public function getEnhancedProduct($id, $includestockdata = 0, $includesubproducts = false, $includeparentid = false, $includetrans = false, $includeextendedoptions = true)
+{
+    if (!DolibarrApiAccess::$user->rights->produit->lire) {
+        throw new RestException(403);
+    }
+    if (empty($id)) {
+        throw new RestException(400, 'Product ID is required');
+    }
+
+    // Get dynamic base URL for images
+    $base_url = $this->getImageBaseUrl();
+
+    // Get product using existing _fetch method
+    $product = $this->_fetch($id, '', '', '', $includestockdata, $includesubproducts, $includeparentid, false, $includetrans);
+
+    // Add enhanced image link if not already present
+    if (empty($product->image_link) && !empty($product->barcode)) {
+        $sql = "SELECT CONCAT('".$base_url."/documents/',ecm.filepath,'/',ecm.filename) as photo_link
+                FROM ".MAIN_DB_PREFIX."ecm_files ecm, ".MAIN_DB_PREFIX."product pr
+                WHERE pr.barcode = '".$this->db->escape($product->barcode)."'
+                AND ecm.src_object_type='product' and ecm.src_object_id=pr.rowid LIMIT 1";
+        $result = $this->db->query($sql);
+        if ($result) {
+            $obj = $this->db->fetch_object($result);
+            if ($obj && $obj->photo_link) {
+                $product->image_link = $obj->photo_link;
+            }
+        }
+    }
+
+    // Add creation and modification dates in readable format
+    if (!empty($product->date_creation)) {
+        $product->date_creation_formatted = date('Y-m-d H:i:s', $product->date_creation);
+    }
+    if (!empty($product->date_modification)) {
+        $product->date_modification_formatted = date('Y-m-d H:i:s', $product->date_modification);
+    }
+
+    // Add extended options IDs if requested (ADDITION to existing data, not replacement)
+    if ($includeextendedoptions) {
+        // Initialize extended_options object if it doesn't exist
+        if (!isset($product->extended_options)) {
+            $product->extended_options = new stdClass();
+        }
+
+        // Get health option ID (santé) - from options_gamme
+        if (!empty($product->array_options) && isset($product->array_options->options_gamme)) {
+            $product->extended_options->health_option_id = $product->array_options->options_gamme;
+        }
+
+        // Get game/product line ID - from options_gamme  
+        if (!empty($product->array_options) && isset($product->array_options->options_gamme)) {
+            $product->extended_options->game_id = $product->array_options->options_gamme;
+        }
+
+        // Get age/life stage ID - from options_ftfonctionnalites
+        if (!empty($product->array_options) && isset($product->array_options->options_ftfonctionnalites)) {
+            $product->extended_options->age_id = $product->array_options->options_ftfonctionnalites;
+        }
+
+        // Get taste/flavor ID - from options_sousgamme
+        if (!empty($product->array_options) && isset($product->array_options->options_sousgamme)) {
+            $product->extended_options->taste_id = $product->array_options->options_sousgamme;
+        }
+
+        // Get nutritional option ID - from options_trancheage
+        if (!empty($product->array_options) && isset($product->array_options->options_trancheage)) {
+            $product->extended_options->nutritional_option_id = $product->array_options->options_trancheage;
+        }
+
+        // Get brand from extrafields - from options_marque
+        if (!empty($product->array_options) && isset($product->array_options->options_marque)) {
+            $product->extended_options->brand_id = $product->array_options->options_marque;
+        }
+
+        // Add category IDs (already available but making them easily accessible)
+        if (!empty($product->categories_ids)) {
+            $product->extended_options->category_ids = $product->categories_ids;
+        }
+    }
+
+    return $product;
+}
     
 
 
