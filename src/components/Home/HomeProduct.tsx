@@ -277,7 +277,7 @@ export default function HomeProduct({ navigation }: HomeProductProps) {
             console.log(`🔍 Products exist in general, but none for category ${apiCategoryId}`);
             
             // Try with a different category to test if the issue is category-specific
-            const alternativeCategories = [2, 3, 21, 20, 31, 184]; // Your actual category IDs
+            const alternativeCategories = [2, 3, 21, 20,184,31]; // Your actual category IDs
             for (const altCat of alternativeCategories) {
               if (altCat !== apiCategoryId) {
                 try {
@@ -287,7 +287,7 @@ export default function HomeProduct({ navigation }: HomeProductProps) {
                     pagination_data: true,
                     includestockdata: 0,
                     category: altCat,
-                    sortfield: 'datec',
+                    sortfield: '',
                     sortorder: 'DESC'
                   };
                   
