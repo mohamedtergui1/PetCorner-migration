@@ -228,7 +228,7 @@ export default function HomeProduct({ navigation }: HomeProductProps) {
         pagination_data: true,
         includestockdata: 0,
         category: apiCategoryId, // Use the mapped API category ID
-        sortfield: 'datec',
+        sortfield: 'ref',
         sortorder: 'DESC'
       };
 
@@ -265,7 +265,7 @@ export default function HomeProduct({ navigation }: HomeProductProps) {
             page: 0,
             pagination_data: true,
             includestockdata: 0,
-            sortfield: 'datec',
+            sortfield: 'ref',
             sortorder: 'DESC'
           };
           
@@ -287,7 +287,7 @@ export default function HomeProduct({ navigation }: HomeProductProps) {
                     pagination_data: true,
                     includestockdata: 0,
                     category: altCat,
-                    sortfield: '',
+                    sortfield: 'ref',
                     sortorder: 'DESC'
                   };
                   

@@ -146,7 +146,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
         return 'label';
       case 'date':
       default:
-        return 'datec';
+        return 'ref';
     }
   };
 
