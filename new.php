@@ -3185,8 +3185,70 @@ private function getImageBaseUrl()
     return 'https://ipos.ma/fide';
 }
 
+
+/**
+ * Add correct pricing information to product object
+ * Fetches the first price level (Prix de vente 1) directly from database
+ * No calculation - gets the exact prices as stored in Dolibarr
+ *
+ * @param Product $product_static Product object to modify
+ * @return void
+ */
+private function addCorrectPricing(&$product_static)
+{
+    global $conf;
+    
+    // Get the most recent price for level 1 (Prix de vente 1 - Prix public)
+    $sql = "SELECT price, price_ttc, tva_tx, price_base_type 
+            FROM " . MAIN_DB_PREFIX . "product_price 
+            WHERE fk_product = " . (int)$product_static->id . " 
+            AND price_level = 1 
+            ORDER BY date_price DESC, rowid DESC 
+            LIMIT 1";
+    
+    $result = $this->db->query($sql);
+    
+    if ($result && $this->db->num_rows($result) > 0) {
+        $price_obj = $this->db->fetch_object($result);
+        
+        // Use the exact prices from database - no calculation
+        $product_static->price_ttc_api = round((float)$price_obj->price_ttc, 2);
+        $product_static->price_ht_api = round((float)$price_obj->price, 2);
+        $product_static->tva_rate_api = (float)$price_obj->tva_tx;
+        $product_static->price_base_type_api = $price_obj->price_base_type;
+        
+    } else {
+        // Fallback: if no price level 1 found, try to get the default price
+        $sql = "SELECT price, price_ttc, tva_tx, price_base_type 
+                FROM " . MAIN_DB_PREFIX . "product_price 
+                WHERE fk_product = " . (int)$product_static->id . " 
+                ORDER BY date_price DESC, rowid DESC 
+                LIMIT 1";
+        
+        $result = $this->db->query($sql);
+        
+        if ($result && $this->db->num_rows($result) > 0) {
+            $price_obj = $this->db->fetch_object($result);
+            
+            $product_static->price_ttc_api = round((float)$price_obj->price_ttc, 2);
+            $product_static->price_ht_api = round((float)$price_obj->price, 2);
+            $product_static->tva_rate_api = (float)$price_obj->tva_tx;
+            $product_static->price_base_type_api = $price_obj->price_base_type;
+        } else {
+            // Final fallback: use product's default prices
+            $product_static->price_ttc_api = round((float)$product_static->price_ttc, 2);
+            $product_static->price_ht_api = round((float)$product_static->price, 2);
+            $product_static->tva_rate_api = (float)$product_static->tva_tx;
+            $product_static->price_base_type_api = $product_static->price_base_type;
+        }
+    }
+}
+
+
+
 /**
  * Enhanced product search with multi-category filtering and search capabilities
+ * Updated to support all Dolibarr extrafield filters
  *
  * @param  string $sortfield              Sort field
  * @param  string $sortorder              Sort order
@@ -3196,9 +3258,11 @@ private function getImageBaseUrl()
  * @param  string $categories           Comma-separated list of category IDs to filter by (e.g., "1,2,3")
  * @param  string $search_query         Search query to filter by product name/label
  * @param  string $brand_filter         Filter by brand (marque extrafield)
- * @param  string $game_filter             Filter by game category
- * @param  string $taste_filter         Filter by taste/flavor (goût)
- * @param  string $ages_filter          Filter by ages/functionalities (ftfonctionnalites)
+ * @param  string $game_filter             Filter by game category (gamme extrafield)
+ * @param  string $taste_filter         Filter by taste/flavor (gout extrafield)
+ * @param  string $ages_filter          Filter by ages (ages extrafield)
+ * @param  string $health_option_filter Filter by health options (option_sante extrafield)
+ * @param  string $nutritional_option_filter Filter by nutritional options (option_nutritionnel extrafield)
  * @param  bool   $sale_filter          Filter by sale criteria (true = only products for sale, false = all products)
  * @param  string $sqlfilters             Multi-criteria filters using Dolibarr syntax
  * @param  bool   $ids_only               Return only IDs of product instead of all properties
@@ -3207,7 +3271,7 @@ private function getImageBaseUrl()
  * @param  int    $includestockdata        Load also information about stock (slower)
  * @return array                        Array of product objects
  */
-public function getProductsWithFilters($sortfield = "t.ref", $sortorder = 'ASC', $limit = 100, $page = 0, $mode = 0, $categories = '', $search_query = '', $brand_filter = '', $game_filter = '', $taste_filter = '', $ages_filter = '', $sale_filter = true, $sqlfilters = '', $ids_only = false, $variant_filter = 0, $pagination_data = false, $includestockdata = 0)
+public function getProductsWithFilters($sortfield = "t.ref", $sortorder = 'ASC', $limit = 100, $page = 0, $mode = 0, $categories = '', $search_query = '', $brand_filter = '', $game_filter = '', $taste_filter = '', $ages_filter = '', $health_option_filter = '', $nutritional_option_filter = '', $sale_filter = true, $sqlfilters = '', $ids_only = false, $variant_filter = 0, $pagination_data = false, $includestockdata = 0)
 {
     global $db, $conf;
 
@@ -3283,32 +3347,40 @@ public function getProductsWithFilters($sortfield = "t.ref", $sortorder = 'ASC',
         $sql .= " AND (t.label LIKE '%".$search_query."%' OR t.ref LIKE '%".$search_query."%' OR t.description LIKE '%".$search_query."%')";
     }
 
-    // Apply brand filter (brand is stored in extrafields as 'marque' - position 100)
+    // Apply brand filter (brand is stored in extrafields as 'marque' - code: marque)
     if (!empty($brand_filter)) {
         $brand_filter = $this->db->escape($brand_filter);
-        // Using 'marque' field code from extrafields where the actual brand data is stored
         $sql .= " AND ef.marque LIKE '%".$brand_filter."%'";
     }
 
-    // Apply game filter (assuming game category is stored in extrafields or custom field)
+    // Apply game filter (Option Santé - code: gamme)
     if (!empty($game_filter)) {
         $game_filter = $this->db->escape($game_filter);
-        // Adjust this based on your actual game field name in extrafields
-        $sql .= " AND (ef.game_category LIKE '%".$game_filter."%' OR ef.game LIKE '%".$game_filter."%')";
+        $sql .= " AND ef.gamme LIKE '%".$game_filter."%'";
     }
 
-    // Apply taste/flavor filter (goût)
+    // Apply taste/flavor filter (Goût - code: sousgamme)
     if (!empty($taste_filter)) {
         $taste_filter = $this->db->escape($taste_filter);
-        // Adjust this based on your actual taste field name in extrafields
-        $sql .= " AND (ef.taste LIKE '%".$taste_filter."%' OR ef.flavor LIKE '%".$taste_filter."%' OR ef.gout LIKE '%".$taste_filter."%')";
+        $sql .= " AND ef.sousgamme LIKE '%".$taste_filter."%'";
     }
 
-    // Apply ages/functionalities filter (ftfonctionnalites)
+    // Apply ages filter (Ages - code: ftfonctionnalites)
     if (!empty($ages_filter)) {
         $ages_filter = $this->db->escape($ages_filter);
-        // Filter by functionalities/ages - can search for specific values in checkbox field
         $sql .= " AND ef.ftfonctionnalites LIKE '%".$ages_filter."%'";
+    }
+
+    // Apply health options filter (Option Santé - code: gamme)
+    if (!empty($health_option_filter)) {
+        $health_option_filter = $this->db->escape($health_option_filter);
+        $sql .= " AND ef.gamme LIKE '%".$health_option_filter."%'";
+    }
+
+    // Apply nutritional options filter (Option Nutritionnel - code: trancheage)
+    if (!empty($nutritional_option_filter)) {
+        $nutritional_option_filter = $this->db->escape($nutritional_option_filter);
+        $sql .= " AND ef.trancheage LIKE '%".$nutritional_option_filter."%'";
     }
 
     // Apply additional multi-criteria filters using Dolibarr's system
@@ -3406,24 +3478,29 @@ public function getProductsWithFilters($sortfield = "t.ref", $sortorder = 'ASC',
 
 /**
  * Search products with simplified parameters (API endpoint version)
+ * Updated to support all Dolibarr extrafield filters
  *
  * @param  string $search_name             Search by product name/label
  * @param  string $categories           Comma-separated list of category IDs
  * @param  string $brand                 Filter by brand (marque)
- * @param  string $game                 Filter by game category
- * @param  string $taste                 Filter by taste/flavor (goût)
- * @param  string $ages                  Filter by ages/functionalities (ftfonctionnalites)
+ * @param  string $game                 Filter by game category (gamme)
+ * @param  string $taste                 Filter by taste/flavor (gout)
+ * @param  string $ages                  Filter by ages (ages)
+ * @param  string $health_option         Filter by health options (option_sante)
+ * @param  string $nutritional_option    Filter by nutritional options (option_nutritionnel)
  * @param  bool   $sale                  Filter by sale criteria (true = only products for sale)
  * @param  string $sqlfilters            Multi-criteria filters using Dolibarr syntax
  * @param  int    $limit                  Limit for list (default 50)
  * @param  int    $page                   Page number (default 0)
  * @param  string $sortfield              Sort field (default "t.label")
  * @param  string $sortorder              Sort order (default "ASC")
+ * @param  bool   $pagination_data        Include pagination data
+ * @param  int    $includestockdata       Include stock data
  * @return array                        Array of product objects with pagination
  *
  * @url GET search_filtered
  */
-public function searchFilteredProducts($search_name = '', $categories = '', $brand = '', $game = '', $taste = '', $ages = '', $sale = true, $sqlfilters = '', $limit = 50, $page = 0, $sortfield = "t.label", $sortorder = 'ASC')
+public function searchFilteredProducts($search_name = '', $categories = '', $brand = '', $game = '', $taste = '', $ages = '', $health_option = '', $nutritional_option = '', $sale = true, $sqlfilters = '', $limit = 50, $page = 0, $sortfield = "t.label", $sortorder = 'ASC', $pagination_data = true, $includestockdata = 0)
 {
     return $this->getProductsWithFilters(
         $sortfield,
@@ -3436,19 +3513,21 @@ public function searchFilteredProducts($search_name = '', $categories = '', $bra
         $brand,
         $game,
         $taste,
-        $ages, // ages_filter
+        $ages,
+        $health_option,
+        $nutritional_option,
         $sale, // sale_filter
         $sqlfilters, // sqlfilters
         false, // ids_only
         0, // variant_filter
-        true, // pagination_data
-        0 // includestockdata
+        $pagination_data, // pagination_data
+        $includestockdata // includestockdata
     );
 }
 
 /**
  * Get products with comprehensive filtering options
- * Enhanced version of your existing filtering methods
+ * Enhanced version with complete Dolibarr extrafield support
  *
  * @param  string $sortfield              Sort field
  * @param  string $sortorder              Sort order
@@ -3458,9 +3537,13 @@ public function searchFilteredProducts($search_name = '', $categories = '', $bra
  * @param  int    $category               Product category ID
  * @param  string $brand                  Brand name filter (marque)
  * @param  string $search                 Search query for product name/label
+ * @param  string $game                   Game/product line filter (gamme)
+ * @param  string $taste                  Taste/flavor filter (gout)
+ * @param  string $ages                   Ages filter (ages)
+ * @param  string $health_option          Health option filter (option_sante)
+ * @param  string $nutritional_option     Nutritional option filter (option_nutritionnel)
  * @param  float  $price_min              Minimum price TTC
  * @param  float  $price_max              Maximum price TTC
- * @param  string $ages                   Filter by ages/functionalities (ftfonctionnalites)
  * @param  bool   $sale_filter            Filter by sale criteria (true = only products for sale)
  * @param  string $sqlfilters             Multi-criteria filters using Dolibarr syntax
  * @param  bool   $pagination_data        Include pagination data
@@ -3469,7 +3552,7 @@ public function searchFilteredProducts($search_name = '', $categories = '', $bra
  *
  * @url GET filtered
  */
-public function getFilteredProducts($sortfield = "t.ref", $sortorder = 'ASC', $limit = 100, $page = 0, $animal_category = 0, $category = 0, $brand = '', $search = '', $price_min = 0, $price_max = 0, $ages = '', $sale_filter = true, $sqlfilters = '', $pagination_data = true, $includestockdata = 0)
+public function getFilteredProducts($sortfield = "t.ref", $sortorder = 'ASC', $limit = 100, $page = 0, $animal_category = 0, $category = 0, $brand = '', $search = '', $game = '', $taste = '', $ages = '', $health_option = '', $nutritional_option = '', $price_min = 0, $price_max = 0, $sale_filter = true, $sqlfilters = '', $pagination_data = true, $includestockdata = 0)
 {
     global $db, $conf;
 
@@ -3527,7 +3610,7 @@ public function getFilteredProducts($sortfield = "t.ref", $sortorder = 'ASC', $l
         }
     }
 
-    // Filter by brand (brand is stored as 'marque' in extrafields - position 100)
+    // Filter by brand (brand is stored as 'marque' in extrafields - code: marque)
     if (!empty($brand)) {
         $brand = $this->db->escape($brand);
         $sql .= " AND ef.marque LIKE '%".$brand."%'";
@@ -3539,19 +3622,43 @@ public function getFilteredProducts($sortfield = "t.ref", $sortorder = 'ASC', $l
         $sql .= " AND (t.label LIKE '%".$search."%' OR t.ref LIKE '%".$search."%' OR t.description LIKE '%".$search."%')";
     }
 
+    // Filter by game/product line (Option Santé - code: gamme)
+    if (!empty($game)) {
+        $game = $this->db->escape($game);
+        $sql .= " AND ef.gamme LIKE '%".$game."%'";
+    }
+
+    // Filter by taste/flavor (Goût - code: sousgamme)
+    if (!empty($taste)) {
+        $taste = $this->db->escape($taste);
+        $sql .= " AND ef.sousgamme LIKE '%".$taste."%'";
+    }
+
+    // Filter by ages (Ages - code: ftfonctionnalites)
+    if (!empty($ages)) {
+        $ages = $this->db->escape($ages);
+        $sql .= " AND ef.ftfonctionnalites LIKE '%".$ages."%'";
+    }
+
+    // Filter by health options (Option Santé - code: gamme)
+    // Note: This seems to overlap with game filter - you may need to clarify the field mapping
+    if (!empty($health_option)) {
+        $health_option = $this->db->escape($health_option);
+        $sql .= " AND ef.gamme LIKE '%".$health_option."%'";
+    }
+
+    // Filter by nutritional options (Option Nutritionnel - code: trancheage)
+    if (!empty($nutritional_option)) {
+        $nutritional_option = $this->db->escape($nutritional_option);
+        $sql .= " AND ef.trancheage LIKE '%".$nutritional_option."%'";
+    }
+
     // Filter by price range TTC (using price_ttc field instead of price)
     if ($price_min > 0) {
         $sql .= " AND t.price_ttc >= ".((float) $price_min);
     }
     if ($price_max > 0) {
         $sql .= " AND t.price_ttc <= ".((float) $price_max);
-    }
-
-    // Apply ages/functionalities filter (ftfonctionnalites)
-    if (!empty($ages)) {
-        $ages = $this->db->escape($ages);
-        // Filter by functionalities/ages - can search for specific values in checkbox field
-        $sql .= " AND ef.ftfonctionnalites LIKE '%".$ages."%'";
     }
 
     // Apply additional multi-criteria filters using Dolibarr's system
@@ -3643,63 +3750,6 @@ public function getFilteredProducts($sortfield = "t.ref", $sortorder = 'ASC', $l
     return $obj_ret;
 }
 
-/**
- * Add correct pricing information to product object
- * Fetches the first price level (Prix de vente 1) directly from database
- * No calculation - gets the exact prices as stored in Dolibarr
- *
- * @param Product $product_static Product object to modify
- * @return void
- */
-private function addCorrectPricing(&$product_static)
-{
-    global $conf;
-    
-    // Get the most recent price for level 1 (Prix de vente 1 - Prix public)
-    $sql = "SELECT price, price_ttc, tva_tx, price_base_type 
-            FROM " . MAIN_DB_PREFIX . "product_price 
-            WHERE fk_product = " . (int)$product_static->id . " 
-            AND price_level = 1 
-            ORDER BY date_price DESC, rowid DESC 
-            LIMIT 1";
-    
-    $result = $this->db->query($sql);
-    
-    if ($result && $this->db->num_rows($result) > 0) {
-        $price_obj = $this->db->fetch_object($result);
-        
-        // Use the exact prices from database - no calculation
-        $product_static->price_ttc_api = round((float)$price_obj->price_ttc, 2);
-        $product_static->price_ht_api = round((float)$price_obj->price, 2);
-        $product_static->tva_rate_api = (float)$price_obj->tva_tx;
-        $product_static->price_base_type_api = $price_obj->price_base_type;
-        
-    } else {
-        // Fallback: if no price level 1 found, try to get the default price
-        $sql = "SELECT price, price_ttc, tva_tx, price_base_type 
-                FROM " . MAIN_DB_PREFIX . "product_price 
-                WHERE fk_product = " . (int)$product_static->id . " 
-                ORDER BY date_price DESC, rowid DESC 
-                LIMIT 1";
-        
-        $result = $this->db->query($sql);
-        
-        if ($result && $this->db->num_rows($result) > 0) {
-            $price_obj = $this->db->fetch_object($result);
-            
-            $product_static->price_ttc_api = round((float)$price_obj->price_ttc, 2);
-            $product_static->price_ht_api = round((float)$price_obj->price, 2);
-            $product_static->tva_rate_api = (float)$price_obj->tva_tx;
-            $product_static->price_base_type_api = $price_obj->price_base_type;
-        } else {
-            // Final fallback: use product's default prices
-            $product_static->price_ttc_api = round((float)$product_static->price_ttc, 2);
-            $product_static->price_ht_api = round((float)$product_static->price, 2);
-            $product_static->tva_rate_api = (float)$product_static->tva_tx;
-            $product_static->price_base_type_api = $product_static->price_base_type;
-        }
-    }
-}
 
     
 
