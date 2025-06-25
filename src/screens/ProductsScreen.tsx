@@ -1,4 +1,4 @@
-// ProductScreen.tsx - Fixed sort by creation date
+// ProductScreen.tsx - Enhanced with Complete Filter Integration
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
@@ -22,12 +22,13 @@ import Feather from 'react-native-vector-icons/Feather';
 import FilterModal from '../components/filter/FilterModal';
 import ProductCard2 from '../components/Product/ProductCard2';
 
-// Import the new ProductService
+// Import the ProductService
 import ProductService, { 
   Product, 
   PaginatedProductResponse, 
   ProductListResponse,
-  FilteredProductsParams 
+  SearchParams,
+  FilteredProductsParams
 } from '../service/CustomProductApiService';
 
 const { width } = Dimensions.get('window');
@@ -42,6 +43,11 @@ interface FilterOptions {
   category?: number;
   priceMin?: number;
   priceMax?: number;
+  ages?: string;
+  taste?: string;
+  health_option?: string;
+  nutritional_option?: string;
+  game?: string; // Added game filter
 }
 
 interface ProductScreenProps {
@@ -171,7 +177,7 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
     }
   };
 
-  // Load products using the new service
+  // Enhanced load products function with complete filter support
   const loadProducts = async (resetPagination = false, filters: FilterOptions = {}, search = '') => {
     try {
       if (resetPagination) {
@@ -185,34 +191,93 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
       const pageToLoad = resetPagination ? 0 : currentPage;
       
       console.log('📦 Chargement des produits - Page:', pageToLoad);
-      console.log('🔍 Filtres:', filters, 'Recherche:', search);
+      console.log('🔍 Filtres complets:', filters, 'Recherche:', search);
       console.log('📊 Sort by:', sortBy);
       
-      // Prepare parameters for the new service
-      const params: FilteredProductsParams = {
-        limit: pageSize,
-        page: pageToLoad,
-        pagination_data: true,
-        includestockdata: 0,
-        sortfield: getSortField(sortBy),  
-        sortorder: getSortOrder(sortBy),
-      };
-
-      // Add filters
-      if (filters.animal_category) params.animal_category = filters.animal_category;
-      if (filters.category) params.category = filters.category;
-      if (filters.brand) params.brand = filters.brand;
-      if (filters.priceMin !== undefined) params.price_min = filters.priceMin;
-      if (filters.priceMax !== undefined) params.price_max = filters.priceMax;
-      if (search && search.trim()) params.search = search.trim();
-
-      console.log('🚀 API Params:', params);
-
-      // Use the appropriate service method
+      // Calculate category to use (this logic is used in both endpoints)
+      const categoryToUse = filters.category || filters.animal_category || 1;
+      
+      console.log('🏷️ Category logic:', {
+        selected_category: filters.category,
+        selected_animal: filters.animal_category,
+        final_category: categoryToUse,
+        logic: 'category || animal_category || 1'
+      });
+      
+      // Determine which endpoint to use based on filters
       let result: PaginatedProductResponse | ProductListResponse;
       
-      params.animal_category = params.animal_category ? params.animal_category : 1;
-      result = await ProductService.getFilteredProducts(params);
+      // Check if we need to use the filtered endpoint (for complex filtering)
+      const needsFilteredEndpoint = !!(
+        filters.animal_category || 
+        filters.priceMin || 
+        filters.priceMax ||
+        filters.ages ||
+        filters.taste ||
+        filters.health_option ||
+        filters.nutritional_option ||
+        filters.game
+      );
+
+      if (needsFilteredEndpoint) {
+        // Use the filtered endpoint for complex filtering
+        const filteredParams: FilteredProductsParams = {
+          limit: pageSize,
+          page: pageToLoad,
+          sortfield: getSortField(sortBy),
+          sortorder: getSortOrder(sortBy),
+          pagination_data: true,
+          includestockdata: 0,
+        };
+
+        // Add all available filters to filtered endpoint
+        if (filters.animal_category) filteredParams.animal_category = filters.animal_category;
+        
+        // Always set the category using our logic
+        filteredParams.category = categoryToUse;
+        
+        if (filters.brand) filteredParams.brand = filters.brand;
+        if (search && search.trim()) filteredParams.search = search.trim();
+        if (filters.priceMin !== undefined) filteredParams.price_min = filters.priceMin;
+        if (filters.priceMax !== undefined) filteredParams.price_max = filters.priceMax;
+        
+        // Add all Dolibarr-specific filters
+        if (filters.ages) filteredParams.ages = filters.ages;
+        if (filters.taste) filteredParams.taste = filters.taste;
+        if (filters.health_option) filteredParams.health_option = filters.health_option;
+        if (filters.nutritional_option) filteredParams.nutritional_option = filters.nutritional_option;
+        if (filters.game) filteredParams.game = filters.game;
+
+        console.log('🚀 Using filtered endpoint with params:', filteredParams);
+        result = await ProductService.getFilteredProducts(filteredParams);
+        
+      } else {
+        // Use the standard search endpoint for simple filtering
+        const searchParams: SearchParams = {
+          limit: pageSize,
+          page: pageToLoad,
+          pagination_data: true,
+          includestockdata: 0,
+          sortfield: getSortField(sortBy),
+          sortorder: getSortOrder(sortBy),
+        };
+
+        // Add basic filters using our category logic
+        searchParams.categories = categoryToUse.toString();
+        
+        if (filters.brand) searchParams.brand = filters.brand;
+        if (search && search.trim()) searchParams.search_name = search.trim();
+        
+        // Add all Dolibarr-specific filters to search endpoint too
+        if (filters.game) searchParams.game = filters.game;
+        if (filters.taste) searchParams.taste = filters.taste;
+        if (filters.ages) searchParams.ages = filters.ages;
+        if (filters.health_option) searchParams.health_option = filters.health_option;
+        if (filters.nutritional_option) searchParams.nutritional_option = filters.nutritional_option;
+
+        console.log('🚀 Using search endpoint with params:', searchParams);
+        result = await ProductService.searchProducts(searchParams);
+      }
       
       // Handle response
       let newProducts: Product[] = [];
@@ -249,14 +314,17 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
         };
       }
       
+      // Apply client-side filtering for advanced filters not supported by API
+      if (newProducts.length > 0) {
+        console.log('🔧 Before client-side filtering:', newProducts.length);
+        newProducts = applyClientSideFilters(newProducts, filters);
+        console.log('🔧 After client-side filtering:', newProducts.length);
+        newProducts = sortProducts(newProducts, sortBy);
+        console.log('🔧 After sorting:', newProducts.length);
+      }
+      
       console.log('📊 Résultat pagination:', newPaginationData);
       console.log('📦 Produits reçus:', newProducts.length);
-      
-      // Apply local sorting if API sorting doesn't work properly
-      if (newProducts.length > 0) {
-        newProducts = sortProducts(newProducts, sortBy);
-        console.log('🔄 Tri local appliqué:', sortBy);
-      }
       
       if (resetPagination) {
         setProducts(newProducts);
@@ -282,11 +350,16 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
         total_disponible: newPaginationData.total,
         page_actuelle: newPaginationData.page,
         total_pages: newPaginationData.page_count,
-        tri_appliqué: sortBy
+        tri_appliqué: sortBy,
+        filtres_actifs: Object.keys(filters).length,
+        catégorie_finale: categoryToUse,
+        filtres_détails: filters
       });
       
       if (newProducts.length === 0) {
         console.log('ℹ️ Aucun produit trouvé pour cette recherche/filtre');
+        console.log('🔍 Filtres appliqués:', filters);
+        console.log('🔍 Recherche:', search);
       }
       
     } catch (error) {
@@ -330,19 +403,86 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
   // UTILITY FUNCTIONS
   // =====================================
 
-  // Get sort field for API - FIXED
+  // Apply client-side filters for advanced filtering
+  const applyClientSideFilters = (productsList: Product[], filters: FilterOptions): Product[] => {
+    let filteredProducts = [...productsList];
+
+    // Filter by ages (using correct field: options_ftfonctionnalites)
+    if (filters.ages) {
+      filteredProducts = filteredProducts.filter(product => {
+        const productAges = product.array_options?.options_ftfonctionnalites;
+        if (!productAges) return false;
+        // Check if the age ID is in the field (could be comma-separated for multiple values)
+        return productAges.toString().includes(filters.ages!.toString());
+      });
+    }
+
+    // Filter by taste (using correct field: options_sousgamme)
+    if (filters.taste) {
+      filteredProducts = filteredProducts.filter(product => {
+        const productTaste = product.array_options?.options_sousgamme;
+        if (!productTaste) return false;
+        // Check if the taste ID is in the field
+        return productTaste.toString().includes(filters.taste!.toString());
+      });
+    }
+
+    // Filter by health options (using correct field: options_gamme)
+    if (filters.health_option) {
+      filteredProducts = filteredProducts.filter(product => {
+        const healthOption = product.array_options?.options_gamme;
+        if (!healthOption) return false;
+        // Check if the health option ID is in the field
+        return healthOption.toString().includes(filters.health_option!.toString());
+      });
+    }
+
+    // Filter by nutritional options (using correct field: options_trancheage)
+    if (filters.nutritional_option) {
+      filteredProducts = filteredProducts.filter(product => {
+        const nutritionalOption = product.array_options?.options_trancheage;
+        if (!nutritionalOption) return false;
+        // Check if the nutritional option ID is in the field
+        return nutritionalOption.toString().includes(filters.nutritional_option!.toString());
+      });
+    }
+
+    // Filter by game/product line (Note: This might conflict with health_option as both use options_gamme)
+    // You may need to clarify which field should be used for product lines
+    if (filters.game) {
+      filteredProducts = filteredProducts.filter(product => {
+        const productGame = product.array_options?.options_gamme;
+        if (!productGame) return false;
+        return productGame.toString().includes(filters.game!.toString());
+      });
+    }
+
+    console.log('🔍 Client-side filtering applied:', {
+      original: productsList.length,
+      filtered: filteredProducts.length,
+      filters_applied: Object.keys(filters).filter(key => (filters as any)[key]).length,
+      filter_details: {
+        ages: filters.ages,
+        taste: filters.taste,
+        health_option: filters.health_option,
+        nutritional_option: filters.nutritional_option,
+        game: filters.game
+      }
+    });
+
+    return filteredProducts;
+  };
+
+  // Get sort field for API
   const getSortField = (sortType: string): string => {
     switch (sortType) {
       case 'price':
         return 'price_ttc';
       case 'name':
-        return 'label';
+        return 't.label';
       case 'date':
       default:
-        // Try multiple possible field names for creation date
-        // The API might use different field names
-        return 'datec'; // Common Dolibarr field name
-        // Alternative options to try: 'date_creation', 'tms', 'date_add', 'date_creation'
+        return 'ref';
     }
   };
 
@@ -354,11 +494,11 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
         return 'ASC';
       case 'date':
       default:
-        return 'DESC'; // Most recent first
+        return 'DESC';
     }
   };
 
-  // Sort products locally (for immediate UI feedback) - IMPROVED
+  // Sort products locally
   const sortProducts = (productsList: Product[], sortType: string) => {
     if (!Array.isArray(productsList)) return [];
     
@@ -380,18 +520,12 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
       case 'date':
       default:
         return sorted.sort((a, b) => {
-          // Try multiple date fields that might exist in the product object
           const getProductDate = (product: Product): number => {
-            // Try different possible date field names
             const dateFields = [
               'date_creation',
-              'datec', 
-              'tms',
-              'date_add',
-              'date_modif',
               'date_modification',
-              'created_at',
-              'updated_at'
+              'date_creation_formatted',
+              'date_modification_formatted'
             ];
             
             for (const field of dateFields) {
@@ -399,26 +533,22 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
               if (dateValue) {
                 const timestamp = typeof dateValue === 'string' ? 
                   new Date(dateValue).getTime() : 
-                  typeof dateValue === 'number' ? dateValue * 1000 : // Unix timestamp
+                  typeof dateValue === 'number' ? dateValue * 1000 :
                   new Date(dateValue).getTime();
                 
                 if (!isNaN(timestamp)) {
-                  console.log(`📅 Date trouvée pour ${product.label}: ${field} = ${dateValue} (${new Date(timestamp)})`);
                   return timestamp;
                 }
               }
             }
             
-            // Fallback: use product ID as a rough creation order indicator
-            const productId = product.id ? parseInt(String(product.id)) : 0;
-            console.log(`⚠️ Aucune date trouvée pour ${product.label}, utilisation de l'ID: ${productId}`);
-            return productId;
+            return product.id ? parseInt(String(product.id)) : 0;
           };
           
           const dateA = getProductDate(a);
           const dateB = getProductDate(b);
           
-          return dateB - dateA; // Most recent first
+          return dateB - dateA;
         });
     }
   };
@@ -476,18 +606,23 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
     loadProducts(true, activeFilters, '');
   };
 
-  // Apply filters - Updated to use new filter structure
+  // Apply filters - Enhanced to handle all filter types
   const handleApplyFilters = (filters: any) => {
-    console.log('✅ Filtres appliqués:', filters);
+    console.log('✅ Filtres appliqués (complets):', filters);
     
     // Convert the filter format to match our internal structure
     const convertedFilters: FilterOptions = {};
     
-    if (filters.animal) convertedFilters.animal_category = parseInt(filters.animal);
+    if (filters.animal_category !== undefined) convertedFilters.animal_category = parseInt(filters.animal_category);
     if (filters.brand) convertedFilters.brand = filters.brand;
-    if (filters.category) convertedFilters.category = parseInt(filters.category);
+    if (filters.category !== undefined) convertedFilters.category = parseInt(filters.category);
     if (filters.priceMin !== undefined) convertedFilters.priceMin = filters.priceMin;
     if (filters.priceMax !== undefined) convertedFilters.priceMax = filters.priceMax;
+    if (filters.ages) convertedFilters.ages = filters.ages;
+    if (filters.taste) convertedFilters.taste = filters.taste;
+    if (filters.health_option) convertedFilters.health_option = filters.health_option;
+    if (filters.nutritional_option) convertedFilters.nutritional_option = filters.nutritional_option;
+    if (filters.game) convertedFilters.game = filters.game;
     
     setShowFilterModal(false);
     loadProducts(true, convertedFilters, searchQuery);
@@ -512,7 +647,7 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
     );
   };
 
-  // Change sort - IMPROVED
+  // Change sort
   const handleSortChange = (newSortBy: 'date' | 'price' | 'name') => {
     console.log('🔄 Changement de tri:', sortBy, '->', newSortBy);
     setSortBy(newSortBy);
@@ -545,7 +680,6 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
     });
     
     try {
-      // Navigate to ProductDetails with both productId and product for compatibility
       navigation.navigate('ProductDetails', { 
         productId: product.id,
         product: product 
@@ -554,6 +688,101 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
     } catch (error) {
       console.error('❌ Navigation error:', error);
     }
+  };
+
+  // Get active filter display with proper labels
+  const getActiveFilterDisplay = (): string => {
+    const filterLabels: string[] = [];
+    
+    // Animal names mapping
+    if (activeFilters.animal_category) {
+      const animalNames: { [key: number]: string } = {
+        2: 'Chien', 3: 'Chat', 184: 'Lapin', 21: 'Poisson', 31: 'Reptile', 20: 'Oiseau'
+      };
+      filterLabels.push(animalNames[activeFilters.animal_category] || `Animal ${activeFilters.animal_category}`);
+    }
+    
+    // Brand (already a string)
+    if (activeFilters.brand) filterLabels.push(activeFilters.brand);
+    
+    // Ages mapping
+    if (activeFilters.ages) {
+      const ageNames: { [key: string]: string } = {
+        '1': 'Adulte',
+        '2': 'Senior', 
+        '3': 'Junior',
+        '4': 'Première âge',
+        '5': 'Chatons',
+        '6': 'Chiots'
+      };
+      const ageName = ageNames[activeFilters.ages] || activeFilters.ages;
+      filterLabels.push(`Âge: ${ageName}`);
+    }
+    
+    // Taste mapping
+    if (activeFilters.taste) {
+      const tasteNames: { [key: string]: string } = {
+        '1': 'Boeuf',
+        '2': 'Poulet',
+        '3': 'Canard', 
+        '4': 'Poisson',
+        '5': 'Agneau',
+        '6': 'Autre'
+      };
+      const tasteName = tasteNames[activeFilters.taste] || activeFilters.taste;
+      filterLabels.push(`Goût: ${tasteName}`);
+    }
+    
+    // Health options mapping
+    if (activeFilters.health_option) {
+      const healthNames: { [key: string]: string } = {
+        '1': 'Stériles',
+        '2': 'Allergies',
+        '3': 'Vessies',
+        '4': 'Croissances',
+        '5': 'Vieillissements',
+        '6': 'Respirations',
+        '7': 'Poils et peaux',
+        '8': 'Digestifs',
+        '9': 'Surpoids',
+        '10': 'Sensibles',
+        '11': 'Allaitantes ou gestantes',
+        '12': 'Immunités',
+        '13': 'Dentaires'
+      };
+      const healthName = healthNames[activeFilters.health_option] || activeFilters.health_option;
+      filterLabels.push(`Santé: ${healthName}`);
+    }
+    
+    // Nutritional options mapping
+    if (activeFilters.nutritional_option) {
+      const nutritionalNames: { [key: string]: string } = {
+        '1': 'Sans céréales',
+        '2': 'Ingrédient limité',
+        '3': 'Bio',
+        '4': 'Sans OGM',
+        '5': 'Sans gluten',
+        '6': 'Sans sucre',
+        '7': 'Végétarien',
+        '8': 'Riche en protéine',
+        '9': 'Équilibré'
+      };
+      const nutritionalName = nutritionalNames[activeFilters.nutritional_option] || activeFilters.nutritional_option;
+      filterLabels.push(`Nutrition: ${nutritionalName}`);
+    }
+    
+    // Game/Product line (if you have specific mapping for this)
+    if (activeFilters.game) {
+      filterLabels.push(`Gamme: ${activeFilters.game}`);
+    }
+    
+    // Price range
+    if (activeFilters.priceMin || activeFilters.priceMax) {
+      const priceRange = `${activeFilters.priceMin || 0} - ${activeFilters.priceMax || '∞'} DH`;
+      filterLabels.push(`Prix: ${priceRange}`);
+    }
+    
+    return filterLabels.join(' • ');
   };
 
   // =====================================
@@ -657,10 +886,10 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
               Affichage de {products.length} sur {paginationData.total} produits
             </Text>
             {(hasActiveFilters() || searchQuery) && (
-              <Text style={[styles.filterSubText, { color: TEXT_COLOR_SECONDARY }]}>
+              <Text style={[styles.filterSubText, { color: TEXT_COLOR_SECONDARY }]} numberOfLines={2}>
                 {searchQuery && `Recherche: "${searchQuery}"`}
                 {hasActiveFilters() && searchQuery && ' • '}
-                {hasActiveFilters() && `${getActiveFilterCount()} filtre${getActiveFilterCount() > 1 ? 's' : ''} actif${getActiveFilterCount() > 1 ? 's' : ''}`}
+                {hasActiveFilters() && getActiveFilterDisplay()}
               </Text>
             )}
             <Text style={[styles.sortIndicator, { color: PRIMARY_COLOR }]}>
@@ -908,6 +1137,10 @@ export default function ProductScreen({ navigation, route }: ProductScreenProps)
           showBrandFilter={true}
           showCategoryFilter={true}
           showPriceFilter={true}
+          showAgeFilter={true}
+          showTasteFilter={true}
+          showHealthFilter={true}
+          showNutritionalFilter={true}
         />
       )}
     </SafeAreaView>

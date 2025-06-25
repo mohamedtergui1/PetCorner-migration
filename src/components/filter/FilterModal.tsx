@@ -1,5 +1,4 @@
-// components/FilterModal.tsx - Updated to use new ProductService
-
+// FilterModal.tsx - Enhanced with Complete Dolibarr Integration
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
@@ -21,7 +20,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Feather from 'react-native-vector-icons/Feather';
 
-// Import the new ProductService
+// Import the ProductService
 import ProductService, { 
   Brand, 
   Category, 
@@ -31,22 +30,32 @@ import ProductService, {
 
 // Types
 interface AppliedFilters {
-  animal?: string;
+  animal_category?: number;
   brand?: string;
-  category?: string;
+  category?: number;
   priceMin?: number;
   priceMax?: number;
+  ages?: string;
+  taste?: string;
+  health_option?: string;
+  nutritional_option?: string;
+  game?: string; // Added game filter (product line/gamme)
 }
 
 interface FilterModalProps {
   visible: boolean;
   onClose: () => void;
   onApplyFilters: (filters: AppliedFilters) => void;
-  initialFilters?: AppliedFilters;
+  initialFilters?: Partial<AppliedFilters>;
   showAnimalFilter?: boolean;
   showBrandFilter?: boolean;
   showCategoryFilter?: boolean;
   showPriceFilter?: boolean;
+  showAgeFilter?: boolean;
+  showTasteFilter?: boolean;
+  showHealthFilter?: boolean;
+  showNutritionalFilter?: boolean;
+  showGameFilter?: boolean; // Added game filter option
 }
 
 interface FilterState {
@@ -56,14 +65,57 @@ interface FilterState {
   selectedCategoryName: string;
   selectedPriceRange: string;
   customPriceRange: { min: string; max: string };
+  selectedAge: string;
+  selectedTaste: string;
+  selectedHealthOption: string;
+  selectedNutritionalOption: string;
+  selectedGame: string; // Added game state
 }
 
-interface AnimalType {
+interface CategoryHierarchy extends Category {
+  children?: CategoryHierarchy[];
+  level: number;
+  parentId?: string;
+}
+
+interface AgeRange {
   id: string;
-  name: string;
+  label: string;
+  value: string;
   icon: string;
   color: string;
-  lightColor: string;
+}
+
+interface TasteOption {
+  id: string;
+  label: string;
+  value: string;
+  icon: string;
+  color: string;
+}
+
+interface HealthOption {
+  id: string;
+  label: string;
+  value: string;
+  icon: string;
+  color: string;
+}
+
+interface NutritionalOption {
+  id: string;
+  label: string;
+  value: string;
+  icon: string;
+  color: string;
+}
+
+interface GameOption {
+  id: string;
+  label: string;
+  value: string;
+  icon: string;
+  color: string;
 }
 
 interface PriceRange {
@@ -87,15 +139,65 @@ const useTheme = (): ThemeContextType => ({
 
 const { width } = Dimensions.get('window');
 
-// Constants
-const ANIMAL_TYPES: AnimalType[] = [
-  { id: '2', name: 'Chien', icon: 'dog', color: '#FF6B6B', lightColor: '#FFE5E5' },
-  { id: '3', name: 'Chat', icon: 'cat', color: '#4ECDC4', lightColor: '#E5F9F6' },
-  { id: '184', name: 'Lapin', icon: 'rabbit', color: '#9B59B6', lightColor: '#F4E6F7' },
-  { id: '21', name: 'Poisson', icon: 'fish', color: '#3498DB', lightColor: '#EBF5FB' },
-  { id: '31', name: 'Reptile', icon: 'snake', color: '#27AE60', lightColor: '#E8F8F5' },
-  { id: '20', name: 'Oiseau', icon: 'bird', color: '#F39C12', lightColor: '#FEF9E7' },
+// Constants - Based on Dolibarr product structure
+const ANIMAL_CATEGORIES: AnimalCategory[] = [
+  { id: '2', name: 'Chien', label: 'Chien' },
+  { id: '3', name: 'Chat', label: 'Chat' },
+  { id: '184', name: 'Lapin', label: 'Lapin' },
+  { id: '21', name: 'Poisson', label: 'Poisson' },
+  { id: '31', name: 'Reptile', label: 'Reptile' },
+  { id: '20', name: 'Oiseau', label: 'Oiseau' },
 ];
+
+// Age ranges based on Dolibarr options_ages field
+const AGE_RANGES: AgeRange[] = [
+  { id: '1', label: 'Adulte', value: '1', icon: 'star', color: '#45B7D1' },
+  { id: '2', label: 'Senior', value: '2', icon: 'medal', color: '#96CEB4' },
+  { id: '3', label: 'Junior', value: '3', icon: 'happy', color: '#4ECDC4' },
+  { id: '4', label: 'Première âge', value: '4', icon: 'baby', color: '#FF9500' },
+  { id: '5', label: 'Chatons', value: '5', icon: 'heart', color: '#FF69B4' },
+  { id: '6', label: 'Chiots', value: '6', icon: 'heart-outline', color: '#FF6B6B' },
+];
+
+
+const TASTE_OPTIONS: TasteOption[] = [
+ { id: '1', label: 'Boeuf', value: '1', icon: 'nutrition', color: '#8B4513' },
+ { id: '2', label: 'Poulet', value: '2', icon: 'restaurant', color: '#FF6B6B' },
+ { id: '3', label: 'Canard', value: '3', icon: 'water', color: '#87CEEB' },
+ { id: '4', label: 'Poisson', value: '4', icon: 'fish', color: '#4ECDC4' },
+ { id: '5', label: 'Agneau', value: '5', icon: 'leaf', color: '#90EE90' },
+ { id: '6', label: 'Autre', value: '6', icon: 'ellipsis-horizontal', color: '#9B59B6' },
+];
+
+const HEALTH_OPTIONS: HealthOption[] = [
+ { id: '1', label: 'Stériles', value: '1', icon: 'medical', color: '#FF6B6B' },
+ { id: '2', label: 'Allergies', value: '2', icon: 'alert-circle', color: '#FF9500' },
+ { id: '3', label: 'Vessies', value: '3', icon: 'water', color: '#4ECDC4' },
+ { id: '4', label: 'Croissances', value: '4', icon: 'trending-up', color: '#32CD32' },
+ { id: '5', label: 'Vieillissements', value: '5', icon: 'time', color: '#96CEB4' },
+ { id: '6', label: 'Respirations', value: '6', icon: 'leaf', color: '#87CEEB' },
+ { id: '7', label: 'Poils et peaux', value: '7', icon: 'sparkles', color: '#DDA0DD' },
+ { id: '8', label: 'Digestifs', value: '8', icon: 'fitness', color: '#F0E68C' },
+ { id: '9', label: 'Surpoids', value: '9', icon: 'scale', color: '#CD853F' },
+ { id: '10', label: 'Sensibles', value: '10', icon: 'shield', color: '#FFA07A' },
+ { id: '11', label: 'Allaitantes ou gestantes', value: '11', icon: 'heart', color: '#FF69B4' },
+ { id: '12', label: 'Immunités', value: '12', icon: 'shield-checkmark', color: '#9370DB' },
+ { id: '13', label: 'Dentaires', value: '13', icon: 'medical', color: '#20B2AA' },
+];
+
+const NUTRITIONAL_OPTIONS: NutritionalOption[] = [
+ { id: '1', label: 'Sans céréales', value: '1', icon: 'close-circle', color: '#FF6B6B' },
+ { id: '2', label: 'Ingrédient limité', value: '2', icon: 'remove-circle', color: '#FF9500' },
+ { id: '3', label: 'Bio', value: '3', icon: 'leaf', color: '#32CD32' },
+ { id: '4', label: 'Sans OGM', value: '4', icon: 'shield', color: '#4ECDC4' },
+ { id: '5', label: 'Sans gluten', value: '5', icon: 'checkmark-circle', color: '#45B7D1' },
+ { id: '6', label: 'Sans sucre', value: '6', icon: 'ban', color: '#96CEB4' },
+ { id: '7', label: 'Végétarien', value: '7', icon: 'leaf-outline', color: '#90EE90' },
+ { id: '8', label: 'Riche en protéine', value: '8', icon: 'fitness', color: '#FF6347' },
+ { id: '9', label: 'Équilibré', value: '9', icon: 'balance', color: '#9B59B6' },
+];
+
+
 
 const PRICE_RANGES: PriceRange[] = [
   { id: 'under50', label: 'Moins de 50 DH', min: 0, max: 49, icon: 'cash-outline' },
@@ -120,6 +222,11 @@ const FilterModal: React.FC<FilterModalProps> = ({
   showBrandFilter = true,
   showCategoryFilter = true,
   showPriceFilter = true,
+  showAgeFilter = true,
+  showTasteFilter = true,
+  showHealthFilter = true,
+  showNutritionalFilter = true,
+  showGameFilter = true, // Added game filter prop
 }) => {
   const { isDarkMode, colorTheme } = useTheme();
 
@@ -128,18 +235,24 @@ const FilterModal: React.FC<FilterModalProps> = ({
   // =====================================
 
   const [filterState, setFilterState] = useState<FilterState>({
-    selectedAnimal: initialFilters.animal || '',
+    selectedAnimal: initialFilters.animal_category?.toString() || '',
     selectedBrand: initialFilters.brand || '',
-    selectedCategoryId: initialFilters.category || '',
+    selectedCategoryId: initialFilters.category?.toString() || '',
     selectedCategoryName: '',
     selectedPriceRange: '',
     customPriceRange: { min: '', max: '' },
+    selectedAge: initialFilters.ages || '',
+    selectedTaste: initialFilters.taste || '',
+    selectedHealthOption: initialFilters.health_option || '',
+    selectedNutritionalOption: initialFilters.nutritional_option || '',
+    selectedGame: initialFilters.game || '', // Added game state
   });
 
   const [filterData, setFilterData] = useState({
     brands: [] as Brand[],
     categories: [] as Category[],
-    animals: [] as AnimalCategory[],
+    categoryHierarchy: [] as CategoryHierarchy[],
+    animals: ANIMAL_CATEGORIES,
     loadingBrands: false,
     loadingCategories: false,
     loadingAnimals: false,
@@ -147,6 +260,8 @@ const FilterModal: React.FC<FilterModalProps> = ({
 
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [selectedCategoryPath, setSelectedCategoryPath] = useState<CategoryHierarchy[]>([]);
+  const [currentCategoryLevel, setCurrentCategoryLevel] = useState<CategoryHierarchy[]>([]);
 
   // =====================================
   // THEME COLORS
@@ -177,13 +292,7 @@ const FilterModal: React.FC<FilterModalProps> = ({
   }, [filterState.selectedAnimal]);
 
   useEffect(() => {
-    setFilterState(prev => ({
-      ...prev,
-      selectedAnimal: initialFilters.animal || '',
-      selectedBrand: initialFilters.brand || '',
-      selectedCategoryId: initialFilters.category || '',
-    }));
-    
+    // Initialize price range from initial filters
     if (initialFilters.priceMin !== undefined || initialFilters.priceMax !== undefined) {
       const matchingRange = PRICE_RANGES.find(range => 
         range.min === initialFilters.priceMin && range.max === initialFilters.priceMax
@@ -216,15 +325,10 @@ const FilterModal: React.FC<FilterModalProps> = ({
     try {
       setFilterData(prev => ({ ...prev, loadingAnimals: true }));
       
-      // Load animals first
-      const animals = await ProductService.getAnimals();
-      setFilterData(prev => ({
-        ...prev,
-        animals,
-        loadingAnimals: false
-      }));
+      // Animals are already set in the initial state
+      setFilterData(prev => ({ ...prev, loadingAnimals: false }));
       
-      console.log('✅ Animals loaded:', animals.length);
+      console.log('✅ Animals loaded:', ANIMAL_CATEGORIES.length);
     } catch (error) {
       console.error('❌ Error loading initial data:', error);
       setFilterData(prev => ({ ...prev, loadingAnimals: false }));
@@ -243,22 +347,28 @@ const FilterModal: React.FC<FilterModalProps> = ({
     try {
       console.log('🔄 Loading filter data for animal:', animalId);
       
-      // Load filter data for the specific animal
-      const data = await ProductService.getFilterData(Number(animalId));
-      
-      // Load categories for the specific animal
+      // Load categories for the specific animal with hierarchy
       const categories = await ProductService.getCategoriesByAnimal(Number(animalId));
+      const categoryHierarchy = await ProductService.getCategoryHierarchy(Number(animalId));
       
       // Load brands for the specific animal  
       const brands = await ProductService.getBrands(Number(animalId));
       
+      // Build hierarchical structure
+      const hierarchicalCategories = buildCategoryHierarchy(categories);
+      
       setFilterData(prev => ({
         ...prev,
         categories,
+        categoryHierarchy: hierarchicalCategories,
         brands,
         loadingBrands: false,
         loadingCategories: false,
       }));
+      
+      // Initialize category navigation
+      setCurrentCategoryLevel(hierarchicalCategories);
+      setSelectedCategoryPath([]);
       
       // Update category name if category is selected
       if (filterState.selectedCategoryId) {
@@ -268,6 +378,10 @@ const FilterModal: React.FC<FilterModalProps> = ({
             ...prev,
             selectedCategoryName: category.label || category.name,
           }));
+          
+          // Build the path to the selected category
+          const path = buildCategoryPath(hierarchicalCategories, filterState.selectedCategoryId);
+          setSelectedCategoryPath(path);
         } else {
           console.log('🚫 Current category not valid for selected animal, clearing...');
           setFilterState(prev => ({
@@ -280,7 +394,8 @@ const FilterModal: React.FC<FilterModalProps> = ({
       
       console.log('✅ Filter data loaded successfully:', {
         categories: categories.length,
-        brands: brands.length
+        brands: brands.length,
+        hierarchy: hierarchicalCategories.length
       });
       
     } catch (error) {
@@ -294,6 +409,65 @@ const FilterModal: React.FC<FilterModalProps> = ({
   }, [filterState.selectedCategoryId]);
 
   // =====================================
+  // CATEGORY HIERARCHY FUNCTIONS
+  // =====================================
+
+  const buildCategoryHierarchy = (categories: Category[]): CategoryHierarchy[] => {
+    const categoryMap = new Map<string, CategoryHierarchy>();
+    const rootCategories: CategoryHierarchy[] = [];
+
+    // First pass: create all category objects
+    categories.forEach(cat => {
+      categoryMap.set(cat.id, {
+        ...cat,
+        children: [],
+        level: 0,
+        parentId: cat.parent
+      });
+    });
+
+    // Second pass: build hierarchy
+    categories.forEach(cat => {
+      const categoryNode = categoryMap.get(cat.id);
+      if (!categoryNode) return;
+
+      if (cat.parent && categoryMap.has(cat.parent)) {
+        const parent = categoryMap.get(cat.parent);
+        if (parent) {
+          parent.children = parent.children || [];
+          parent.children.push(categoryNode);
+          categoryNode.level = parent.level + 1;
+          categoryNode.parentId = cat.parent;
+        }
+      } else {
+        rootCategories.push(categoryNode);
+      }
+    });
+
+    return rootCategories;
+  };
+
+  const buildCategoryPath = (hierarchy: CategoryHierarchy[], targetId: string): CategoryHierarchy[] => {
+    const findPath = (categories: CategoryHierarchy[], path: CategoryHierarchy[]): CategoryHierarchy[] | null => {
+      for (const category of categories) {
+        const newPath = [...path, category];
+        
+        if (category.id === targetId) {
+          return newPath;
+        }
+        
+        if (category.children && category.children.length > 0) {
+          const result = findPath(category.children, newPath);
+          if (result) return result;
+        }
+      }
+      return null;
+    };
+
+    return findPath(hierarchy, []) || [];
+  };
+
+  // =====================================
   // HANDLERS
   // =====================================
 
@@ -305,6 +479,7 @@ const FilterModal: React.FC<FilterModalProps> = ({
     setFilterState(prev => ({
       ...prev,
       selectedAnimal: newAnimalId,
+      // When animal changes, clear category selection since animal becomes the main category
       ...(newAnimalId !== filterState.selectedAnimal && {
         selectedCategoryId: '',
         selectedCategoryName: '',
@@ -313,7 +488,7 @@ const FilterModal: React.FC<FilterModalProps> = ({
     }));
   }, [filterState.selectedAnimal]);
 
-  const handleCategorySelect = useCallback((category: Category) => {
+  const handleCategorySelect = useCallback((category: CategoryHierarchy) => {
     console.log('🏷️ Category selected:', { id: category.id, name: category.label || category.name });
     
     setFilterState(prev => ({
@@ -321,8 +496,41 @@ const FilterModal: React.FC<FilterModalProps> = ({
       selectedCategoryId: String(category.id),
       selectedCategoryName: category.label || category.name,
     }));
+    
+    // Update the path and current level
+    const newPath = buildCategoryPath(filterData.categoryHierarchy, category.id);
+    setSelectedCategoryPath(newPath);
+    
     setShowCategoryModal(false);
-  }, []);
+  }, [filterData.categoryHierarchy]);
+
+  const handleCategoryNavigation = useCallback((category: CategoryHierarchy) => {
+    if (category.children && category.children.length > 0) {
+      // Navigate to children
+      const newPath = [...selectedCategoryPath, category];
+      setSelectedCategoryPath(newPath);
+      setCurrentCategoryLevel(category.children);
+    } else {
+      // Select this category (leaf node)
+      handleCategorySelect(category);
+    }
+  }, [selectedCategoryPath, handleCategorySelect]);
+
+  const handleCategoryBack = useCallback(() => {
+    if (selectedCategoryPath.length > 0) {
+      const newPath = selectedCategoryPath.slice(0, -1);
+      setSelectedCategoryPath(newPath);
+      
+      if (newPath.length === 0) {
+        setCurrentCategoryLevel(filterData.categoryHierarchy);
+      } else {
+        const parent = newPath[newPath.length - 1];
+        setCurrentCategoryLevel(parent.children || []);
+      }
+    } else {
+      setCurrentCategoryLevel(filterData.categoryHierarchy);
+    }
+  }, [selectedCategoryPath, filterData.categoryHierarchy]);
 
   const handleBrandSelect = useCallback((brand: string) => {
     setFilterState(prev => ({ ...prev, selectedBrand: brand }));
@@ -348,13 +556,42 @@ const FilterModal: React.FC<FilterModalProps> = ({
       customPriceRange: {
         ...prev.customPriceRange,
         [field]: numericValue,
-        ...(field === 'min' && prev.customPriceRange.max && 
-            parseInt(numericValue, 10) > parseInt(prev.customPriceRange.max, 10) &&
-            { max: numericValue }),
-        ...(field === 'max' && prev.customPriceRange.min && 
-            parseInt(numericValue, 10) < parseInt(prev.customPriceRange.min, 10) &&
-            { min: numericValue }),
       }
+    }));
+  }, []);
+
+  const handleAgeSelect = useCallback((ageId: string) => {
+    setFilterState(prev => ({
+      ...prev,
+      selectedAge: prev.selectedAge === ageId ? '' : ageId
+    }));
+  }, []);
+
+  const handleTasteSelect = useCallback((tasteId: string) => {
+    setFilterState(prev => ({
+      ...prev,
+      selectedTaste: prev.selectedTaste === tasteId ? '' : tasteId
+    }));
+  }, []);
+
+  const handleHealthOptionSelect = useCallback((optionId: string) => {
+    setFilterState(prev => ({
+      ...prev,
+      selectedHealthOption: prev.selectedHealthOption === optionId ? '' : optionId
+    }));
+  }, []);
+
+  const handleNutritionalOptionSelect = useCallback((optionId: string) => {
+    setFilterState(prev => ({
+      ...prev,
+      selectedNutritionalOption: prev.selectedNutritionalOption === optionId ? '' : optionId
+    }));
+  }, []);
+
+  const handleGameSelect = useCallback((gameId: string) => {
+    setFilterState(prev => ({
+      ...prev,
+      selectedGame: prev.selectedGame === gameId ? '' : gameId
     }));
   }, []);
 
@@ -366,8 +603,15 @@ const FilterModal: React.FC<FilterModalProps> = ({
       selectedCategoryName: '',
       selectedPriceRange: '',
       customPriceRange: { min: '', max: '' },
+      selectedAge: '',
+      selectedTaste: '',
+      selectedHealthOption: '',
+      selectedNutritionalOption: '',
+      selectedGame: '',
     });
-  }, []);
+    setSelectedCategoryPath([]);
+    setCurrentCategoryLevel(filterData.categoryHierarchy);
+  }, [filterData.categoryHierarchy]);
 
   // =====================================
   // UTILITY FUNCTIONS
@@ -378,7 +622,12 @@ const FilterModal: React.FC<FilterModalProps> = ({
       filterState.selectedAnimal ||
       filterState.selectedBrand ||
       filterState.selectedCategoryId ||
-      filterState.selectedPriceRange
+      filterState.selectedPriceRange ||
+      filterState.selectedAge ||
+      filterState.selectedTaste ||
+      filterState.selectedHealthOption ||
+      filterState.selectedNutritionalOption ||
+      filterState.selectedGame
     );
   }, [filterState]);
 
@@ -388,15 +637,32 @@ const FilterModal: React.FC<FilterModalProps> = ({
       filterState.selectedBrand,
       filterState.selectedCategoryId,
       filterState.selectedPriceRange,
+      filterState.selectedAge,
+      filterState.selectedTaste,
+      filterState.selectedHealthOption,
+      filterState.selectedNutritionalOption,
+      filterState.selectedGame,
     ].filter(Boolean).length;
   }, [filterState]);
 
   const getAppliedFilters = useCallback((): AppliedFilters => {
     const filters: AppliedFilters = {};
     
-    if (filterState.selectedAnimal) filters.animal = filterState.selectedAnimal;
+    if (filterState.selectedAnimal) filters.animal_category = Number(filterState.selectedAnimal);
     if (filterState.selectedBrand) filters.brand = filterState.selectedBrand;
-    if (filterState.selectedCategoryId) filters.category = filterState.selectedCategoryId;
+    
+    // Category logic: if specific category is selected, use it; otherwise animal becomes the category
+    if (filterState.selectedCategoryId) {
+      filters.category = Number(filterState.selectedCategoryId);
+    }
+    // Note: We don't set category here if only animal is selected, 
+    // the ProductScreen will handle the logic: category || animal_category || 1
+    
+    if (filterState.selectedAge) filters.ages = filterState.selectedAge;
+    if (filterState.selectedTaste) filters.taste = filterState.selectedTaste;
+    if (filterState.selectedHealthOption) filters.health_option = filterState.selectedHealthOption;
+    if (filterState.selectedNutritionalOption) filters.nutritional_option = filterState.selectedNutritionalOption;
+    if (filterState.selectedGame) filters.game = filterState.selectedGame;
     
     if (filterState.selectedPriceRange) {
       if (filterState.selectedPriceRange === 'custom') {
@@ -418,40 +684,10 @@ const FilterModal: React.FC<FilterModalProps> = ({
     return filters;
   }, [filterState]);
 
-  const getPriceRangeDisplay = useCallback((): string => {
-    if (!filterState.selectedPriceRange) return '';
-    
-    if (filterState.selectedPriceRange === 'custom') {
-      if (!filterState.customPriceRange.min && !filterState.customPriceRange.max) {
-        return 'Personnalisé';
-      }
-      
-      const min = filterState.customPriceRange.min ? parseInt(filterState.customPriceRange.min, 10) : null;
-      const max = filterState.customPriceRange.max ? parseInt(filterState.customPriceRange.max, 10) : null;
-      
-      if (min && max) {
-        if (min === max) return `${min} DH`;
-        return `${min} - ${max} DH`;
-      } else if (min && !max) {
-        return `À partir de ${min} DH`;
-      } else if (!min && max) {
-        return `Jusqu'à ${max} DH`;
-      }
-      
-      return 'Personnalisé';
-    } else {
-      const selectedRange = PRICE_RANGES.find(range => range.id === filterState.selectedPriceRange);
-      return selectedRange ? selectedRange.label : '';
-    }
-  }, [filterState.selectedPriceRange, filterState.customPriceRange]);
-
-  const shouldShowCustomPrice = useCallback((): boolean => {
-    return filterState.selectedPriceRange === 'custom';
-  }, [filterState.selectedPriceRange]);
-
   const applyFilters = useCallback(() => {
     const appliedFilters = getAppliedFilters();
-    console.log('🔍 Applied filters:', appliedFilters);
+    console.log('🔍 Applied filters (complete):', appliedFilters);
+    console.log('🏷️ Category logic: Selected animal will be used as category if no specific category selected');
     onApplyFilters(appliedFilters);
     onClose();
   }, [getAppliedFilters, onApplyFilters, onClose]);
@@ -467,43 +703,221 @@ const FilterModal: React.FC<FilterModalProps> = ({
           <Ionicons name="paw" size={18} color={PRIMARY_COLOR} />
         </View>
         <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>Animal</Text>
-        {filterData.loadingAnimals && (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color={PRIMARY_COLOR} />
-          </View>
-        )}
       </View>
-      <View style={styles.animalGrid}>
-        {ANIMAL_TYPES.map((animal: AnimalType) => (
+      <View style={styles.optionGrid}>
+        {ANIMAL_CATEGORIES.map((animal) => (
           <TouchableOpacity
             key={animal.id}
             style={[
-              styles.animalCard,
+              styles.optionCard,
               {
-                backgroundColor: filterState.selectedAnimal === animal.id ? animal.lightColor : SURFACE_COLOR,
-                borderColor: filterState.selectedAnimal === animal.id ? animal.color : BORDER_COLOR,
+                backgroundColor: filterState.selectedAnimal === animal.id ? PRIMARY_COLOR + '15' : SURFACE_COLOR,
+                borderColor: filterState.selectedAnimal === animal.id ? PRIMARY_COLOR : BORDER_COLOR,
               }
             ]}
             onPress={() => handleAnimalSelect(animal.id)}
             activeOpacity={0.7}>
-            <View style={[
-              styles.animalIconContainer,
-              { backgroundColor: filterState.selectedAnimal === animal.id ? animal.color : animal.color + '15' }
-            ]}>
-              <MaterialCommunityIcons
-                name={animal.icon as any}
-                size={18}
-                color={filterState.selectedAnimal === animal.id ? '#fff' : animal.color}
-              />
-            </View>
-            <Text style={[styles.animalText, { color: filterState.selectedAnimal === animal.id ? animal.color : TEXT_COLOR }]}>
-              {animal.name}
+            <Text style={[styles.optionText, { 
+              color: filterState.selectedAnimal === animal.id ? PRIMARY_COLOR : TEXT_COLOR 
+            }]}>
+              {animal.label || animal.name}
             </Text>
+            {filterState.selectedAnimal === animal.id && (
+              <View style={styles.checkmark}>
+                <Ionicons name="checkmark-circle" size={16} color={PRIMARY_COLOR} />
+              </View>
+            )}
           </TouchableOpacity>
         ))}
       </View>
     </View>
   );
+
+  const renderAgeSelector = () => (
+    <View style={[styles.section, { backgroundColor: CARD_BACKGROUND }]}>
+      <View style={styles.sectionHeader}>
+        <View style={[styles.iconContainer, { backgroundColor: PRIMARY_COLOR + '15' }]}>
+          <Ionicons name="time" size={18} color={PRIMARY_COLOR} />
+        </View>
+        <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>Âge</Text>
+      </View>
+      <View style={styles.optionGrid}>
+        {AGE_RANGES.map((age) => (
+          <TouchableOpacity
+            key={age.id}
+            style={[
+              styles.optionCard,
+              {
+                backgroundColor: filterState.selectedAge === age.value ? age.color + '15' : SURFACE_COLOR,
+                borderColor: filterState.selectedAge === age.value ? age.color : BORDER_COLOR,
+              }
+            ]}
+            onPress={() => handleAgeSelect(age.value)}
+            activeOpacity={0.7}>
+            <View style={[styles.optionIconContainer, { 
+              backgroundColor: filterState.selectedAge === age.value ? age.color : age.color + '20' 
+            }]}>
+              <Ionicons 
+                name={age.icon as any} 
+                size={14} 
+                color={filterState.selectedAge === age.value ? '#fff' : age.color} 
+              />
+            </View>
+            <Text style={[styles.optionText, { 
+              color: filterState.selectedAge === age.value ? age.color : TEXT_COLOR 
+            }]} numberOfLines={2}>
+              {age.label}
+            </Text>
+            {filterState.selectedAge === age.value && (
+              <View style={styles.checkmark}>
+                <Ionicons name="checkmark-circle" size={16} color={age.color} />
+              </View>
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+
+  const renderTasteSelector = () => (
+    <View style={[styles.section, { backgroundColor: CARD_BACKGROUND }]}>
+      <View style={styles.sectionHeader}>
+        <View style={[styles.iconContainer, { backgroundColor: PRIMARY_COLOR + '15' }]}>
+          <Ionicons name="restaurant" size={18} color={PRIMARY_COLOR} />
+        </View>
+        <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>Goût</Text>
+      </View>
+      <View style={styles.optionGrid}>
+        {TASTE_OPTIONS.map((taste) => (
+          <TouchableOpacity
+            key={taste.id}
+            style={[
+              styles.optionCard,
+              {
+                backgroundColor: filterState.selectedTaste === taste.value ? taste.color + '15' : SURFACE_COLOR,
+                borderColor: filterState.selectedTaste === taste.value ? taste.color : BORDER_COLOR,
+              }
+            ]}
+            onPress={() => handleTasteSelect(taste.value)}
+            activeOpacity={0.7}>
+            <View style={[styles.optionIconContainer, { 
+              backgroundColor: filterState.selectedTaste === taste.value ? taste.color : taste.color + '20' 
+            }]}>
+              <Ionicons 
+                name={taste.icon as any} 
+                size={14} 
+                color={filterState.selectedTaste === taste.value ? '#fff' : taste.color} 
+              />
+            </View>
+            <Text style={[styles.optionText, { 
+              color: filterState.selectedTaste === taste.value ? taste.color : TEXT_COLOR 
+            }]} numberOfLines={2}>
+              {taste.label}
+            </Text>
+            {filterState.selectedTaste === taste.value && (
+              <View style={styles.checkmark}>
+                <Ionicons name="checkmark-circle" size={16} color={taste.color} />
+              </View>
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+
+  const renderHealthOptionSelector = () => (
+    <View style={[styles.section, { backgroundColor: CARD_BACKGROUND }]}>
+      <View style={styles.sectionHeader}>
+        <View style={[styles.iconContainer, { backgroundColor: PRIMARY_COLOR + '15' }]}>
+          <Ionicons name="medical" size={18} color={PRIMARY_COLOR} />
+        </View>
+        <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>Options Santé</Text>
+      </View>
+      <View style={styles.optionGrid}>
+        {HEALTH_OPTIONS.map((option) => (
+          <TouchableOpacity
+            key={option.id}
+            style={[
+              styles.optionCard,
+              {
+                backgroundColor: filterState.selectedHealthOption === option.value ? option.color + '15' : SURFACE_COLOR,
+                borderColor: filterState.selectedHealthOption === option.value ? option.color : BORDER_COLOR,
+              }
+            ]}
+            onPress={() => handleHealthOptionSelect(option.value)}
+            activeOpacity={0.7}>
+            <View style={[styles.optionIconContainer, { 
+              backgroundColor: filterState.selectedHealthOption === option.value ? option.color : option.color + '20' 
+            }]}>
+              <Ionicons 
+                name={option.icon as any} 
+                size={14} 
+                color={filterState.selectedHealthOption === option.value ? '#fff' : option.color} 
+              />
+            </View>
+            <Text style={[styles.optionText, { 
+              color: filterState.selectedHealthOption === option.value ? option.color : TEXT_COLOR 
+            }]} numberOfLines={2}>
+              {option.label}
+            </Text>
+            {filterState.selectedHealthOption === option.value && (
+              <View style={styles.checkmark}>
+                <Ionicons name="checkmark-circle" size={16} color={option.color} />
+              </View>
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+
+  const renderNutritionalOptionSelector = () => (
+    <View style={[styles.section, { backgroundColor: CARD_BACKGROUND }]}>
+      <View style={styles.sectionHeader}>
+        <View style={[styles.iconContainer, { backgroundColor: PRIMARY_COLOR + '15' }]}>
+          <Ionicons name="nutrition" size={18} color={PRIMARY_COLOR} />
+        </View>
+        <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>Options Nutritionnelles</Text>
+      </View>
+      <View style={styles.optionGrid}>
+        {NUTRITIONAL_OPTIONS.map((option) => (
+          <TouchableOpacity
+            key={option.id}
+            style={[
+              styles.optionCard,
+              {
+                backgroundColor: filterState.selectedNutritionalOption === option.value ? option.color + '15' : SURFACE_COLOR,
+                borderColor: filterState.selectedNutritionalOption === option.value ? option.color : BORDER_COLOR,
+              }
+            ]}
+            onPress={() => handleNutritionalOptionSelect(option.value)}
+            activeOpacity={0.7}>
+            <View style={[styles.optionIconContainer, { 
+              backgroundColor: filterState.selectedNutritionalOption === option.value ? option.color : option.color + '20' 
+            }]}>
+              <Ionicons 
+                name={option.icon as any} 
+                size={14} 
+                color={filterState.selectedNutritionalOption === option.value ? '#fff' : option.color} 
+              />
+            </View>
+            <Text style={[styles.optionText, { 
+              color: filterState.selectedNutritionalOption === option.value ? option.color : TEXT_COLOR 
+            }]} numberOfLines={2}>
+              {option.label}
+            </Text>
+            {filterState.selectedNutritionalOption === option.value && (
+              <View style={styles.checkmark}>
+                <Ionicons name="checkmark-circle" size={16} color={option.color} />
+              </View>
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+
+ 
 
   const renderSelector = (title: string, icon: string, value: string, placeholder: string, onPress: () => void, loading: boolean = false) => (
     <View style={[styles.section, { backgroundColor: CARD_BACKGROUND }]}>
@@ -597,7 +1011,7 @@ const FilterModal: React.FC<FilterModalProps> = ({
         ))}
       </View>
       
-      {shouldShowCustomPrice() && (
+      {filterState.selectedPriceRange === 'custom' && (
         <View style={[styles.customPriceContainer, { backgroundColor: SURFACE_COLOR, borderColor: PRIMARY_COLOR + '30' }]}>
           <Text style={[styles.customPriceTitle, { color: PRIMARY_COLOR }]}>
             Prix personnalisé
@@ -664,26 +1078,6 @@ const FilterModal: React.FC<FilterModalProps> = ({
           </View>
         </View>
       )}
-      
-      {filterState.selectedPriceRange && (
-        <View style={[styles.selectedPriceDisplay, { backgroundColor: PRIMARY_COLOR + '10', borderColor: PRIMARY_COLOR + '30' }]}>
-          <Text style={[styles.selectedPriceText, { color: PRIMARY_COLOR }]}>
-            {getPriceRangeDisplay()}
-          </Text>
-          <TouchableOpacity
-            onPress={() => {
-              setFilterState(prev => ({
-                ...prev,
-                selectedPriceRange: '',
-                customPriceRange: { min: '', max: '' },
-              }));
-            }}
-            style={[styles.clearPriceButton, { backgroundColor: PRIMARY_COLOR + '20' }]}
-            activeOpacity={0.7}>
-            <Ionicons name="close" size={14} color={PRIMARY_COLOR} />
-          </TouchableOpacity>
-        </View>
-      )}
     </View>
   );
 
@@ -738,25 +1132,71 @@ const FilterModal: React.FC<FilterModalProps> = ({
     <Modal visible={showCategoryModal} animationType="slide" presentationStyle="pageSheet">
       <SafeAreaView style={[styles.modalContainer, { backgroundColor: BACKGROUND_COLOR }]}>
         <View style={[styles.modalHeader, { backgroundColor: CARD_BACKGROUND, borderBottomColor: BORDER_COLOR }]}>
-          <Text style={[styles.modalTitle, { color: TEXT_COLOR }]}>
-            Catégories
-            {filterState.selectedAnimal && (
-              <Text style={[styles.modalSubtitle, { color: TEXT_COLOR_SECONDARY }]}>
-                {' '}pour {ANIMAL_TYPES.find(a => a.id === filterState.selectedAnimal)?.name}
-              </Text>
+          <View style={styles.modalHeaderLeft}>
+            {selectedCategoryPath.length > 0 && (
+              <TouchableOpacity onPress={handleCategoryBack} style={styles.backButton}>
+                <Ionicons name="arrow-back" size={20} color={PRIMARY_COLOR} />
+              </TouchableOpacity>
             )}
-          </Text>
+            <View style={styles.modalTitleContainer}>
+              <Text style={[styles.modalTitle, { color: TEXT_COLOR }]}>
+                Catégories
+              </Text>
+              {selectedCategoryPath.length > 0 && (
+                <Text style={[styles.modalSubtitle, { color: TEXT_COLOR_SECONDARY }]}>
+                  {selectedCategoryPath[selectedCategoryPath.length - 1].label}
+                </Text>
+              )}
+            </View>
+          </View>
           <TouchableOpacity onPress={() => setShowCategoryModal(false)} style={styles.closeButton}>
             <Ionicons name="close" size={20} color={TEXT_COLOR} />
           </TouchableOpacity>
         </View>
         
-        {filterData.categories.length > 0 ? (
+        {/* Breadcrumb */}
+        {selectedCategoryPath.length > 0 && (
+          <View style={[styles.breadcrumb, { backgroundColor: SURFACE_COLOR, borderBottomColor: BORDER_COLOR }]}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <TouchableOpacity 
+                onPress={() => {
+                  setSelectedCategoryPath([]);
+                  setCurrentCategoryLevel(filterData.categoryHierarchy);
+                }}
+                style={styles.breadcrumbItem}
+              >
+                <Ionicons name="home" size={14} color={PRIMARY_COLOR} />
+                <Text style={[styles.breadcrumbText, { color: PRIMARY_COLOR }]}>Accueil</Text>
+              </TouchableOpacity>
+              {selectedCategoryPath.map((category, index) => (
+                <View key={category.id} style={styles.breadcrumbItem}>
+                  <Ionicons name="chevron-forward" size={12} color={TEXT_COLOR_SECONDARY} />
+                  <TouchableOpacity 
+                    onPress={() => {
+                      const newPath = selectedCategoryPath.slice(0, index + 1);
+                      setSelectedCategoryPath(newPath);
+                      setCurrentCategoryLevel(category.children || []);
+                    }}
+                  >
+                    <Text style={[styles.breadcrumbText, { 
+                      color: index === selectedCategoryPath.length - 1 ? TEXT_COLOR : PRIMARY_COLOR 
+                    }]}>
+                      {category.label || category.name}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+        
+        {currentCategoryLevel.length > 0 ? (
           <FlatList
-            data={filterData.categories}
+            data={currentCategoryLevel}
             keyExtractor={(item) => `category-${item.id}`}
             renderItem={({ item }) => {
               const isSelected = filterState.selectedCategoryId == item.id;
+              const hasChildren = item.children && item.children.length > 0;
               
               return (
                 <TouchableOpacity
@@ -767,15 +1207,24 @@ const FilterModal: React.FC<FilterModalProps> = ({
                       borderColor: isSelected ? PRIMARY_COLOR : BORDER_COLOR,
                     }
                   ]}
-                  onPress={() => handleCategorySelect(item)}
+                  onPress={() => hasChildren ? handleCategoryNavigation(item) : handleCategorySelect(item)}
                   activeOpacity={0.7}>
                   
                   <View style={styles.modalItemContent}>
-                    <Text style={[styles.modalItemText, { 
-                      color: isSelected ? PRIMARY_COLOR : TEXT_COLOR 
-                    }]} numberOfLines={1}>
-                      {item.label || item.name}
-                    </Text>
+                    <View style={styles.categoryItemHeader}>
+                      <Text style={[styles.modalItemText, { 
+                        color: isSelected ? PRIMARY_COLOR : TEXT_COLOR 
+                      }]} numberOfLines={1}>
+                        {item.label || item.name}
+                      </Text>
+                      {hasChildren && (
+                        <View style={[styles.childrenBadge, { backgroundColor: PRIMARY_COLOR + '20' }]}>
+                          <Text style={[styles.childrenBadgeText, { color: PRIMARY_COLOR }]}>
+                            {item.children!.length}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                     {item.description && (
                       <Text style={[styles.modalItemDescription, { color: TEXT_COLOR_SECONDARY }]} numberOfLines={1}>
                         {item.description}
@@ -783,7 +1232,14 @@ const FilterModal: React.FC<FilterModalProps> = ({
                     )}
                   </View>
                   
-                  {isSelected && <Ionicons name="checkmark" size={18} color={PRIMARY_COLOR} />}
+                  <View style={styles.categoryItemActions}>
+                    {!hasChildren && isSelected && (
+                      <Ionicons name="checkmark" size={18} color={PRIMARY_COLOR} />
+                    )}
+                    {hasChildren && (
+                      <Ionicons name="chevron-forward" size={18} color={TEXT_COLOR_SECONDARY} />
+                    )}
+                  </View>
                 </TouchableOpacity>
               );
             }}
@@ -798,7 +1254,7 @@ const FilterModal: React.FC<FilterModalProps> = ({
             </Text>
             <Text style={[styles.noCategoriesSubtitle, { color: TEXT_COLOR_SECONDARY }]}>
               {filterState.selectedAnimal 
-                ? `Aucune catégorie trouvée pour ${ANIMAL_TYPES.find(a => a.id === filterState.selectedAnimal)?.name}`
+                ? `Aucune catégorie trouvée pour cet animal`
                 : 'Sélectionnez un animal pour voir les catégories'
               }
             </Text>
@@ -821,11 +1277,11 @@ const FilterModal: React.FC<FilterModalProps> = ({
         
         {/* Header */}
         <View style={[styles.header, { backgroundColor: PRIMARY_COLOR }]}>
-          <TouchableOpacity style={styles.backButton} onPress={onClose}>
+          <TouchableOpacity style={styles.headerBackButton} onPress={onClose}>
             <Ionicons name="arrow-back" size={20} color="#fff" />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>Filtres</Text>
+            <Text style={styles.headerTitle}>Filtres Complets</Text>
             {hasActiveFilters() && (
               <View style={styles.headerBadge}>
                 <Text style={styles.headerBadgeText}>{getActiveFilterCount()}</Text>
@@ -840,6 +1296,7 @@ const FilterModal: React.FC<FilterModalProps> = ({
         {/* Content */}
         <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
           {showAnimalFilter && renderAnimalSelector()}
+          
           {showBrandFilter && renderSelector(
             'Marque', 
             'business-outline', 
@@ -848,16 +1305,23 @@ const FilterModal: React.FC<FilterModalProps> = ({
             () => setShowBrandModal(true), 
             filterData.loadingBrands
           )}
+          
           {showCategoryFilter && renderSelector(
             'Catégorie', 
             'grid-outline', 
             filterState.selectedCategoryName, 
             filterState.selectedAnimal 
-              ? `Catégories ${ANIMAL_TYPES.find(a => a.id === filterState.selectedAnimal)?.name}` 
+              ? `Catégories disponibles` 
               : 'Sélectionnez un animal d\'abord', 
             () => setShowCategoryModal(true), 
             filterData.loadingCategories
           )}
+          
+           
+          {showAgeFilter && renderAgeSelector()}
+          {showTasteFilter && renderTasteSelector()}
+          {showHealthFilter && renderHealthOptionSelector()}
+          {showNutritionalFilter && renderNutritionalOptionSelector()}
           {showPriceFilter && renderPriceRangeSelector()}
         </ScrollView>
 
@@ -904,7 +1368,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 6,
   },
-  backButton: {
+  headerBackButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
@@ -973,41 +1437,43 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   
-  // Animal Grid
-  animalGrid: {
+  // Option Grid (for ages, tastes, health, nutritional, game)
+  optionGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: 8,
     justifyContent: 'space-between',
   },
-  animalCard: {
-    width: (width - 80) / 3,
-    aspectRatio: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 6,
+  optionCard: {
+    width: (width - 80) / 2,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     borderRadius: 12,
     borderWidth: 1.5,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    marginBottom: 10,
-    shadowOpacity: 0.1,
-    elevation: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    minHeight: 70,
+    position: 'relative',
   },
-  animalIconContainer: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
+  optionIconContainer: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 6,
   },
-  animalText: { 
-    fontSize: 11, 
-    fontWeight: '600', 
+  optionText: {
+    fontSize: 12,
     textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  checkmark: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
   },
   
   // Selectors
@@ -1123,30 +1589,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   
-  // Selected Price Display
-  selectedPriceDisplay: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  selectedPriceText: {
-    fontSize: 14,
-    fontWeight: '600',
-    flex: 1,
-  },
-  clearPriceButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  
   // Bottom Actions
   bottomActions: { 
     paddingHorizontal: 16, 
@@ -1182,10 +1624,27 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
   },
-  modalTitle: { fontSize: 16, fontWeight: '700', flex: 1 },
+  modalHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
+  },
+  modalTitleContainer: {
+    flex: 1,
+  },
+  modalTitle: { fontSize: 16, fontWeight: '700' },
   modalSubtitle: {
     fontSize: 14,
     fontWeight: '500',
+    marginTop: 2,
+  },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   closeButton: {
     width: 36,
@@ -1193,6 +1652,23 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  
+  // Breadcrumb
+  breadcrumb: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+  },
+  breadcrumbItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginRight: 8,
+  },
+  breadcrumbText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   
   // Modal Items
@@ -1208,10 +1684,31 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   modalItemContent: { flex: 1 },
-  modalItemText: { fontSize: 14, fontWeight: '600' },
+  categoryItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  modalItemText: { fontSize: 14, fontWeight: '600', flex: 1 },
   modalItemDescription: { fontSize: 12, marginTop: 2 },
   productCountText: { fontSize: 12, fontWeight: '500', marginTop: 2 },
+  childrenBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  childrenBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  categoryItemActions: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   
+  // No categories state
   // No categories state
   noCategoriesContainer: {
     flex: 1,

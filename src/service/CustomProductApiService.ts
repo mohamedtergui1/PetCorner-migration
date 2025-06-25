@@ -112,7 +112,7 @@ export interface Product {
 }
 
 /**
- * Product Extra Fields Interface
+ * Product Extra Fields Interface - Updated with correct Dolibarr field codes
  */
 export interface ProductExtraFields {
   options_amers_brand?: string;
@@ -129,24 +129,20 @@ export interface ProductExtraFields {
   options_ecommerceng_wc_date_on_sale_to_2_1?: string;
   options_ecommerceng_wc_manage_stock_2_1?: string;
   options_ecommerceng_wc_dont_update_stock_2_1?: string;
-  options_marque?: string; // Brand field
-  options_ftfonctionnalites?: string;
-  options_trancheage?: string;
+  options_marque?: string; // Brand field (code: marque)
+  options_ftfonctionnalites?: string; // Ages field (code: ftfonctionnalites)
+  options_trancheage?: string; // Nutritional options field (code: trancheage)
   options_ref_sage?: string;
   options_cbn?: string;
-  options_gamme?: string; // Game/Product line field
+  options_gamme?: string; // Health options field (code: gamme)
   options_gam1_sage?: string;
-  options_sousgamme?: string;
+  options_sousgamme?: string; // Taste/flavor field (code: sousgamme)
   options_gam2_sage?: string;
   options_origine?: string;
-  options_tags?: string; // Tags field (includes taste/flavor info)
+  options_tags?: string; // Tags field
   options_similaire?: string;
   options_ecommerceng_wc_sale_price?: string;
   options_runsoft_review?: string;
-  options_gout?: string; // Taste/flavor field
-  options_option_sante?: string; // Health option field
-  options_ages?: string; // Age field
-  options_option_nutritionnel?: string; // Nutritional option field
 }
 
 /**
@@ -284,7 +280,7 @@ export type ProductListResponse = Product[];
 export type ProductResponse = Product | ProductListResponse | PaginatedProductResponse;
 
 /**
- * Search Parameters Interface
+ * Search Parameters Interface - Enhanced with all filter options
  */
 export interface SearchParams {
   search_name?: string;
@@ -292,6 +288,9 @@ export interface SearchParams {
   brand?: string;
   game?: string;
   taste?: string;
+  ages?: string; // Added ages filter
+  health_option?: string; // Added health option filter
+  nutritional_option?: string; // Added nutritional option filter
   limit?: number;
   page?: number;
   sortfield?: string;
@@ -339,7 +338,7 @@ export interface DateRangeParams {
 }
 
 /**
- * Filtered Products Parameters Interface
+ * Filtered Products Parameters Interface - Enhanced with all filter options
  */
 export interface FilteredProductsParams {
   sortfield?: string;
@@ -350,6 +349,11 @@ export interface FilteredProductsParams {
   category?: number;
   brand?: string;
   search?: string;
+  game?: string; // Added game filter
+  taste?: string; // Added taste filter
+  ages?: string; // Added ages filter
+  health_option?: string; // Added health option filter
+  nutritional_option?: string; // Added nutritional option filter
   price_min?: number;
   price_max?: number;
   pagination_data?: boolean;
@@ -368,6 +372,7 @@ class ProductService {
   static readonly DEFAULT_PAGE: number = 0;
   static readonly DEFAULT_SORT_FIELD: string = "t.label";
   static readonly DEFAULT_SORT_ORDER: 'ASC' | 'DESC' = "ASC";
+  static readonly DEFAULT_CATEGORY: "1"
 
   /**
    * Search products with enhanced filtering (uses your search_filtered endpoint)
@@ -378,10 +383,14 @@ class ProductService {
       page: this.DEFAULT_PAGE,
       sortfield: this.DEFAULT_SORT_FIELD,
       sortorder: this.DEFAULT_SORT_ORDER,
+      categories: this.DEFAULT_CATEGORY,
       pagination_data: true,
       includestockdata: 0,
       ...filters
     };
+
+    // Log all parameters being sent to API
+    console.log('🚀 ProductService.searchProducts - Full params being sent:', defaultParams);
 
     try {
       const response = await apiClient.get('/products/search_filtered', { params: defaultParams });
@@ -397,7 +406,7 @@ class ProductService {
    */
   static async getProductById(id: number | string, options: ProductOptions = {}): Promise<Product> {
     const defaultOptions: ProductOptions = {
-      includestockdata: 0,
+      includestockdata: 0,  
       includesubproducts: false,
       includeparentid: false,
       includetrans: false,
@@ -467,7 +476,7 @@ class ProductService {
   }
 
   /**
-   * Get filtered products (uses your filtered endpoint)
+   * Get filtered products (uses your filtered endpoint) - Enhanced with all filter support
    */
   static async getFilteredProducts(params: FilteredProductsParams = {}): Promise<PaginatedProductResponse | ProductListResponse> {
     const defaultParams: FilteredProductsParams = {
@@ -475,16 +484,34 @@ class ProductService {
       sortorder: this.DEFAULT_SORT_ORDER,
       limit: this.DEFAULT_LIMIT,
       page: this.DEFAULT_PAGE,
+      category: 1,
       pagination_data: true,
       includestockdata: 0,
       ...params
     };
 
+    // Log all parameters being sent to API for debugging
+    console.log('🚀 ProductService.getFilteredProducts - Full params being sent:', defaultParams);
+    
+    // Log specific filter parameters
+    const activeFilters = Object.entries(defaultParams)
+      .filter(([key, value]) => value !== undefined && value !== null && value !== '')
+      .reduce((obj, [key, value]) => ({ ...obj, [key]: value }), {});
+    
+    console.log('🔍 Active filters being sent to API:', activeFilters);
+
     try {
       const response = await apiClient.get('/products/filtered', { params: defaultParams });
+      console.log('✅ API Response received:', {
+        endpoint: '/products/filtered',
+        dataCount: Array.isArray(response.data) ? response.data.length : 
+                   'pagination' in response.data ? response.data.data?.length : 'unknown',
+        hasData: !!response.data
+      });
       return response.data;
     } catch (error) {
-      console.error('Error fetching filtered products:', error);
+      console.error('❌ Error fetching filtered products:', error);
+      console.error('Parameters that caused error:', defaultParams);
       throw error;
     }
   }
@@ -695,6 +722,45 @@ class ProductService {
   ): Promise<PaginatedProductResponse | ProductListResponse> {
     return this.searchProducts({
       taste: taste,
+      ...additionalParams
+    });
+  }
+
+  /**
+   * Filter products by ages
+   */
+  static async filterByAges(
+    ages: string, 
+    additionalParams: Partial<SearchParams> = {}
+  ): Promise<PaginatedProductResponse | ProductListResponse> {
+    return this.searchProducts({
+      ages: ages,
+      ...additionalParams
+    });
+  }
+
+  /**
+   * Filter products by health option
+   */
+  static async filterByHealthOption(
+    healthOption: string, 
+    additionalParams: Partial<SearchParams> = {}
+  ): Promise<PaginatedProductResponse | ProductListResponse> {
+    return this.searchProducts({
+      health_option: healthOption,
+      ...additionalParams
+    });
+  }
+
+  /**
+   * Filter products by nutritional option
+   */
+  static async filterByNutritionalOption(
+    nutritionalOption: string, 
+    additionalParams: Partial<SearchParams> = {}
+  ): Promise<PaginatedProductResponse | ProductListResponse> {
+    return this.searchProducts({
+      nutritional_option: nutritionalOption,
       ...additionalParams
     });
   }
