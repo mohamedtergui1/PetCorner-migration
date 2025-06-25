@@ -25,20 +25,18 @@ import Feather from 'react-native-vector-icons/Feather';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../context/ThemeContext';
 import ProductCard2, { ProductCard2Props } from '../components/Product/ProductCard2';
-import ProductService from '../service/CustomProductApiService';
-import FilterModal from '../components/filter/FilterModal'; // Import FilterModal
+import FilterModal from '../components/filter/FilterModal';
+
+// Import the ProductService
+import ProductService, { 
+  Product, 
+  PaginatedProductResponse, 
+  ProductListResponse,
+  SearchParams,
+  FilteredProductsParams
+} from '../service/CustomProductApiService';
 
 // Type definitions
-interface Product {
-  id: string;
-  image_link?: string | null;
-  photo_link?: string | null;
-  label?: string;
-  price_ttc?: number;
-  price?: number;
-  [key: string]: any;
-}
-
 interface Category {
   id: string;
   name: string;
@@ -57,36 +55,27 @@ interface ProductCategoryScreenProps {
   };
 }
 
-interface PaginationResponse {
-  data: Product[];
-  pagination?: {
-    total: number;
-    page: number;
-    page_count: number;
-    limit: number;
-  };
-}
-
-// Enhanced FilterOptions interface
+// Enhanced FilterOptions interface (same as ProductScreen)
 interface FilterOptions {
   animal_category?: number;
   brand?: string;
   category?: number;
   priceMin?: number;
   priceMax?: number;
+  ages?: string;
+  taste?: string;
+  health_option?: string;
+  nutritional_option?: string;
+  game?: string;
 }
 
-interface FilterParams {
-  limit: number;
+interface PaginationData {
+  total: number;
   page: number;
-  category: number;
-  sortfield: string;
-  sortorder: string;
-  animal_category?: number;
-  brand?: string;
-  price_min?: number;
-  price_max?: number;
-  search?: string;
+  page_count: number;
+  limit: number;
+  current_count: number;
+  has_more: boolean;
 }
 
 const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigation, route }) => {
@@ -94,13 +83,13 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
   const { isDarkMode, colorTheme } = useTheme();
   const PRIMARY_COLOR: string = colorTheme === 'blue' ? '#007afe' : '#fe9400';
   const SECONDARY_COLOR: string = colorTheme === 'blue' ? '#fe9400' : '#007afe';
-  const BACKGROUND_COLOR: string = isDarkMode ? '#121212' : '#f8f8f8';
-  const CARD_BACKGROUND: string = isDarkMode ? '#1e1e1e' : '#ffffff';
-  const TEXT_COLOR: string = isDarkMode ? '#ffffff' : '#000000';
-  const TEXT_COLOR_SECONDARY: string = isDarkMode ? '#b3b3b3' : '#666666';
-  const BORDER_COLOR: string = isDarkMode ? '#2c2c2c' : '#e0e0e0';
+  const BACKGROUND_COLOR: string = isDarkMode ? '#0a0a0a' : '#f8f9fa';
+  const CARD_BACKGROUND: string = isDarkMode ? '#1a1a1a' : '#ffffff';
+  const TEXT_COLOR: string = isDarkMode ? '#ffffff' : '#1a1a1a';
+  const TEXT_COLOR_SECONDARY: string = isDarkMode ? '#a0a0a0' : '#6c757d';
+  const BORDER_COLOR: string = isDarkMode ? '#2a2a2a' : '#e9ecef';
 
-  // Enhanced state management
+  // Enhanced state management (same as ProductScreen)
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(
     route.params?.categoryId || filterData[0]?.id || "2"
@@ -113,7 +102,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
 
   // Pagination states (same as ProductScreen)
   const [currentPage, setCurrentPage] = useState(0);
-  const [paginationData, setPaginationData] = useState({
+  const [paginationData, setPaginationData] = useState<PaginationData>({
     total: 0,
     page: 0,
     page_count: 0,
@@ -121,9 +110,9 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
     current_count: 0,
     has_more: false
   });
-  const [pageSize] = useState(10);
+  const [pageSize] = useState(20);
   
-  // New filter and search states
+  // Filter and search states (same as ProductScreen)
   const [showFilterModal, setShowFilterModal] = useState<boolean>(false);
   const [activeFilters, setActiveFilters] = useState<FilterOptions>({});
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -133,17 +122,84 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
   const [sortBy, setSortBy] = useState<'date' | 'price' | 'name'>('date');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-  const PAGE_SIZE: number = 10;
   const isLoadingRef = useRef<boolean>(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Utility functions from ProductScreen
+  // =====================================
+  // UTILITY FUNCTIONS (same as ProductScreen)
+  // =====================================
+
+  // Apply client-side filters for advanced filtering (using correct Dolibarr fields)
+  const applyClientSideFilters = (productsList: Product[], filters: FilterOptions): Product[] => {
+    let filteredProducts = [...productsList];
+
+    // Filter by ages (using correct field: options_ftfonctionnalites)
+    if (filters.ages) {
+      filteredProducts = filteredProducts.filter(product => {
+        const productAges = product.array_options?.options_ftfonctionnalites;
+        if (!productAges) return false;
+        return productAges.toString().includes(filters.ages!.toString());
+      });
+    }
+
+    // Filter by taste (using correct field: options_sousgamme)
+    if (filters.taste) {
+      filteredProducts = filteredProducts.filter(product => {
+        const productTaste = product.array_options?.options_sousgamme;
+        if (!productTaste) return false;
+        return productTaste.toString().includes(filters.taste!.toString());
+      });
+    }
+
+    // Filter by health options (using correct field: options_gamme)
+    if (filters.health_option) {
+      filteredProducts = filteredProducts.filter(product => {
+        const healthOption = product.array_options?.options_gamme;
+        if (!healthOption) return false;
+        return healthOption.toString().includes(filters.health_option!.toString());
+      });
+    }
+
+    // Filter by nutritional options (using correct field: options_trancheage)
+    if (filters.nutritional_option) {
+      filteredProducts = filteredProducts.filter(product => {
+        const nutritionalOption = product.array_options?.options_trancheage;
+        if (!nutritionalOption) return false;
+        return nutritionalOption.toString().includes(filters.nutritional_option!.toString());
+      });
+    }
+
+    // Filter by game/product line
+    if (filters.game) {
+      filteredProducts = filteredProducts.filter(product => {
+        const productGame = product.array_options?.options_gamme;
+        if (!productGame) return false;
+        return productGame.toString().includes(filters.game!.toString());
+      });
+    }
+
+    console.log('🔍 Client-side filtering applied:', {
+      original: productsList.length,
+      filtered: filteredProducts.length,
+      filters_applied: Object.keys(filters).filter(key => (filters as any)[key]).length,
+      filter_details: {
+        ages: filters.ages,
+        taste: filters.taste,
+        health_option: filters.health_option,
+        nutritional_option: filters.nutritional_option,
+        game: filters.game
+      }
+    });
+
+    return filteredProducts;
+  };
+
   const getSortField = (sortType: string): string => {
     switch (sortType) {
       case 'price':
         return 'price_ttc';
       case 'name':
-        return 'label';
+        return 't.label';
       case 'date':
       default:
         return 'ref';
@@ -183,7 +239,12 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
       default:
         return sorted.sort((a, b) => {
           const getProductDate = (product: Product): number => {
-            const dateFields = ['date_creation', 'datec', 'tms', 'date_add'];
+            const dateFields = [
+              'date_creation',
+              'date_modification',
+              'date_creation_formatted',
+              'date_modification_formatted'
+            ];
             
             for (const field of dateFields) {
               const dateValue = (product as any)[field];
@@ -199,8 +260,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
               }
             }
             
-            const productId = product.id ? parseInt(String(product.id)) : 0;
-            return productId;
+            return product.id ? parseInt(String(product.id)) : 0;
           };
           
           const dateA = getProductDate(a);
@@ -225,7 +285,106 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
     return Array.from(uniqueProducts.values());
   }, []);
 
-  // Enhanced loadProducts function with same logic as ProductScreen
+  // Get active filter display with proper labels (same as ProductScreen)
+  const getActiveFilterDisplay = (): string => {
+    const filterLabels: string[] = [];
+    
+    // Animal names mapping
+    if (activeFilters.animal_category) {
+      const animalNames: { [key: number]: string } = {
+        2: 'Chien', 3: 'Chat', 184: 'Lapin', 21: 'Poisson', 31: 'Reptile', 20: 'Oiseau'
+      };
+      filterLabels.push(animalNames[activeFilters.animal_category] || `Animal ${activeFilters.animal_category}`);
+    }
+    
+    // Brand (already a string)
+    if (activeFilters.brand) filterLabels.push(activeFilters.brand);
+    
+    // Ages mapping
+    if (activeFilters.ages) {
+      const ageNames: { [key: string]: string } = {
+        '1': 'Adulte',
+        '2': 'Senior', 
+        '3': 'Junior',
+        '4': 'Première âge',
+        '5': 'Chatons',
+        '6': 'Chiots'
+      };
+      const ageName = ageNames[activeFilters.ages] || activeFilters.ages;
+      filterLabels.push(`Âge: ${ageName}`);
+    }
+    
+    // Taste mapping
+    if (activeFilters.taste) {
+      const tasteNames: { [key: string]: string } = {
+        '1': 'Boeuf',
+        '2': 'Poulet',
+        '3': 'Canard', 
+        '4': 'Poisson',
+        '5': 'Agneau',
+        '6': 'Autre'
+      };
+      const tasteName = tasteNames[activeFilters.taste] || activeFilters.taste;
+      filterLabels.push(`Goût: ${tasteName}`);
+    }
+    
+    // Health options mapping
+    if (activeFilters.health_option) {
+      const healthNames: { [key: string]: string } = {
+        '1': 'Stériles',
+        '2': 'Allergies',
+        '3': 'Vessies',
+        '4': 'Croissances',
+        '5': 'Vieillissements',
+        '6': 'Respirations',
+        '7': 'Poils et peaux',
+        '8': 'Digestifs',
+        '9': 'Surpoids',
+        '10': 'Sensibles',
+        '11': 'Allaitantes ou gestantes',
+        '12': 'Immunités',
+        '13': 'Dentaires'
+      };
+      const healthName = healthNames[activeFilters.health_option] || activeFilters.health_option;
+      filterLabels.push(`Santé: ${healthName}`);
+    }
+    
+    // Nutritional options mapping
+    if (activeFilters.nutritional_option) {
+      const nutritionalNames: { [key: string]: string } = {
+        '1': 'Sans céréales',
+        '2': 'Ingrédient limité',
+        '3': 'Bio',
+        '4': 'Sans OGM',
+        '5': 'Sans gluten',
+        '6': 'Sans sucre',
+        '7': 'Végétarien',
+        '8': 'Riche en protéine',
+        '9': 'Équilibré'
+      };
+      const nutritionalName = nutritionalNames[activeFilters.nutritional_option] || activeFilters.nutritional_option;
+      filterLabels.push(`Nutrition: ${nutritionalName}`);
+    }
+    
+    // Game/Product line
+    if (activeFilters.game) {
+      filterLabels.push(`Gamme: ${activeFilters.game}`);
+    }
+    
+    // Price range
+    if (activeFilters.priceMin || activeFilters.priceMax) {
+      const priceRange = `${activeFilters.priceMin || 0} - ${activeFilters.priceMax || '∞'} DH`;
+      filterLabels.push(`Prix: ${priceRange}`);
+    }
+    
+    return filterLabels.join(' • ');
+  };
+
+  // =====================================
+  // DATA LOADING FUNCTIONS (Enhanced like ProductScreen)
+  // =====================================
+
+  // Enhanced loadProducts function with complete filter support
   const loadProducts = useCallback(async (
     categoryId: string, 
     resetPagination: boolean = true,
@@ -259,32 +418,97 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
       );
 
       console.log('📦 Chargement des produits - Page:', pageToLoad);
-      console.log('🔍 Filtres:', filters, 'Recherche:', search);
+      console.log('🔍 Filtres complets:', filters, 'Recherche:', search);
       console.log('📊 Sort by:', sortBy);
+      
+      // Calculate category to use (same logic as ProductScreen)
+      const categoryToUse = filters.category || parseInt(categoryId) || 1;
+      
+      console.log('🏷️ Category logic:', {
+        selected_category: filters.category,
+        category_from_route: categoryId,
+        final_category: categoryToUse,
+        logic: 'category || categoryId || 1'
+      });
+      
+      // Determine which endpoint to use based on filters
+      let result: PaginatedProductResponse | ProductListResponse;
+      
+      // Check if we need to use the filtered endpoint (for complex filtering)
+      const needsFilteredEndpoint = !!(
+        filters.animal_category || 
+        filters.priceMin || 
+        filters.priceMax ||
+        filters.ages ||
+        filters.taste ||
+        filters.health_option ||
+        filters.nutritional_option ||
+        filters.game
+      );
 
-      // Enhanced params with filters
-      const params: FilterParams = {
-        limit: pageSize,
-        page: pageToLoad,
-        category: parseInt(categoryId),
-        sortfield: getSortField(sortBy),
-        sortorder: getSortOrder(sortBy)
-      };
+      if (needsFilteredEndpoint) {
+        // Use the filtered endpoint for complex filtering
+        const filteredParams: FilteredProductsParams = {
+          limit: pageSize,
+          page: pageToLoad,
+          sortfield: getSortField(sortBy),
+          sortorder: getSortOrder(sortBy),
+          pagination_data: true,
+          includestockdata: 0,
+        };
 
-      // Add filters
-      if (filters.animal_category) params.animal_category = filters.animal_category;
-      if (filters.brand) params.brand = filters.brand;
-      if (filters.priceMin !== undefined) params.price_min = filters.priceMin;
-      if (filters.priceMax !== undefined) params.price_max = filters.priceMax;
-      if (search && search.trim()) params.search = search.trim();
+        // Add all available filters to filtered endpoint
+        if (filters.animal_category) filteredParams.animal_category = filters.animal_category;
+        
+        // Always set the category using our logic
+        filteredParams.category = categoryToUse;
+        
+        if (filters.brand) filteredParams.brand = filters.brand;
+        if (search && search.trim()) filteredParams.search = search.trim();
+        if (filters.priceMin !== undefined) filteredParams.price_min = filters.priceMin;
+        if (filters.priceMax !== undefined) filteredParams.price_max = filters.priceMax;
+        
+        // Add all Dolibarr-specific filters
+        if (filters.ages) filteredParams.ages = filters.ages;
+        if (filters.taste) filteredParams.taste = filters.taste;
+        if (filters.health_option) filteredParams.health_option = filters.health_option;
+        if (filters.nutritional_option) filteredParams.nutritional_option = filters.nutritional_option;
+        if (filters.game) filteredParams.game = filters.game;
 
-      console.log('🚀 API Params:', params);
+        console.log('🚀 Using filtered endpoint with params:', filteredParams);
+        result = await ProductService.getFilteredProducts(filteredParams);
+        
+      } else {
+        // Use the standard search endpoint for simple filtering
+        const searchParams: SearchParams = {
+          limit: pageSize,
+          page: pageToLoad,
+          pagination_data: true,
+          includestockdata: 0,
+          sortfield: getSortField(sortBy),
+          sortorder: getSortOrder(sortBy),
+        };
 
-      const result: Product[] | PaginationResponse = await ProductService.getFilteredProducts(params);
+        // Add basic filters using our category logic
+        searchParams.categories = categoryToUse.toString();
+        
+        if (filters.brand) searchParams.brand = filters.brand;
+        if (search && search.trim()) searchParams.search_name = search.trim();
+        
+        // Add all Dolibarr-specific filters to search endpoint too
+        if (filters.game) searchParams.game = filters.game;
+        if (filters.taste) searchParams.taste = filters.taste;
+        if (filters.ages) searchParams.ages = filters.ages;
+        if (filters.health_option) searchParams.health_option = filters.health_option;
+        if (filters.nutritional_option) searchParams.nutritional_option = filters.nutritional_option;
+
+        console.log('🚀 Using search endpoint with params:', searchParams);
+        result = await ProductService.searchProducts(searchParams);
+      }
 
       // Handle response (same logic as ProductScreen)
       let newProducts: Product[] = [];
-      let newPaginationData = {
+      let newPaginationData: PaginationData = {
         total: 0,
         page: pageToLoad,
         page_count: 0,
@@ -293,9 +517,20 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
         has_more: false
       };
 
-      if (Array.isArray(result)) {
+      if ('pagination' in result) {
+        // Paginated response
+        newProducts = result.data || [];
+        newPaginationData = {
+          total: result.pagination.total || 0,
+          page: result.pagination.page || pageToLoad,
+          page_count: result.pagination.page_count || 0,
+          limit: result.pagination.limit || pageSize,
+          current_count: newProducts.length,
+          has_more: (result.pagination.page || 0) < (result.pagination.page_count || 0) - 1
+        };
+      } else {
         // Simple array response
-        newProducts = result;
+        newProducts = result as Product[];
         newPaginationData = {
           total: newProducts.length,
           page: 0,
@@ -304,38 +539,28 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
           current_count: newProducts.length,
           has_more: false
         };
-      } else if (result && typeof result === 'object') {
-        // Paginated response
-        newProducts = result.data || [];
-        newPaginationData = {
-          total: result.pagination?.total || 0,
-          page: result.pagination?.page || pageToLoad,
-          page_count: result.pagination?.page_count || 0,
-          limit: result.pagination?.limit || pageSize,
-          current_count: newProducts.length,
-          has_more: (result.pagination?.page || 0) < (result.pagination?.page_count || 0) - 1
-        };
+      }
+
+      // Apply client-side filtering for advanced filters not supported by API
+      if (newProducts.length > 0) {
+        console.log('🔧 Before client-side filtering:', newProducts.length);
+        newProducts = applyClientSideFilters(newProducts, filters);
+        console.log('🔧 After client-side filtering:', newProducts.length);
+        newProducts = sortProducts(newProducts, sortBy);
+        console.log('🔧 After sorting:', newProducts.length);
       }
 
       console.log('📊 Résultat pagination:', newPaginationData);
       console.log('📦 Produits reçus:', newProducts.length);
 
-      // Apply local sorting
-      const sortedProducts = sortProducts(newProducts, sortBy);
-
       if (resetPagination) {
-        setProducts(sortedProducts);
+        setProducts(newProducts);
         setCurrentPage(0);
         setPaginationData(newPaginationData);
       } else {
         setProducts(prevProducts => {
-          const combinedProducts = [...prevProducts, ...sortedProducts];
-          console.log('🔄 Combined products:', {
-            previousCount: prevProducts.length,
-            newCount: sortedProducts.length,
-            totalCount: combinedProducts.length
-          });
-          return combinedProducts;
+          const combinedProducts = [...prevProducts, ...newProducts];
+          return sortProducts(combinedProducts, sortBy);
         });
         setCurrentPage(pageToLoad + 1);
         setPaginationData(prev => ({
@@ -353,8 +578,17 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
         total_disponible: newPaginationData.total,
         page_actuelle: newPaginationData.page,
         total_pages: newPaginationData.page_count,
-        tri_appliqué: sortBy
+        tri_appliqué: sortBy,
+        filtres_actifs: Object.keys(filters).length,
+        catégorie_finale: categoryToUse,
+        filtres_détails: filters
       });
+      
+      if (newProducts.length === 0) {
+        console.log('ℹ️ Aucun produit trouvé pour cette recherche/filtre');
+        console.log('🔍 Filtres appliqués:', filters);
+        console.log('🔍 Recherche:', search);
+      }
 
     } catch (error) {
       console.error('❌ Error loading products:', error);
@@ -380,6 +614,10 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
       isLoadingRef.current = false;
     }
   }, [removeDuplicateProducts, sortBy, pageSize]);
+
+  // =====================================
+  // EVENT HANDLERS (Enhanced like ProductScreen)
+  // =====================================
 
   // Search functionality
   const handleSearchInputChange = (text: string) => {
@@ -412,17 +650,23 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
     loadProducts(selectedCategoryId, true, activeFilters, '');
   };
 
-  // Filter functionality
+  // Filter functionality (Enhanced with all filter types)
   const handleApplyFilters = (filters: any) => {
-    console.log('✅ Filtres appliqués:', filters);
+    console.log('✅ Filtres appliqués (complets):', filters);
     
+    // Convert the filter format to match our internal structure
     const convertedFilters: FilterOptions = {};
     
-    if (filters.animal) convertedFilters.animal_category = parseInt(filters.animal);
+    if (filters.animal_category !== undefined) convertedFilters.animal_category = parseInt(filters.animal_category);
     if (filters.brand) convertedFilters.brand = filters.brand;
-    if (filters.category) convertedFilters.category = parseInt(filters.category);
+    if (filters.category !== undefined) convertedFilters.category = parseInt(filters.category);
     if (filters.priceMin !== undefined) convertedFilters.priceMin = filters.priceMin;
     if (filters.priceMax !== undefined) convertedFilters.priceMax = filters.priceMax;
+    if (filters.ages) convertedFilters.ages = filters.ages;
+    if (filters.taste) convertedFilters.taste = filters.taste;
+    if (filters.health_option) convertedFilters.health_option = filters.health_option;
+    if (filters.nutritional_option) convertedFilters.nutritional_option = filters.nutritional_option;
+    if (filters.game) convertedFilters.game = filters.game;
     
     setShowFilterModal(false);
     loadProducts(selectedCategoryId, true, convertedFilters, searchQuery);
@@ -481,7 +725,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
     };
   }, []);
 
-  // Load more products (exact same logic as ProductScreen)
+  // Load more products (same logic as ProductScreen)
   const loadMoreProducts = useCallback((): void => {
     const hasMore = (currentPage + 1) < paginationData.page_count;
     
@@ -529,7 +773,10 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
     return `product-${productId}-${index}`;
   }, []);
 
-  // Render functions
+  // =====================================
+  // RENDER FUNCTIONS
+  // =====================================
+
   const renderProduct = useCallback(({ item, index }: ListRenderItemInfo<Product>): JSX.Element => {
     const hasImageFailed: boolean = failedImageLoads.has(item.id);
     const productCardProps: ProductCard2Props = {
@@ -610,7 +857,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
     );
   }, [selectedCategoryId, isDarkMode, PRIMARY_COLOR, TEXT_COLOR_SECONDARY, handleCategorySelect]);
 
-  // Render search bar
+  // Render search bar (same as ProductScreen)
   const renderSearchBar = () => {
     if (!showSearchBar) return null;
 
@@ -639,14 +886,55 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
     );
   };
 
-  // Render filter header
+  // Render filter header (same as ProductScreen)
   const renderFilterHeader = () => {
     return (
-      <></>
+      <View style={[styles.filterHeader, { backgroundColor: CARD_BACKGROUND, borderColor: BORDER_COLOR }]}>
+        <View style={styles.filterHeaderLeft}>
+          <Ionicons name="apps-outline" size={18} color={PRIMARY_COLOR} />
+          <View style={styles.productCountContainer}>
+            <Text style={[styles.filterHeaderText, { color: TEXT_COLOR }]}>
+              Affichage de {products.length} sur {paginationData.total} produits
+            </Text>
+            {(hasActiveFilters() || searchQuery) && (
+              <Text style={[styles.filterSubText, { color: TEXT_COLOR_SECONDARY }]} numberOfLines={2}>
+                {searchQuery && `Recherche: "${searchQuery}"`}
+                {hasActiveFilters() && searchQuery && ' • '}
+                {hasActiveFilters() && getActiveFilterDisplay()}
+              </Text>
+            )}
+            <Text style={[styles.sortIndicator, { color: PRIMARY_COLOR }]}>
+              Trié par: {sortBy === 'date' ? 'Date de création' : sortBy === 'price' ? 'Prix' : 'Nom'}
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.filterHeaderRight}>
+          {hasActiveFilters() && (
+            <TouchableOpacity
+              style={[styles.clearFiltersButtonSmall, { backgroundColor: SECONDARY_COLOR + '20', borderColor: SECONDARY_COLOR }]}
+              onPress={handleClearFilters}
+            >
+              <Ionicons name="close" size={14} color={SECONDARY_COLOR} />
+              <Text style={[styles.clearFiltersTextSmall, { color: SECONDARY_COLOR }]}>Filtres</Text>
+            </TouchableOpacity>
+          )}
+          
+          {searchQuery && (
+            <TouchableOpacity
+              style={[styles.clearFiltersButtonSmall, { backgroundColor: PRIMARY_COLOR + '20', borderColor: PRIMARY_COLOR }]}
+              onPress={clearSearch}
+            >
+              <Ionicons name="close" size={14} color={PRIMARY_COLOR} />
+              <Text style={[styles.clearFiltersTextSmall, { color: PRIMARY_COLOR }]}>Recherche</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
     );
   };
 
-  // Render toolbar
+  // Render toolbar (same as ProductScreen)
   const renderToolbar = () => (
     <View style={[styles.toolbar, { backgroundColor: CARD_BACKGROUND, borderColor: BORDER_COLOR }]}>
       <View style={styles.toolbarLeft}>
@@ -707,7 +995,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
         backgroundColor={isDarkMode ? '#000000' : '#ffffff'}
       />
 
-      {/* Enhanced Header with Search and Filter */}
+      {/* Enhanced Header with Search and Filter (same as ProductScreen) */}
       <View style={[styles.header, { backgroundColor: PRIMARY_COLOR }]}>
         <TouchableOpacity
           style={styles.backButton}
@@ -881,7 +1169,7 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
         </>
       )}
 
-      {/* Filter Modal */}
+      {/* Filter Modal with all filters enabled */}
       {showFilterModal && (
         <FilterModal
           visible={showFilterModal}
@@ -892,13 +1180,18 @@ const ProductCategoryScreen: React.FC<ProductCategoryScreenProps> = ({ navigatio
           showBrandFilter={true}
           showCategoryFilter={false} // Disable category filter since we're already filtering by category
           showPriceFilter={true}
+          showAgeFilter={true}
+          showTasteFilter={true}
+          showHealthFilter={true}
+          showNutritionalFilter={true}
+          showGameFilter={true}
         />
       )}
     </SafeAreaView>
   );
 };
 
-// Enhanced styles
+// Enhanced styles (same as ProductScreen)
 const styles = StyleSheet.create({
   container: {
     flex: 1,

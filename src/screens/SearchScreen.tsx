@@ -1,70 +1,72 @@
-import { useCallback, useRef, useState, useEffect } from "react"
+// SearchScreen.tsx - Enhanced with Complete Filter Integration (Matching ProductScreen)
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  FlatList,
-  Modal,
   StyleSheet,
   Text,
-  TouchableWithoutFeedback,
   View,
-  TextInput,
-  Keyboard,
-  ActivityIndicator,
-  useWindowDimensions,
-  StatusBar,
-  TouchableOpacity,
   SafeAreaView,
-  ScrollView,
-  Image,
-  Alert,
+  TouchableOpacity,
+  FlatList,
+  ActivityIndicator,
   RefreshControl,
-} from "react-native"
-import { useFocusEffect } from "@react-navigation/native"
-import Ionicons from "react-native-vector-icons/Ionicons"
-import { useTheme } from "../context/ThemeContext"
-import ProductCard2 from "../components/Product/ProductCard2"
-import { filterData } from "../database/Database"
-import FilterModal from "../components/filter/FilterModal" // Import FilterModal
+  Alert,
+  TextInput,
+  StatusBar,
+  Modal,
+  TouchableWithoutFeedback,
+  Keyboard,
+} from 'react-native';
+import { useTheme } from '../context/ThemeContext';
+import { useFocusEffect } from '@react-navigation/native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import FilterModal from '../components/filter/FilterModal';
+import ProductCard2 from '../components/Product/ProductCard2';
 
-// Import the ProductService and CategoryService
-import ProductService, { type Product, type FilteredProductsParams } from "../service/CustomProductApiService"
+// Import the ProductService
+import ProductService, { 
+  Product, 
+  PaginatedProductResponse, 
+  ProductListResponse,
+  SearchParams,
+  FilteredProductsParams
+} from '../service/CustomProductApiService';
 
 // =====================================
 // TYPES AND INTERFACES
 // =====================================
 
+interface FilterOptions {
+  animal_category?: number;
+  brand?: string;
+  category?: number;
+  priceMin?: number;
+  priceMax?: number;
+  ages?: string;
+  taste?: string;
+  health_option?: string;
+  nutritional_option?: string;
+  game?: string;
+}
+
 interface SearchScreenProps {
-  navigation: any
+  navigation: any;
+  route?: any;
 }
 
 interface PaginationData {
-  total: number
-  page: number
-  page_count: number
-  limit: number
-  current_count: number
-  has_more: boolean
-}
-
-interface CategoryData {
-  id: string
-  name: string
-  image: any
-}
-
-// Enhanced FilterOptions interface
-interface FilterOptions {
-  animal_category?: number
-  brand?: string
-  category?: number
-  priceMin?: number
-  priceMax?: number
+  total: number;
+  page: number;
+  page_count: number;
+  limit: number;
+  current_count: number;
+  has_more: boolean;
 }
 
 // =====================================
 // CONSTANTS
 // =====================================
 
-const PAGE_SIZE = 10
+const PAGE_SIZE = 20;
 
 // Category mapping from filterData IDs to API category IDs
 const CATEGORY_MAPPING: { [key: string]: number } = {
@@ -74,39 +76,44 @@ const CATEGORY_MAPPING: { [key: string]: number } = {
   "21": 21, // Poisson -> API category 21
   "31": 31, // Reptile -> API category 31
   "20": 20, // Oiseau -> API category 20
-}
+};
 
 // =====================================
 // MAIN COMPONENT
 // =====================================
 
-export default function SearchScreen({ navigation }: SearchScreenProps) {
-  const { isDarkMode, colorTheme } = useTheme()
-  const { width, height } = useWindowDimensions()
-
+export default function SearchScreen({ navigation, route }: SearchScreenProps) {
+  const { isDarkMode, colorTheme } = useTheme();
+  
   // =====================================
   // STATE MANAGEMENT
   // =====================================
-
+  
   // UI States
-  const [modalVisible, setModalVisible] = useState(false)
-  const [textInputFocussed, setTextInputFocussed] = useState(false)
-
+  const [modalVisible, setModalVisible] = useState(false);
+  const [textInputFocussed, setTextInputFocussed] = useState(false);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  
   // Search States
-  const [searchText, setSearchText] = useState("")
-  const [products, setProducts] = useState<Product[]>([])
-
-  // Loading States
-  const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
-
-  // Error States
-  const [error, setError] = useState<string | null>(null)
-  const [isNotFound, setIsNotFound] = useState(false)
-
+  const [searchText, setSearchText] = useState("");
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchLoading, setSearchLoading] = useState(false);
+  
+  // Data States
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isNotFound, setIsNotFound] = useState(false);
+  
+  // Filter States
+  const [activeFilters, setActiveFilters] = useState<FilterOptions>({});
+  const [sortBy, setSortBy] = useState<'date' | 'price' | 'name'>('date');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  
   // Pagination States
-  const [currentPage, setCurrentPage] = useState(0)
+  const [currentPage, setCurrentPage] = useState(0);
   const [paginationData, setPaginationData] = useState<PaginationData>({
     total: 0,
     page: 0,
@@ -114,52 +121,115 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
     limit: PAGE_SIZE,
     current_count: 0,
     has_more: false,
-  })
-
-  // Category Selection
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("2") // Default to Chien
-  const [categoryName, setCategoryName] = useState("Chien")
-
-  // NEW FILTER STATES - Same as ProductCategoryScreen
-  const [showFilterModal, setShowFilterModal] = useState<boolean>(false)
-  const [activeFilters, setActiveFilters] = useState<FilterOptions>({})
-  const [sortBy, setSortBy] = useState<'date' | 'price' | 'name'>('date')
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
-  const [failedImageLoads, setFailedImageLoads] = useState<Set<string>>(new Set())
-
-  const textInput = useRef<TextInput>(null)
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const isLoadingRef = useRef<boolean>(false)
+  });
+  
+  // Category Selection (Default to category 1 for search)
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("1");
+  const [categoryName, setCategoryName] = useState("Toutes catégories");
+  
+  // Failed image loads tracking
+  const [failedImageLoads, setFailedImageLoads] = useState<Set<string>>(new Set());
+  
+  // Refs
+  const textInput = useRef<TextInput>(null);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isLoadingRef = useRef<boolean>(false);
 
   // =====================================
   // THEME COLORS
   // =====================================
-
-  const PRIMARY_COLOR = colorTheme === "blue" ? "#007afe" : "#fe9400"
-  const SECONDARY_COLOR = colorTheme === "blue" ? "#fe9400" : "#007afe"
-  const BACKGROUND_COLOR = isDarkMode ? "#121212" : "#f8f8f8"
-  const CARD_BACKGROUND = isDarkMode ? "#1e1e1e" : "#ffffff"
-  const TEXT_COLOR = isDarkMode ? "#ffffff" : "#000000"
-  const TEXT_COLOR_SECONDARY = isDarkMode ? "#b3b3b3" : "#666666"
-  const BORDER_COLOR = isDarkMode ? "#2c2c2c" : "#e0e0e0"
-  const SURFACE_COLOR = isDarkMode ? "#1E1E1E" : "#f5f5f5"
+  
+  const PRIMARY_COLOR = colorTheme === 'blue' ? '#007afe' : '#fe9400';
+  const SECONDARY_COLOR = colorTheme === 'blue' ? '#fe9400' : '#007afe';
+  const BACKGROUND_COLOR = isDarkMode ? '#0a0a0a' : '#f8f9fa';
+  const CARD_BACKGROUND = isDarkMode ? '#1a1a1a' : '#ffffff';
+  const TEXT_COLOR = isDarkMode ? '#ffffff' : '#1a1a1a';
+  const TEXT_COLOR_SECONDARY = isDarkMode ? '#a0a0a0' : '#6c757d';
+  const BORDER_COLOR = isDarkMode ? '#2a2a2a' : '#e9ecef';
 
   // =====================================
-  // UTILITY FUNCTIONS - Same as ProductCategoryScreen
+  // UTILITY FUNCTIONS
   // =====================================
 
+  // Apply client-side filters for advanced filtering
+  const applyClientSideFilters = (productsList: Product[], filters: FilterOptions): Product[] => {
+    let filteredProducts = [...productsList];
+
+    // Filter by ages (using correct field: options_ftfonctionnalites)
+    if (filters.ages) {
+      filteredProducts = filteredProducts.filter(product => {
+        const productAges = product.array_options?.options_ftfonctionnalites;
+        if (!productAges) return false;
+        return productAges.toString().includes(filters.ages!.toString());
+      });
+    }
+
+    // Filter by taste (using correct field: options_sousgamme)
+    if (filters.taste) {
+      filteredProducts = filteredProducts.filter(product => {
+        const productTaste = product.array_options?.options_sousgamme;
+        if (!productTaste) return false;
+        return productTaste.toString().includes(filters.taste!.toString());
+      });
+    }
+
+    // Filter by health options (using correct field: options_gamme)
+    if (filters.health_option) {
+      filteredProducts = filteredProducts.filter(product => {
+        const healthOption = product.array_options?.options_gamme;
+        if (!healthOption) return false;
+        return healthOption.toString().includes(filters.health_option!.toString());
+      });
+    }
+
+    // Filter by nutritional options (using correct field: options_trancheage)
+    if (filters.nutritional_option) {
+      filteredProducts = filteredProducts.filter(product => {
+        const nutritionalOption = product.array_options?.options_trancheage;
+        if (!nutritionalOption) return false;
+        return nutritionalOption.toString().includes(filters.nutritional_option!.toString());
+      });
+    }
+
+    // Filter by game/product line
+    if (filters.game) {
+      filteredProducts = filteredProducts.filter(product => {
+        const productGame = product.array_options?.options_gamme;
+        if (!productGame) return false;
+        return productGame.toString().includes(filters.game!.toString());
+      });
+    }
+
+    console.log('🔍 Client-side filtering applied:', {
+      original: productsList.length,
+      filtered: filteredProducts.length,
+      filters_applied: Object.keys(filters).filter(key => (filters as any)[key]).length,
+      filter_details: {
+        ages: filters.ages,
+        taste: filters.taste,
+        health_option: filters.health_option,
+        nutritional_option: filters.nutritional_option,
+        game: filters.game
+      }
+    });
+
+    return filteredProducts;
+  };
+
+  // Get sort field for API
   const getSortField = (sortType: string): string => {
     switch (sortType) {
       case 'price':
         return 'price_ttc';
       case 'name':
-        return 'label';
+        return 't.label';
       case 'date':
       default:
-        return 'datec';
+        return 'ref';
     }
   };
 
+  // Get sort order for API
   const getSortOrder = (sortType: string): 'ASC' | 'DESC' => {
     switch (sortType) {
       case 'price':
@@ -171,6 +241,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
     }
   };
 
+  // Sort products locally
   const sortProducts = (productsList: Product[], sortType: string) => {
     if (!Array.isArray(productsList)) return [];
     
@@ -193,7 +264,13 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
       default:
         return sorted.sort((a, b) => {
           const getProductDate = (product: Product): number => {
-            const dateFields = ['date_creation', 'datec', 'tms', 'date_add'];
+            const dateFields = [
+              'date_creation',
+              'date_modification', 
+              'datec',
+              'tms',
+              'date_add'
+            ];
             
             for (const field of dateFields) {
               const dateValue = (product as any)[field];
@@ -209,8 +286,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
               }
             }
             
-            const productId = product.id ? parseInt(String(product.id)) : 0;
-            return productId;
+            return product.id ? parseInt(String(product.id)) : 0;
           };
           
           const dateA = getProductDate(a);
@@ -221,7 +297,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
     }
   };
 
-  // Helper function to remove duplicate products
+  // Remove duplicate products
   const removeDuplicateProducts = useCallback((productsList: Product[]): Product[] => {
     const uniqueProducts = new Map<string, Product>();
     
@@ -236,192 +312,215 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
   }, []);
 
   // =====================================
-  // CATEGORY FUNCTIONS
-  // =====================================
-
-  // Load categories from Dolibarr API
-  const loadApiCategories = useCallback(async () => {
-    setCategoriesLoading(true)
-    try {
-      const categories = await getCategories()
-      setApiCategories(categories)
-    } catch (error) {
-      console.error("Error loading API categories:", error)
-    } finally {
-      setCategoriesLoading(false)
-    }
-  }, [])
-
-  // Filter categories based on search text
-  const getFilteredCategories = () => {
-    if (!searchCategoryText.trim()) {
-      return apiCategories
-    }
-    return categoryService.searchCategories(apiCategories, searchCategoryText)
-  }
-
-  const toggleCategoryExpansion = (categoryId) => {
-    const newExpanded = new Set(expandedCategories)
-    if (newExpanded.has(categoryId)) {
-      newExpanded.delete(categoryId)
-    } else {
-      newExpanded.add(categoryId)
-    }
-    setExpandedCategories(newExpanded)
-  }
-
-  // Handle category selection from API categories
-  const handleApiCategorySelect = useCallback(
-    async (category) => {
-      const categoryId = category.id.toString()
-      setSelectedCategoryId(categoryId)
-      setCategoryName(category.label)
-      setShowCategoryFilter(false)
-
-      // Reload products for new category
-      loadProducts(true, searchText, activeFilters)
-    },
-    [searchText, activeFilters],
-  )
-
-  // Handle category selection from filter data
-  const handleFilterCategorySelect = useCallback(
-    (categoryData) => {
-      setSelectedCategoryId(categoryData.id)
-      setCategoryName(categoryData.name)
-      setShowCategoryFilter(false)
-
-      // Reload products for new category
-      loadProducts(true, searchText, activeFilters)
-    },
-    [searchText, activeFilters],
-  )
-
-  // =====================================
   // ENHANCED API FUNCTIONS WITH FILTERS
   // =====================================
 
-  // Enhanced loadProducts function with filtering - Same logic as ProductCategoryScreen
-  const loadProducts = async (resetPagination = true, search = "", filters: FilterOptions = {}) => {
+  // Enhanced loadProducts function with complete filter support - Matching ProductScreen
+  const loadProducts = async (resetPagination = false, filters: FilterOptions = {}, search = '') => {
     if (isLoadingRef.current) return;
     isLoadingRef.current = true;
 
     try {
       if (resetPagination) {
-        setLoading(true)
-        setCurrentPage(0)
-        setProducts([])
-        setError(null)
-        setIsNotFound(false)
+        setLoading(true);
+        setCurrentPage(0);
+        setProducts([]);
+        setError(null);
+        setIsNotFound(false);
         setFailedImageLoads(new Set());
       } else {
-        setLoadingMore(true)
+        setLoadingMore(true);
       }
 
-      const pageToLoad = resetPagination ? 0 : currentPage
-      const apiCategoryId = CATEGORY_MAPPING[selectedCategoryId]
+      const pageToLoad = resetPagination ? 0 : currentPage;
+      
+      console.log('📦 Chargement des produits - Page:', pageToLoad);
+      console.log('🔍 Filtres complets:', filters, 'Recherche:', search);
+      console.log('📊 Sort by:', sortBy);
+      
+      // Calculate category to use - Default to category 1 for search when no specific category is selected
+      const categoryToUse = filters.category || filters.animal_category || 1;
+      
+      console.log('🏷️ Category logic:', {
+        selected_category: filters.category,
+        selected_animal: filters.animal_category,
+        final_category: categoryToUse,
+        logic: 'category || animal_category || 1 (default to 1 for search)'
+      });
+      
+      // Determine which endpoint to use based on filters
+      let result: PaginatedProductResponse | ProductListResponse;
+      
+      // Check if we need to use the filtered endpoint (for complex filtering)
+      const needsFilteredEndpoint = !!(
+        filters.animal_category || 
+        filters.priceMin || 
+        filters.priceMax ||
+        filters.ages ||
+        filters.taste ||
+        filters.health_option ||
+        filters.nutritional_option ||
+        filters.game ||
+        true // Always use filtered endpoint since we always have a default category (1)
+      );
 
-      const params: FilteredProductsParams = {
-        limit: PAGE_SIZE,
-        page: pageToLoad,
-        pagination_data: true,
-        includestockdata: 0,
-        category: apiCategoryId,
-        sortfield: getSortField(sortBy),
-        sortorder: getSortOrder(sortBy),
+      if (needsFilteredEndpoint) {
+        // Use the filtered endpoint for complex filtering
+        const filteredParams: FilteredProductsParams = {
+          limit: PAGE_SIZE,
+          page: pageToLoad,
+          sortfield: getSortField(sortBy),
+          sortorder: getSortOrder(sortBy),
+          pagination_data: true,
+          includestockdata: 0,
+        };
+
+        // Add all available filters to filtered endpoint
+        if (filters.animal_category) filteredParams.animal_category = filters.animal_category;
+        
+        // Always set the category using our logic (default to 1)
+        filteredParams.category = categoryToUse;
+        if (filters.brand) filteredParams.brand = filters.brand;
+        if (search && search.trim()) filteredParams.search = search.trim();
+        if (filters.priceMin !== undefined) filteredParams.price_min = filters.priceMin;
+        if (filters.priceMax !== undefined) filteredParams.price_max = filters.priceMax;
+        
+        // Add all Dolibarr-specific filters
+        if (filters.ages) filteredParams.ages = filters.ages;
+        if (filters.taste) filteredParams.taste = filters.taste;
+        if (filters.health_option) filteredParams.health_option = filters.health_option;
+        if (filters.nutritional_option) filteredParams.nutritional_option = filters.nutritional_option;
+        if (filters.game) filteredParams.game = filters.game;
+
+        console.log('🚀 Using filtered endpoint with params:', filteredParams);
+        result = await ProductService.getFilteredProducts(filteredParams);
+        
+      } else {
+        // Use the standard search endpoint for simple filtering
+        const searchParams: SearchParams = {
+          limit: PAGE_SIZE,
+          page: pageToLoad,
+          pagination_data: true,
+          includestockdata: 0,
+          sortfield: getSortField(sortBy),
+          sortorder: getSortOrder(sortBy),
+        };
+
+        // For search, set default category to 1 unless specified
+        searchParams.categories = categoryToUse.toString();
+        
+        if (filters.brand) searchParams.brand = filters.brand;
+        if (search && search.trim()) searchParams.search_name = search.trim();
+        
+        // Add all Dolibarr-specific filters to search endpoint too
+        if (filters.game) searchParams.game = filters.game;
+        if (filters.taste) searchParams.taste = filters.taste;
+        if (filters.ages) searchParams.ages = filters.ages;
+        if (filters.health_option) searchParams.health_option = filters.health_option;
+        if (filters.nutritional_option) searchParams.nutritional_option = filters.nutritional_option;
+
+        console.log('🚀 Using search endpoint with params:', searchParams);
+        result = await ProductService.searchProducts(searchParams);
       }
-
-      // Add search if provided
-      if (search && search.trim()) {
-        params.search = search.trim()
-      }
-
-      // Add filters - Same as ProductCategoryScreen
-      if (filters.animal_category) params.animal_category = filters.animal_category;
-      if (filters.brand) params.brand = filters.brand;
-      if (filters.priceMin !== undefined) params.price_min = filters.priceMin;
-      if (filters.priceMax !== undefined) params.price_max = filters.priceMax;
-
-      console.log("🔍 Loading products with params:", params)
-
-      const result = await ProductService.getFilteredProducts(params)
-
-      let newProducts: Product[] = []
+      
+      // Handle response
+      let newProducts: Product[] = [];
       let newPaginationData: PaginationData = {
         total: 0,
         page: pageToLoad,
         page_count: 0,
         limit: PAGE_SIZE,
         current_count: 0,
-        has_more: false,
-      }
+        has_more: false
+      };
 
-      if ("pagination" in result) {
-        newProducts = result.data || []
+      if ('pagination' in result) {
+        // Paginated response
+        newProducts = result.data || [];
         newPaginationData = {
           total: result.pagination.total || 0,
           page: result.pagination.page || pageToLoad,
           page_count: result.pagination.page_count || 0,
           limit: result.pagination.limit || PAGE_SIZE,
           current_count: newProducts.length,
-          has_more: (result.pagination.page || 0) < (result.pagination.page_count || 0) - 1,
-        }
+          has_more: (result.pagination.page || 0) < (result.pagination.page_count || 0) - 1
+        };
       } else {
-        newProducts = result as Product[]
+        // Simple array response
+        newProducts = result as Product[];
         newPaginationData = {
           total: newProducts.length,
           page: 0,
           page_count: 1,
           limit: PAGE_SIZE,
           current_count: newProducts.length,
-          has_more: false,
-        }
+          has_more: false
+        };
       }
-
-      // Apply local sorting
-      const sortedProducts = sortProducts(newProducts, sortBy);
-
+      
+      // Apply client-side filtering for advanced filters not supported by API
+      if (newProducts.length > 0) {
+        console.log('🔧 Before client-side filtering:', newProducts.length);
+        newProducts = applyClientSideFilters(newProducts, filters);
+        console.log('🔧 After client-side filtering:', newProducts.length);
+        newProducts = sortProducts(newProducts, sortBy);
+        console.log('🔧 After sorting:', newProducts.length);
+      }
+      
+      console.log('📊 Résultat pagination:', newPaginationData);
+      console.log('📦 Produits reçus:', newProducts.length);
+      
       if (resetPagination) {
-        const uniqueProducts = removeDuplicateProducts(sortedProducts);
+        const uniqueProducts = removeDuplicateProducts(newProducts);
         setProducts(uniqueProducts);
-        setCurrentPage(0)
-        setPaginationData(newPaginationData)
+        setCurrentPage(0);
+        setPaginationData(newPaginationData);
       } else {
-        setProducts((prev: Product[]) => {
-          const combinedProducts = [...prev, ...sortedProducts];
-          return removeDuplicateProducts(combinedProducts);
+        setProducts(prevProducts => {
+          const combinedProducts = [...prevProducts, ...newProducts];
+          return removeDuplicateProducts(sortProducts(combinedProducts, sortBy));
         });
-        setCurrentPage(pageToLoad + 1)
-        setPaginationData((prev) => ({
+        setCurrentPage(pageToLoad + 1);
+        setPaginationData(prev => ({
           ...newPaginationData,
-          current_count: prev.current_count + newProducts.length,
-        }))
+          current_count: prev.current_count + newProducts.length
+        }));
       }
-
+      
       setActiveFilters(filters);
-
-      console.log("✅ Products loaded:", {
-        search,
-        results: newProducts.length,
-        total: newPaginationData.total,
-        page: newPaginationData.page,
-        category: categoryName,
-        filters
-      })
+      
+      console.log('✅ Produits chargés:', {
+        nouveaux: newProducts.length,
+        total_affichés: resetPagination ? newProducts.length : products.length + newProducts.length,
+        total_disponible: newPaginationData.total,
+        page_actuelle: newPaginationData.page,
+        total_pages: newPaginationData.page_count,
+        tri_appliqué: sortBy,
+        filtres_actifs: Object.keys(filters).length,
+        catégorie_finale: categoryToUse,
+        filtres_détails: filters
+      });
+      
+      if (newProducts.length === 0) {
+        console.log('ℹ️ Aucun produit trouvé pour cette recherche/filtre');
+        setIsNotFound(true);
+        setError("No products found");
+      }
+      
     } catch (error) {
-      console.error("❌ Error loading products:", error)
-
+      console.error('Erreur lors du chargement des produits:', error);
+      
       // Check if it's a 404 error or no products found
       if (error?.response?.status === 404 || error?.message?.includes("404") || error?.message?.includes("Not Found")) {
-        setIsNotFound(true)
-        setError("No products found")
+        setIsNotFound(true);
+        setError("No products found");
       } else {
-        setError("Une erreur est survenue lors du chargement des produits")
+        setError("Une erreur est survenue lors du chargement des produits");
       }
 
       // Reset products on error
       if (resetPagination) {
-        setProducts([])
+        setProducts([]);
         setPaginationData({
           total: 0,
           page: 0,
@@ -429,46 +528,129 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
           limit: PAGE_SIZE,
           current_count: 0,
           has_more: false,
-        })
+        });
       }
     } finally {
-      setLoading(false)
-      setLoadingMore(false)
-      setRefreshing(false)
+      setLoading(false);
+      setRefreshing(false);
+      setSearchLoading(false);
+      setLoadingMore(false);
       isLoadingRef.current = false;
     }
-  }
+  };
 
   // Load more products
   const loadMoreProducts = () => {
-    const hasMore = currentPage + 1 < paginationData.page_count
-
+    const hasMore = (currentPage + 1) < paginationData.page_count;
+    
     if (!loadingMore && hasMore && !loading && !error && !isLoadingRef.current) {
-      console.log("📄 Loading more products - page:", currentPage + 1)
-      loadProducts(false, searchText, activeFilters)
+      console.log('📄 Loading more products - page:', currentPage + 1);
+      loadProducts(false, activeFilters, searchQuery);
     }
-  }
-
-  // =====================================
-  // FILTER EVENT HANDLERS - Same as ProductCategoryScreen
-  // =====================================
-
-  // Filter functionality
-  const handleApplyFilters = (filters: any) => {
-    console.log('✅ Filtres appliqués:', filters);
-    
-    const convertedFilters: FilterOptions = {};
-    
-    if (filters.animal) convertedFilters.animal_category = parseInt(filters.animal);
-    if (filters.brand) convertedFilters.brand = filters.brand;
-    if (filters.category) convertedFilters.category = parseInt(filters.category);
-    if (filters.priceMin !== undefined) convertedFilters.priceMin = filters.priceMin;
-    if (filters.priceMax !== undefined) convertedFilters.priceMax = filters.priceMax;
-    
-    setShowFilterModal(false);
-    loadProducts(true, searchText, convertedFilters);
   };
 
+  // =====================================
+  // EVENT HANDLERS
+  // =====================================
+
+  // Handle search input change
+  const handleSearchInputChange = (text: string) => {
+    setSearchText(text);
+
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // Reset error states when user types
+    setError(null);
+    setIsNotFound(false);
+
+    // Debounce search
+    searchTimeoutRef.current = setTimeout(() => {
+      setSearchQuery(text);
+      loadProducts(true, activeFilters, text);
+    }, 500);
+  };
+
+  // Handle search submission
+  const handleSearchSubmit = () => {
+    if (searchText.trim()) {
+      setSearchQuery(searchText.trim());
+      loadProducts(true, activeFilters, searchText.trim());
+      setModalVisible(false);
+      Keyboard.dismiss();
+    }
+  };
+
+  // Clear search
+  const clearSearch = () => {
+    setSearchText("");
+    setSearchQuery('');
+    textInput.current?.clear();
+    setError(null);
+    setIsNotFound(false);
+    
+    // Ensure we maintain default category 1 when clearing search
+    const filtersToUse = Object.keys(activeFilters).length > 0 ? activeFilters : { category: 1 };
+    loadProducts(true, filtersToUse, "");
+
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+  };
+
+  // Handle modal close
+  const handleModalClose = () => {
+    setModalVisible(false);
+    setTextInputFocussed(false);
+  };
+
+  // Handle refresh
+  const onRefresh = () => {
+    setRefreshing(true);
+    setError(null);
+    setIsNotFound(false);
+    loadProducts(true, activeFilters, searchQuery);
+  };
+
+  // Navigate to product details
+  const navigateToProductDetails = (product: Product) => {
+    console.log("🔍 Navigate to ProductDetails:", product.id);
+    navigation.navigate("ProductDetails", {
+      productId: product.id,
+      product: product,
+    });
+  };
+
+  // Apply filters - Enhanced to handle all filter types like ProductScreen
+  const handleApplyFilters = (filters: any) => {
+    console.log('✅ Filtres appliqués (complets):', filters);
+    
+    // Convert the filter format to match our internal structure
+    const convertedFilters: FilterOptions = {};
+    
+    if (filters.animal_category !== undefined) convertedFilters.animal_category = parseInt(filters.animal_category);
+    if (filters.brand) convertedFilters.brand = filters.brand;
+    if (filters.category !== undefined) convertedFilters.category = parseInt(filters.category);
+    if (filters.priceMin !== undefined) convertedFilters.priceMin = filters.priceMin;
+    if (filters.priceMax !== undefined) convertedFilters.priceMax = filters.priceMax;
+    if (filters.ages) convertedFilters.ages = filters.ages;
+    if (filters.taste) convertedFilters.taste = filters.taste;
+    if (filters.health_option) convertedFilters.health_option = filters.health_option;
+    if (filters.nutritional_option) convertedFilters.nutritional_option = filters.nutritional_option;
+    if (filters.game) convertedFilters.game = filters.game;
+    
+    // If no category is specified, default to category 1
+    if (!convertedFilters.category && !convertedFilters.animal_category) {
+      convertedFilters.category = 1;
+    }
+    
+    setShowFilterModal(false);
+    loadProducts(true, convertedFilters, searchQuery);
+  };
+
+  // Clear filters
   const handleClearFilters = () => {
     Alert.alert(
       'Supprimer les filtres',
@@ -479,126 +661,42 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
           text: 'Supprimer', 
           style: 'destructive',
           onPress: () => {
-            setActiveFilters({});
-            loadProducts(true, searchText, {});
+            // Reset to default category 1 when clearing filters
+            const defaultFilters = { category: 1 };
+            setActiveFilters(defaultFilters);
+            loadProducts(true, defaultFilters, searchQuery);
           }
         }
       ]
     );
   };
 
+  // Change sort
   const handleSortChange = (newSortBy: 'date' | 'price' | 'name') => {
     console.log('🔄 Changement de tri:', sortBy, '->', newSortBy);
     setSortBy(newSortBy);
     
+    // Apply local sorting immediately for better UX
     if (products.length > 0) {
       const sortedProducts = sortProducts(products, newSortBy);
       setProducts(sortedProducts);
     }
     
-    loadProducts(true, searchText, activeFilters);
+    // Reload products with new sort from API
+    loadProducts(true, activeFilters, searchQuery);
   };
 
-  // Helper functions for filters
+  // Check active filters
   const hasActiveFilters = (): boolean => {
     return Object.keys(activeFilters).length > 0;
   };
 
+  // Count active filters
   const getActiveFilterCount = (): number => {
     return Object.keys(activeFilters).length;
   };
 
-  // =====================================
-  // EVENT HANDLERS
-  // =====================================
-
-  // Handle search input change
-  const handleSearchInputChange = (text: string) => {
-    setSearchText(text)
-
-    // Clear previous timeout
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current)
-    }
-
-    // Reset error states when user types
-    setError(null)
-    setIsNotFound(false)
-
-    // Debounce search
-    searchTimeoutRef.current = setTimeout(() => {
-      loadProducts(true, text, activeFilters)
-    }, 500)
-  }
-
-  // Handle search submission
-  const handleSearchSubmit = () => {
-    if (searchText.trim()) {
-      loadProducts(true, searchText.trim(), activeFilters)
-      setModalVisible(false)
-      Keyboard.dismiss()
-    }
-  }
-
-  // Clear search
-  const clearSearch = () => {
-    setSearchText("")
-    textInput.current?.clear()
-    setError(null)
-    setIsNotFound(false)
-    loadProducts(true, "", activeFilters)
-
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current)
-    }
-  }
-
-  // Handle modal close
-  const handleModalClose = () => {
-    setModalVisible(false)
-    setTextInputFocussed(false)
-  }
-
-  // Handle refresh
-  const onRefresh = () => {
-    setRefreshing(true)
-    setError(null)
-    setIsNotFound(false)
-    loadProducts(true, searchText, activeFilters)
-  }
-
-  // Navigate to product details
-  const navigateToProductDetails = (product: Product) => {
-    console.log("🔍 Navigate to ProductDetails:", product.id)
-    navigation.navigate("ProductDetails", {
-      productId: product.id,
-      product: product,
-    })
-  }
-
-  // Clear category search
-  const clearCategorySearch = () => {
-    setSearchCategoryText("")
-  }
-
-  const expandAll = () => {
-    const allCategoryIds = new Set()
-    const addCategoryIds = (cats) => {
-      cats.forEach((cat) => {
-        if (cat.subcategories && cat.subcategories.length > 0) {
-          allCategoryIds.add(cat.id)
-          addCategoryIds(cat.subcategories)
-        }
-      })
-    }
-    addCategoryIds(apiCategories)
-    setExpandedCategories(allCategoryIds)
-  }
-
-  const collapseAll = () => {
-    setExpandedCategories(new Set())
-  }
-
+  // Handle image error
   const handleImageError = useCallback((productId: string): void => {
     setFailedImageLoads((prev: Set<string>) => {
       const newSet = new Set(prev);
@@ -607,25 +705,122 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
     });
   }, []);
 
+  // Get active filter display with proper labels - Matching ProductScreen
+  const getActiveFilterDisplay = (): string => {
+    const filterLabels: string[] = [];
+    
+    // Animal names mapping
+    if (activeFilters.animal_category) {
+      const animalNames: { [key: number]: string } = {
+        2: 'Chien', 3: 'Chat', 184: 'Lapin', 21: 'Poisson', 31: 'Reptile', 20: 'Oiseau'
+      };
+      filterLabels.push(animalNames[activeFilters.animal_category] || `Animal ${activeFilters.animal_category}`);
+    }
+    
+    // Brand (already a string)
+    if (activeFilters.brand) filterLabels.push(activeFilters.brand);
+    
+    // Ages mapping
+    if (activeFilters.ages) {
+      const ageNames: { [key: string]: string } = {
+        '1': 'Adulte',
+        '2': 'Senior', 
+        '3': 'Junior',
+        '4': 'Première âge',
+        '5': 'Chatons',
+        '6': 'Chiots'
+      };
+      const ageName = ageNames[activeFilters.ages] || activeFilters.ages;
+      filterLabels.push(`Âge: ${ageName}`);
+    }
+    
+    // Taste mapping
+    if (activeFilters.taste) {
+      const tasteNames: { [key: string]: string } = {
+        '1': 'Boeuf',
+        '2': 'Poulet',
+        '3': 'Canard', 
+        '4': 'Poisson',
+        '5': 'Agneau',
+        '6': 'Autre'
+      };
+      const tasteName = tasteNames[activeFilters.taste] || activeFilters.taste;
+      filterLabels.push(`Goût: ${tasteName}`);
+    }
+    
+    // Health options mapping
+    if (activeFilters.health_option) {
+      const healthNames: { [key: string]: string } = {
+        '1': 'Stériles',
+        '2': 'Allergies',
+        '3': 'Vessies',
+        '4': 'Croissances',
+        '5': 'Vieillissements',
+        '6': 'Respirations',
+        '7': 'Poils et peaux',
+        '8': 'Digestifs',
+        '9': 'Surpoids',
+        '10': 'Sensibles',
+        '11': 'Allaitantes ou gestantes',
+        '12': 'Immunités',
+        '13': 'Dentaires'
+      };
+      const healthName = healthNames[activeFilters.health_option] || activeFilters.health_option;
+      filterLabels.push(`Santé: ${healthName}`);
+    }
+    
+    // Nutritional options mapping
+    if (activeFilters.nutritional_option) {
+      const nutritionalNames: { [key: string]: string } = {
+        '1': 'Sans céréales',
+        '2': 'Ingrédient limité',
+        '3': 'Bio',
+        '4': 'Sans OGM',
+        '5': 'Sans gluten',
+        '6': 'Sans sucre',
+        '7': 'Végétarien',
+        '8': 'Riche en protéine',
+        '9': 'Équilibré'
+      };
+      const nutritionalName = nutritionalNames[activeFilters.nutritional_option] || activeFilters.nutritional_option;
+      filterLabels.push(`Nutrition: ${nutritionalName}`);
+    }
+    
+    // Game/Product line
+    if (activeFilters.game) {
+      filterLabels.push(`Gamme: ${activeFilters.game}`);
+    }
+    
+    // Price range
+    if (activeFilters.priceMin || activeFilters.priceMax) {
+      const priceRange = `${activeFilters.priceMin || 0} - ${activeFilters.priceMax || '∞'} DH`;
+      filterLabels.push(`Prix: ${priceRange}`);
+    }
+    
+    return filterLabels.join(' • ');
+  };
+
   // =====================================
   // EFFECTS
   // =====================================
 
-  // Load products when screen focuses or category changes
+  // Load products when screen focuses - Load with default category 1
   useFocusEffect(
     useCallback(() => {
-      loadProducts(true, searchText, activeFilters)
-    }, [selectedCategoryId]),
-  )
+      // Ensure we have a default category (1) when first loading
+      const initialFilters = Object.keys(activeFilters).length > 0 ? activeFilters : { category: 1 };
+      loadProducts(true, initialFilters, searchQuery);
+    }, [])
+  );
 
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
       if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current)
+        clearTimeout(searchTimeoutRef.current);
       }
-    }
-  }, [])
+    };
+  }, []);
 
   // =====================================
   // RENDER FUNCTIONS
@@ -633,6 +828,11 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
 
   // Enhanced render product item with view modes
   const renderProduct = ({ item, index }: { item: Product, index: number }) => {
+    if (!item) {
+      console.warn(`SearchScreen: Item at index ${index} is undefined/null`);
+      return null;
+    }
+    
     const hasImageFailed: boolean = failedImageLoads.has(item.id);
     const productCardProps = {
       navigation,
@@ -670,23 +870,19 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
           </Text>
           <Text style={[styles.emptyResultsText, { color: TEXT_COLOR_SECONDARY }]}>
             {isNotFound
-              ? searchText
-                ? `Aucun produit ne correspond à "${searchText}" dans ${categoryName}`
-                : `Aucun produit disponible dans ${categoryName}`
+              ? searchQuery
+                ? `Aucun produit ne correspond à "${searchQuery}"`
+                : hasActiveFilters() 
+                  ? 'Aucun produit trouvé avec ces filtres'
+                  : `Aucun produit disponible`
               : error || "Une erreur est survenue lors du chargement"}
           </Text>
           <View style={styles.emptyActions}>
-            {searchText && (
-              <TouchableOpacity style={[styles.actionButton, { backgroundColor: PRIMARY_COLOR }]} onPress={clearSearch}>
-                <Ionicons name="refresh" size={16} color="#fff" />
-                <Text style={styles.actionButtonText}>Effacer la recherche</Text>
-              </TouchableOpacity>
-            )}
-            {(hasActiveFilters() || searchText) && (
+            {(searchQuery || hasActiveFilters()) && (
               <TouchableOpacity
                 style={[styles.actionButton, { backgroundColor: PRIMARY_COLOR }]}
                 onPress={() => {
-                  if (searchText) {
+                  if (searchQuery) {
                     clearSearch();
                   } else {
                     handleClearFilters();
@@ -695,7 +891,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
               >
                 <Ionicons name="refresh" size={16} color="#fff" />
                 <Text style={styles.actionButtonText}>
-                  {searchText ? 'Effacer la recherche' : 'Supprimer les filtres'}
+                  {searchQuery ? 'Effacer la recherche' : 'Supprimer les filtres'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -708,7 +904,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
                   borderColor: PRIMARY_COLOR,
                 },
               ]}
-              onPress={() => loadProducts(true, searchText, activeFilters)}
+              onPress={() => loadProducts(true, activeFilters, searchQuery)}
             >
               <Ionicons name="reload" size={16} color={PRIMARY_COLOR} />
               <Text style={[styles.actionButtonText, { color: PRIMARY_COLOR }]}>Réessayer</Text>
@@ -723,18 +919,18 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
       <View style={styles.emptyResults}>
         <Ionicons name="search-outline" size={64} color={TEXT_COLOR_SECONDARY} />
         <Text style={[styles.emptyResultsTitle, { color: TEXT_COLOR }]}>
-          {searchText ? "Aucun résultat trouvé" : "Aucun produit disponible"}
+          {searchQuery ? "Aucun résultat trouvé" : "Commencez votre recherche"}
         </Text>
         <Text style={[styles.emptyResultsText, { color: TEXT_COLOR_SECONDARY }]}>
-          {searchText
-            ? `Aucun produit ne correspond à "${searchText}" pour ${categoryName}`
-            : `Aucun produit disponible pour ${categoryName}`}
+          {searchQuery
+            ? `Aucun produit ne correspond à "${searchQuery}"`
+            : "Utilisez la barre de recherche pour trouver des produits"}
         </Text>
-        {(searchText || hasActiveFilters()) && (
+        {(searchQuery || hasActiveFilters()) && (
           <TouchableOpacity 
             style={[styles.actionButton, { backgroundColor: PRIMARY_COLOR }]} 
             onPress={() => {
-              if (searchText) {
+              if (searchQuery) {
                 clearSearch();
               } else {
                 handleClearFilters();
@@ -743,7 +939,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
           >
             <Ionicons name="refresh" size={16} color="#fff" />
             <Text style={styles.actionButtonText}>
-              {searchText ? 'Effacer la recherche' : 'Supprimer les filtres'}
+              {searchQuery ? 'Effacer la recherche' : 'Supprimer les filtres'}
             </Text>
           </TouchableOpacity>
         )}
@@ -763,35 +959,55 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
     )
   }
 
-  // Enhanced render header info with filter indicators
-  const renderHeaderInfo = () => (
-    <View style={[styles.headerInfo, { backgroundColor: CARD_BACKGROUND, borderBottomColor: BORDER_COLOR }]}>
-      <View style={styles.headerInfoLeft}>
-        <Ionicons name="paw" size={18} color={PRIMARY_COLOR} />
-        <Text style={[styles.headerInfoText, { color: TEXT_COLOR }]}>
-          {paginationData.total} produits pour {categoryName}
-        </Text>
-        {hasActiveFilters() && (
-          <View style={[styles.filterBadge, { backgroundColor: PRIMARY_COLOR }]}>
-            <Text style={styles.filterBadgeText}>{getActiveFilterCount()}</Text>
+  // Enhanced render header info with filter indicators - Matching ProductScreen
+  const renderFilterHeader = () => {
+    return (
+      <View style={[styles.filterHeader, { backgroundColor: CARD_BACKGROUND, borderColor: BORDER_COLOR }]}>
+        <View style={styles.filterHeaderLeft}>
+          <Ionicons name="apps-outline" size={18} color={PRIMARY_COLOR} />
+          <View style={styles.productCountContainer}>
+            <Text style={[styles.filterHeaderText, { color: TEXT_COLOR }]}>
+              Affichage de {products.length} sur {paginationData.total} produits
+            </Text>
+            {(hasActiveFilters() || searchQuery) && (
+              <Text style={[styles.filterSubText, { color: TEXT_COLOR_SECONDARY }]} numberOfLines={2}>
+                {searchQuery && `Recherche: "${searchQuery}"`}
+                {hasActiveFilters() && searchQuery && ' • '}
+                {hasActiveFilters() && getActiveFilterDisplay()}
+              </Text>
+            )}
+            <Text style={[styles.sortIndicator, { color: PRIMARY_COLOR }]}>
+              Trié par: {sortBy === 'date' ? 'Date de création' : sortBy === 'price' ? 'Prix' : 'Nom'}
+            </Text>
           </View>
-        )}
+        </View>
+        
+        <View style={styles.filterHeaderRight}>
+          {hasActiveFilters() && (
+            <TouchableOpacity
+              style={[styles.clearFiltersButtonSmall, { backgroundColor: SECONDARY_COLOR + '20', borderColor: SECONDARY_COLOR }]}
+              onPress={handleClearFilters}
+            >
+              <Ionicons name="close" size={14} color={SECONDARY_COLOR} />
+              <Text style={[styles.clearFiltersTextSmall, { color: SECONDARY_COLOR }]}>Filtres</Text>
+            </TouchableOpacity>
+          )}
+          
+          {searchQuery && (
+            <TouchableOpacity
+              style={[styles.clearFiltersButtonSmall, { backgroundColor: PRIMARY_COLOR + '20', borderColor: PRIMARY_COLOR }]}
+              onPress={clearSearch}
+            >
+              <Ionicons name="close" size={14} color={PRIMARY_COLOR} />
+              <Text style={[styles.clearFiltersTextSmall, { color: PRIMARY_COLOR }]}>Recherche</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
-      <View style={styles.headerInfoRight}>
-        {searchText && (
-          <TouchableOpacity
-            onPress={clearSearch}
-            style={[styles.clearSearchButton, { backgroundColor: PRIMARY_COLOR + "15" }]}
-          >
-            <Ionicons name="close" size={14} color={PRIMARY_COLOR} />
-            <Text style={[styles.clearSearchText, { color: PRIMARY_COLOR }]}>Effacer</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
-  )
+    );
+  };
 
-  // NEW: Render toolbar - Same as ProductCategoryScreen
+  // Render toolbar - Same as ProductScreen
   const renderToolbar = () => (
     <View style={[styles.toolbar, { backgroundColor: CARD_BACKGROUND, borderColor: BORDER_COLOR }]}>
       <View style={styles.toolbarLeft}>
@@ -844,6 +1060,30 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
     </View>
   );
 
+  // Render pagination info - Same as ProductScreen
+  const renderPaginationInfo = () => {
+    if (paginationData.page_count <= 1) return null;
+    
+    const hasMore = (currentPage + 1) < paginationData.page_count;
+    const currentPageDisplay = Math.floor(products.length / PAGE_SIZE) + (products.length % PAGE_SIZE > 0 ? 1 : 0);
+    
+    return (
+      <View style={[styles.paginationInfo, { backgroundColor: CARD_BACKGROUND + '80', borderColor: BORDER_COLOR }]}>
+        <Text style={[styles.paginationText, { color: TEXT_COLOR_SECONDARY }]}>
+          Page {currentPageDisplay} / {paginationData.page_count}
+        </Text>
+        {hasMore && (
+          <View style={styles.paginationIndicator}>
+            <Text style={[styles.paginationIndicatorText, { color: PRIMARY_COLOR }]}>
+              Faites défiler pour plus
+            </Text>
+            <Ionicons name="chevron-down" size={14} color={PRIMARY_COLOR} />
+          </View>
+        )}
+      </View>
+    );
+  };
+
   // =====================================
   // MAIN RENDER
   // =====================================
@@ -857,7 +1097,26 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Recherche</Text>
+        
+        <View style={styles.headerCenter}>
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle}>Recherche</Text>
+            {paginationData.total > 0 && (
+              <Text style={styles.headerCount}>({paginationData.total})</Text>
+            )}
+          </View>
+          {paginationData.total > 0 && (
+            <Text style={styles.headerSubtitle}>
+              {products.length} chargés
+            </Text>
+          )}
+          {hasActiveFilters() && (
+            <View style={styles.headerBadge}>
+              <Text style={styles.headerBadgeText}>{getActiveFilterCount()}</Text>
+            </View>
+          )}
+        </View>
+        
         <View style={styles.headerRight}>
           <TouchableOpacity
             style={[styles.headerIconButton, { 
@@ -867,8 +1126,8 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
           >
             <Ionicons name="funnel" size={18} color="#fff" />
             {hasActiveFilters() && (
-              <View style={styles.headerBadge}>
-                <Text style={styles.headerBadgeText}>{getActiveFilterCount()}</Text>
+              <View style={styles.headerBadgeIcon}>
+                <Text style={styles.headerBadgeIconText}>{getActiveFilterCount()}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -910,7 +1169,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
               <Ionicons name="arrow-back" size={24} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.modalHeaderTitle}>Rechercher</Text>
-            <View style={styles.headerRight}>
+            <View style={styles.headerRightSpace}>
               {/* Empty space for symmetry */}
             </View>
           </View>
@@ -974,7 +1233,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
         </View>
       ) : (
         <View style={styles.contentContainer}>
-          {!error && !isNotFound && renderHeaderInfo()}
+          {!error && !isNotFound && renderFilterHeader()}
           {!error && !isNotFound && renderToolbar()}
           <FlatList
             data={products}
@@ -998,10 +1257,11 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
             ListFooterComponent={renderFooter}
             ListEmptyComponent={renderEmptyOrError}
           />
+          {renderPaginationInfo()}
         </View>
       )}
 
-      {/* Filter Modal - Same as ProductCategoryScreen */}
+      {/* Filter Modal - Same as ProductScreen with all filter options */}
       {showFilterModal && (
         <FilterModal
           visible={showFilterModal}
@@ -1010,8 +1270,12 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
           initialFilters={activeFilters}
           showAnimalFilter={true}
           showBrandFilter={true}
-          showCategoryFilter={true} // Enable category filter in the FilterModal
+          showCategoryFilter={true}
           showPriceFilter={true}
+          showAgeFilter={true}
+          showTasteFilter={true}
+          showHealthFilter={true}
+          showNutritionalFilter={true}
         />
       )}
     </SafeAreaView>
@@ -1019,41 +1283,75 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
 }
 
 // =====================================
-// ENHANCED STYLES
+// ENHANCED STYLES - Matching ProductScreen
 // =====================================
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  
+  // Header
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     height: 60,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 15,
+    paddingHorizontal: 16,
+    paddingTop: 6,
     elevation: 4,
-    shadowColor: "#000",
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#fff",
-    flex: 1,
-    textAlign: "center",
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.15)",
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
-  // NEW: Enhanced header right section
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  headerCount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.9)',
+  },
+  headerSubtitle: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  headerBadge: {
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  headerBadgeText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '700',
+  },
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
@@ -1066,7 +1364,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     position: "relative",
   },
+  headerBadgeIcon: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    minWidth: 16,
+    alignItems: 'center',
+  },
+  headerBadgeIconText: {
+    fontSize: 10,
+    color: '#007afe',
+    fontWeight: '700',
+  },
+  headerRightSpace: {
+    width: 36,
+  },
 
+  // Search Container
   searchContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -1093,6 +1411,8 @@ const styles = StyleSheet.create({
   clearSearchIcon: {
     padding: 4,
   },
+  
+  // Modal
   modal: {
     flex: 1,
   },
@@ -1165,72 +1485,113 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: "center",
   },
+  
+  // Content
   contentContainer: {
     flex: 1,
   },
-  // Enhanced header info with filter indicators
-  headerInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  
+  // Filter Header - Same as ProductScreen
+  filterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
+    marginBottom: 8,
   },
-  headerInfoLeft: {
-    flexDirection: "row",
-    alignItems: "center",
+  filterHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
     flex: 1,
+  },
+  productCountContainer: {
+    flex: 1,
+  },
+  filterHeaderText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  filterSubText: {
+    fontSize: 12,
+    fontWeight: '400',
+    lineHeight: 16,
+  },
+  sortIndicator: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  filterHeaderRight: {
+    flexDirection: 'row',
     gap: 8,
   },
-  headerInfoText: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  filterBadge: {
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    minWidth: 20,
-    alignItems: "center",
-  },
-  filterBadgeText: {
-    fontSize: 12,
-    color: "#fff",
-    fontWeight: "700",
-  },
-  headerInfoRight: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  clearSearchButton: {
-    flexDirection: "row",
-    alignItems: "center",
+  clearFiltersButtonSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
+    borderWidth: 1,
     gap: 4,
   },
-  clearSearchText: {
+  clearFiltersTextSmall: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: '600',
   },
-  // NEW: Toolbar styles - Same as ProductCategoryScreen
+  
+  // Pagination Info - Same as ProductScreen
+  paginationInfo: {
+    position: 'absolute',
+    bottom: 20,
+    right: 16,
+    flexDirection: 'column',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    minWidth: 100,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  paginationText: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  paginationIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  paginationIndicatorText: {
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  
+  // Toolbar - Same as ProductScreen
   toolbar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderBottomWidth: 1,
   },
   toolbarLeft: {
-    flexDirection: "row",
+    flexDirection: 'row',
     gap: 8,
   },
   sortButton: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 8,
@@ -1238,19 +1599,21 @@ const styles = StyleSheet.create({
   },
   sortButtonText: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: '600',
   },
   toolbarRight: {
-    flexDirection: "row",
+    flexDirection: 'row',
     gap: 4,
   },
   viewModeButton: {
     width: 32,
     height: 32,
     borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+  
+  // Loading
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -1273,7 +1636,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
-  // Enhanced product container styles for different view modes
+  
+  // Product container styles for different view modes
   productRow: {
     justifyContent: "space-between",
     marginBottom: 16,
@@ -1290,8 +1654,10 @@ const styles = StyleSheet.create({
   },
   productsList: {
     paddingHorizontal: 16,
-    paddingBottom: 20,
+    paddingBottom: 80,
   },
+  
+  // Empty/Error states
   emptyResults: {
     alignItems: "center",
     justifyContent: "center",
@@ -1330,4 +1696,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#fff",
   },
-})
+});
