@@ -50,7 +50,7 @@ export default function Cart({ navigation }) {
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isEmpty, setIsEmpty] = useState(false);
-  const [modePaiement, setModePaiement] = useState('');
+  const [modePaiement, setModePaiement] = useState('espèces'); // Default to cash payment
   const [errorModePaiement, setErrorModePaiement] = useState('');
   const [modalAdresseVisible, setModalAdresseVisible] = useState(false);
   
@@ -64,18 +64,6 @@ export default function Cart({ navigation }) {
   const [userDetails, setUserDetails] = useState();
   const [gettingLocation, setGettingLocation] = useState(false);
 
-  // Credit card states
-  const [modalCardVisible, setModalCardVisible] = useState(false);
-  const [cardNumber, setCardNumber] = useState('');
-  const [cardHolder, setCardHolder] = useState('');
-  const [expiryDate, setExpiryDate] = useState('');
-  const [cvv, setCvv] = useState('');
-  const [errorCardNumber, setErrorCardNumber] = useState('');
-  const [errorCardHolder, setErrorCardHolder] = useState('');
-  const [errorExpiryDate, setErrorExpiryDate] = useState('');
-  const [errorCvv, setErrorCvv] = useState('');
-  const [cardDetails, setCardDetails] = useState(null);
-
   // Location states
   const [userLocation, setUserLocation] = useState(null);
   const [distance, setDistance] = useState(null);
@@ -85,10 +73,9 @@ export default function Cart({ navigation }) {
   // Loading states for quantity updates
   const [loadingQuantityUpdates, setLoadingQuantityUpdates] = useState({});
 
-  // Animation refs
+  // Animation refs - only for cash payment now
   const paymentAnimations = useRef({
-    cash: new Animated.Value(0),
-    card: new Animated.Value(0),
+    cash: new Animated.Value(1), // Start with cash selected
   }).current;
 
   // Store location (set this to your actual store coordinates)
@@ -380,121 +367,19 @@ export default function Cart({ navigation }) {
     return 35; // 35 DH for >20km
   };
 
-  // Format card number with spaces
-  const formatCardNumber = (text) => {
-    const cleaned = text.replace(/\D/g, '');
-    const limited = cleaned.substring(0, 16);
-    const formatted = limited.replace(/(\d{4})(?=\d)/g, '$1 ');
-    return formatted;
-  };
-
-  // Format expiry date MM/YY
-  const formatExpiryDate = (text) => {
-    const cleaned = text.replace(/\D/g, '');
-    if (cleaned.length >= 2) {
-      return cleaned.substring(0, 2) + '/' + cleaned.substring(2, 4);
-    }
-    return cleaned;
-  };
-
-  // Validate credit card form
-  const validateCardForm = () => {
-    let isValid = true;
-
-    const cleanCardNumber = cardNumber.replace(/\s/g, '');
-    if (!cleanCardNumber || cleanCardNumber.length !== 16 || !/^\d+$/.test(cleanCardNumber)) {
-      setErrorCardNumber('Le numéro de carte doit contenir 16 chiffres');
-      isValid = false;
-    } else {
-      setErrorCardNumber('');
-    }
-
-    if (!cardHolder.trim()) {
-      setErrorCardHolder('Veuillez entrer le nom du titulaire');
-      isValid = false;
-    } else {
-      setErrorCardHolder('');
-    }
-
-    if (!expiryDate || expiryDate.length !== 5) {
-      setErrorExpiryDate('Format: MM/AA');
-      isValid = false;
-    } else {
-      const [month, year] = expiryDate.split('/');
-      const currentDate = new Date();
-      const currentYear = currentDate.getFullYear() % 100;
-      const currentMonth = currentDate.getMonth() + 1;
-
-      if (parseInt(month) < 1 || parseInt(month) > 12) {
-        setErrorExpiryDate('Mois invalide');
-        isValid = false;
-      } else if (parseInt(year) < currentYear || (parseInt(year) === currentYear && parseInt(month) < currentMonth)) {
-        setErrorExpiryDate('Carte expirée');
-        isValid = false;
-      } else {
-        setErrorExpiryDate('');
-      }
-    }
-
-    if (!cvv || cvv.length !== 3 || !/^\d+$/.test(cvv)) {
-      setErrorCvv('Le CVV doit contenir 3 chiffres');
-      isValid = false;
-    } else {
-      setErrorCvv('');
-    }
-
-    return isValid;
-  };
-
-  // Handle card form submission
-  const handleSaveCard = () => {
-    if (validateCardForm()) {
-      setCardDetails({
-        number: cardNumber,
-        holder: cardHolder,
-        expiry: expiryDate,
-        cvv: cvv
-      });
-      setModalCardVisible(false);
-      if (Platform.OS === 'android') {
-        ToastAndroid.show('Carte bancaire enregistrée', ToastAndroid.SHORT);
-      } else {
-        Toast.show('Carte bancaire enregistrée', Toast.SHORT);
-      }
-    }
-  };
-
-  // Clear card details
-  const clearCardDetails = () => {
-    setCardNumber('');
-    setCardHolder('');
-    setExpiryDate('');
-    setCvv('');
-    setErrorCardNumber('');
-    setErrorCardHolder('');
-    setErrorExpiryDate('');
-    setErrorCvv('');
-    setCardDetails(null);
-  };
-
-  // Enhanced payment method selection with animations
+  // Simplified payment method selection - only cash payment
   const handlePaymentMethodSelect = (method) => {
-    setModePaiement(method);
-    setErrorModePaiement('');
+    // Only allow cash payment
+    if (method === 'espèces') {
+      setModePaiement(method);
+      setErrorModePaiement('');
 
-    // Animate selection
-    Object.keys(paymentAnimations).forEach(key => {
-      Animated.timing(paymentAnimations[key], {
-        toValue: key === method ? 1 : 0,
+      // Animate selection
+      Animated.timing(paymentAnimations.cash, {
+        toValue: 1,
         duration: 200,
         useNativeDriver: false,
       }).start();
-    });
-
-    if (method === 'credit_card') {
-      setModalCardVisible(true);
-    } else {
-      clearCardDetails();
     }
   };
 
@@ -567,7 +452,7 @@ export default function Cart({ navigation }) {
     }
   };
 
-  // Enhanced checkout function using OrderService
+  // Enhanced checkout function using OrderService - simplified for cash only
   const checkOut = async () => {
     let isValid = true;
 
@@ -589,30 +474,22 @@ export default function Cart({ navigation }) {
       return;
     }
 
-    if (!modePaiement) {
-      setErrorModePaiement('Veuillez choisir un mode de paiement');
-      isValid = false;
-    }
-
-    if (modePaiement === 'credit_card' && !cardDetails) {
-      setErrorModePaiement('Veuillez entrer les détails de votre carte');
-      isValid = false;
-    }
+    // Payment method is automatically set to cash, no need to validate
 
     if (!isValid) return;
 
     try {
       const quantities = getQuantities();
 
-      // Prepare order data for the service
+      // Prepare order data for the service - only cash payment
       const orderData = {
         products: products,
         quantities: quantities,
         address: address,
         city: city,
         zipCode: zipCode,
-        paymentMethod: modePaiement,
-        cardDetails: modePaiement === 'credit_card' ? cardDetails : null,
+        paymentMethod: 'espèces', // Always cash payment
+        cardDetails: null, // No card details needed
         userLocation: userLocation,
         distance: distance,
         deliveryCost: deliveryCost
@@ -774,6 +651,107 @@ export default function Cart({ navigation }) {
     );
   };
 
+  // Simplified payment method selection component - only cash payment
+  const renderPaymentMethods = () => (
+    <View style={[styles.paymentContainer, { backgroundColor: BACKGROUND_COLOR }]}>
+      <Text style={[styles.textTitlePay, { color: TEXT_COLOR }]}>
+        Mode de paiement
+      </Text>
+
+      <View style={styles.paymentMethodsContainer}>
+        {/* Cash Payment Option - Always Selected */}
+        <Animated.View style={[
+          styles.paymentMethodCard,
+          {
+            backgroundColor: CARD_BACKGROUND,
+            borderColor: PRIMARY_COLOR, // Always highlighted
+            borderWidth: 2, // Always highlighted
+            transform: [{
+              scale: 1.02, // Always slightly scaled
+            }],
+          }
+        ]}>
+          <View style={styles.paymentMethodContent}>
+            <View style={[styles.paymentIconContainer, { backgroundColor: PRIMARY_COLOR + '20' }]}>
+              <MaterialCommunityIcons
+                name="cash"
+                size={24}
+                color={PRIMARY_COLOR}
+              />
+            </View>
+            <View style={styles.paymentMethodInfo}>
+              <Text style={[styles.paymentMethodTitle, { color: TEXT_COLOR }]}>
+                Espèces
+              </Text>
+              <Text style={[styles.paymentMethodSubtitle, { color: TEXT_COLOR_SECONDARY }]}>
+                Paiement à la livraison
+              </Text>
+            </View>
+            <View style={[
+              styles.radioButton,
+              {
+                borderColor: PRIMARY_COLOR,
+                backgroundColor: PRIMARY_COLOR,
+              }
+            ]}>
+              <MaterialCommunityIcons name="check" size={16} color="#fff" />
+            </View>
+          </View>
+        </Animated.View>
+
+        {/* Credit Card Payment Option - Disabled */}
+        <View style={[
+          styles.paymentMethodCard,
+          styles.disabledPaymentCard,
+          {
+            backgroundColor: CARD_BACKGROUND,
+            borderColor: BORDER_COLOR,
+            opacity: 0.5,
+          }
+        ]}>
+          <View style={styles.paymentMethodContent}>
+            <View style={[styles.paymentIconContainer, { backgroundColor: TEXT_COLOR_SECONDARY + '20' }]}>
+              <MaterialCommunityIcons
+                name="credit-card-off"
+                size={24}
+                color={TEXT_COLOR_SECONDARY}
+              />
+            </View>
+            <View style={styles.paymentMethodInfo}>
+              <Text style={[styles.paymentMethodTitle, { color: TEXT_COLOR_SECONDARY }]}>
+                Carte bancaire
+              </Text>
+              <Text style={[styles.paymentMethodSubtitle, { color: TEXT_COLOR_SECONDARY }]}>
+                Non disponible
+              </Text>
+            </View>
+            <View style={[
+              styles.radioButton,
+              {
+                borderColor: TEXT_COLOR_SECONDARY,
+                backgroundColor: 'transparent',
+              }
+            ]}>
+              <MaterialCommunityIcons name="close" size={16} color={TEXT_COLOR_SECONDARY} />
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* Payment notice */}
+      <View style={[styles.paymentNotice, { backgroundColor: PRIMARY_COLOR + '10' }]}>
+        <MaterialCommunityIcons
+          name="information"
+          size={16}
+          color={PRIMARY_COLOR}
+        />
+        <Text style={[styles.paymentNoticeText, { color: PRIMARY_COLOR }]}>
+          Le paiement par carte bancaire sera bientôt disponible
+        </Text>
+      </View>
+    </View>
+  );
+
   // Enhanced update client function
   const updateClient = async () => {
     const userData = JSON.parse(await AsyncStorage.getItem('userData'));
@@ -828,158 +806,6 @@ export default function Cart({ navigation }) {
       console.log(error);
     }
   };
-
-  // Enhanced payment method selection component
-  const renderPaymentMethods = () => (
-    <View style={[styles.paymentContainer, { backgroundColor: BACKGROUND_COLOR }]}>
-      <Text style={[styles.textTitlePay, { color: TEXT_COLOR }]}>
-        Mode de paiement
-      </Text>
-
-      <View style={styles.paymentMethodsContainer}>
-        {/* Cash Payment Option */}
-        <Animated.View style={[
-          styles.paymentMethodCard,
-          {
-            backgroundColor: CARD_BACKGROUND,
-            borderColor: paymentAnimations.cash.interpolate({
-              inputRange: [0, 1],
-              outputRange: [BORDER_COLOR, PRIMARY_COLOR],
-            }),
-            borderWidth: paymentAnimations.cash.interpolate({
-              inputRange: [0, 1],
-              outputRange: [1, 2],
-            }),
-            transform: [{
-              scale: paymentAnimations.cash.interpolate({
-                inputRange: [0, 1],
-                outputRange: [1, 1.02],
-              }),
-            }],
-          }
-        ]}>
-          <TouchableOpacity
-            style={styles.paymentMethodContent}
-            onPress={() => handlePaymentMethodSelect('espèces')}
-          >
-            <View style={[styles.paymentIconContainer, { backgroundColor: PRIMARY_COLOR + '20' }]}>
-              <MaterialCommunityIcons
-                name="cash"
-                size={24}
-                color={PRIMARY_COLOR}
-              />
-            </View>
-            <View style={styles.paymentMethodInfo}>
-              <Text style={[styles.paymentMethodTitle, { color: TEXT_COLOR }]}>
-                Espèces
-              </Text>
-              <Text style={[styles.paymentMethodSubtitle, { color: TEXT_COLOR_SECONDARY }]}>
-                Paiement à la livraison
-              </Text>
-            </View>
-            <View style={[
-              styles.radioButton,
-              {
-                borderColor: modePaiement === 'espèces' ? PRIMARY_COLOR : BORDER_COLOR,
-                backgroundColor: modePaiement === 'espèces' ? PRIMARY_COLOR : 'transparent',
-              }
-            ]}>
-              {modePaiement === 'espèces' && (
-                <MaterialCommunityIcons name="check" size={16} color="#fff" />
-              )}
-            </View>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* Credit Card Payment Option */}
-        <Animated.View style={[
-          styles.paymentMethodCard,
-          {
-            backgroundColor: CARD_BACKGROUND,
-            borderColor: paymentAnimations.card.interpolate({
-              inputRange: [0, 1],
-              outputRange: [BORDER_COLOR, PRIMARY_COLOR],
-            }),
-            borderWidth: paymentAnimations.card.interpolate({
-              inputRange: [0, 1],
-              outputRange: [1, 2],
-            }),
-            transform: [{
-              scale: paymentAnimations.card.interpolate({
-                inputRange: [0, 1],
-                outputRange: [1, 1.02],
-              }),
-            }],
-          }
-        ]}>
-          <TouchableOpacity
-            style={styles.paymentMethodContent}
-            onPress={() => handlePaymentMethodSelect('credit_card')}
-          >
-            <View style={[styles.paymentIconContainer, { backgroundColor: SECONDARY_COLOR + '20' }]}>
-              <MaterialCommunityIcons
-                name="credit-card"
-                size={24}
-                color={SECONDARY_COLOR}
-              />
-            </View>
-            <View style={styles.paymentMethodInfo}>
-              <Text style={[styles.paymentMethodTitle, { color: TEXT_COLOR }]}>
-                Carte bancaire
-              </Text>
-              <Text style={[styles.paymentMethodSubtitle, { color: TEXT_COLOR_SECONDARY }]}>
-                Paiement sécurisé
-              </Text>
-            </View>
-            <View style={[
-              styles.radioButton,
-              {
-                borderColor: modePaiement === 'credit_card' ? PRIMARY_COLOR : BORDER_COLOR,
-                backgroundColor: modePaiement === 'credit_card' ? PRIMARY_COLOR : 'transparent',
-              }
-            ]}>
-              {modePaiement === 'credit_card' && (
-                <MaterialCommunityIcons name="check" size={16} color="#fff" />
-              )}
-            </View>
-          </TouchableOpacity>
-        </Animated.View>
-      </View>
-
-      {/* Display saved card details */}
-      {modePaiement === "credit_card" && cardDetails && (
-        <View style={[styles.cardDetailsContainer, { backgroundColor: CARD_BACKGROUND, borderColor: PRIMARY_COLOR }]}>
-          <View style={styles.cardDetailsHeader}>
-            <MaterialCommunityIcons
-              name="credit-card"
-              size={20}
-              color={PRIMARY_COLOR}
-            />
-            <Text style={[styles.cardDetailsTitle, { color: TEXT_COLOR }]}>
-              Carte enregistrée
-            </Text>
-            <TouchableOpacity onPress={() => setModalCardVisible(true)}>
-              <MaterialCommunityIcons
-                name="pencil"
-                size={16}
-                color={PRIMARY_COLOR}
-              />
-            </TouchableOpacity>
-          </View>
-          <Text style={[styles.cardNumber, { color: TEXT_COLOR }]}>
-            **** **** **** {cardDetails.number.slice(-4)}
-          </Text>
-          <Text style={[styles.cardHolder, { color: TEXT_COLOR_SECONDARY }]}>
-            {cardDetails.holder}
-          </Text>
-        </View>
-      )}
-
-      {errorModePaiement ? (
-        <Text style={styles.errorText}>{errorModePaiement}</Text>
-      ) : null}
-    </View>
-  );
 
   return (
     <View style={[styles.container, { backgroundColor: BACKGROUND_COLOR }]}>
@@ -1294,215 +1120,6 @@ export default function Cart({ navigation }) {
           </TouchableOpacity>
         </View>
       </Modal>
-
-      {/* Credit Card Modal - keeping existing implementation */}
-      <Modal
-        isVisible={modalCardVisible}
-        onBackdropPress={() => setModalCardVisible(false)}
-        style={styles.cardModalStyle}
-        backdropOpacity={0.5}
-        avoidKeyboard={true}
-        useNativeDriver={true}
-        hideModalContentWhileAnimating={true}
-      >
-        <View style={[styles.cardModalContainer, { backgroundColor: CARD_BACKGROUND }]}>
-          <View style={[styles.cardModalHeader, { borderBottomColor: TEXT_COLOR_SECONDARY }]}>
-            <Text style={[styles.cardModalTitle, { color: TEXT_COLOR }]}>
-              Informations de la carte
-            </Text>
-            <TouchableOpacity onPress={() => setModalCardVisible(false)}>
-              <MaterialCommunityIcons name="close" size={24} color={TEXT_COLOR} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.cardModalContent} showsVerticalScrollIndicator={false}>
-            {/* Card Number */}
-            <View style={styles.cardInputContainer}>
-              <Text style={[styles.cardInputLabel, { color: TEXT_COLOR }]}>
-                Numéro de carte
-              </Text>
-              <View style={[
-                styles.cardInputWrapper,
-                {
-                  borderColor: errorCardNumber ? 'red' : TEXT_COLOR_SECONDARY,
-                  backgroundColor: BACKGROUND_COLOR
-                }
-              ]}>
-                <MaterialCommunityIcons
-                  name="credit-card-outline"
-                  size={20}
-                  color={errorCardNumber ? 'red' : TEXT_COLOR_SECONDARY}
-                  style={styles.cardInputIcon}
-                />
-                <TextInput
-                  style={[styles.cardTextInput, { color: TEXT_COLOR }]}
-                  placeholder="1234 5678 9012 3456"
-                  placeholderTextColor={errorCardNumber ? 'red' : TEXT_COLOR_SECONDARY}
-                  value={cardNumber}
-                  onChangeText={(text) => {
-                    const formatted = formatCardNumber(text);
-                    setCardNumber(formatted);
-                    if (errorCardNumber) {
-                      setErrorCardNumber('');
-                    }
-                  }}
-                  keyboardType="numeric"
-                  maxLength={19}
-                />
-              </View>
-              {errorCardNumber ? (
-                <Text style={styles.cardErrorText}>{errorCardNumber}</Text>
-              ) : null}
-            </View>
-
-            {/* Card Holder */}
-            <View style={styles.cardInputContainer}>
-              <Text style={[styles.cardInputLabel, { color: TEXT_COLOR }]}>
-                Nom du titulaire
-              </Text>
-              <View style={[
-                styles.cardInputWrapper,
-                {
-                  borderColor: errorCardHolder ? 'red' : TEXT_COLOR_SECONDARY,
-                  backgroundColor: BACKGROUND_COLOR
-                }
-              ]}>
-                <MaterialCommunityIcons
-                  name="account-outline"
-                  size={20}
-                  color={errorCardHolder ? 'red' : TEXT_COLOR_SECONDARY}
-                  style={styles.cardInputIcon}
-                />
-                <TextInput
-                  style={[styles.cardTextInput, { color: TEXT_COLOR }]}
-                  placeholder="JOHN DOE"
-                  placeholderTextColor={errorCardHolder ? 'red' : TEXT_COLOR_SECONDARY}
-                  value={cardHolder}
-                  onChangeText={(text) => {
-                    setCardHolder(text.toUpperCase());
-                    setErrorCardHolder('');
-                  }}
-                  autoCapitalize="characters"
-                />
-              </View>
-              {errorCardHolder ? (
-                <Text style={styles.cardErrorText}>{errorCardHolder}</Text>
-              ) : null}
-            </View>
-
-            {/* Expiry Date and CVV Row */}
-            <View style={styles.cardRowContainer}>
-              <View style={[styles.cardInputContainer, { flex: 1, marginRight: 10 }]}>
-                <Text style={[styles.cardInputLabel, { color: TEXT_COLOR }]}>
-                  Date d'expiration
-                </Text>
-                <View style={[
-                  styles.cardInputWrapper,
-                  {
-                    borderColor: errorExpiryDate ? 'red' : TEXT_COLOR_SECONDARY,
-                    backgroundColor: BACKGROUND_COLOR
-                  }
-                ]}>
-                  <MaterialCommunityIcons
-                    name="calendar-outline"
-                    size={20}
-                    color={errorExpiryDate ? 'red' : TEXT_COLOR_SECONDARY}
-                    style={styles.cardInputIcon}
-                  />
-                  <TextInput
-                    style={[styles.cardTextInput, { color: TEXT_COLOR }]}
-                    placeholder="MM/AA"
-                    placeholderTextColor={errorExpiryDate ? 'red' : TEXT_COLOR_SECONDARY}
-                    value={expiryDate}
-                    onChangeText={(text) => {
-                      const formatted = formatExpiryDate(text);
-                      if (formatted.length <= 5) {
-                        setExpiryDate(formatted);
-                        setErrorExpiryDate('');
-                      }
-                    }}
-                    keyboardType="numeric"
-                    maxLength={5}
-                  />
-                </View>
-                {errorExpiryDate ? (
-                  <Text style={styles.cardErrorText}>{errorExpiryDate}</Text>
-                ) : null}
-              </View>
-
-              <View style={[styles.cardInputContainer, { flex: 1, marginLeft: 10 }]}>
-                <Text style={[styles.cardInputLabel, { color: TEXT_COLOR }]}>
-                  CVV
-                </Text>
-                <View style={[
-                  styles.cardInputWrapper,
-                  {
-                    borderColor: errorCvv ? 'red' : TEXT_COLOR_SECONDARY,
-                    backgroundColor: BACKGROUND_COLOR
-                  }
-                ]}>
-                  <MaterialCommunityIcons
-                    name="lock-outline"
-                    size={20}
-                    color={errorCvv ? 'red' : TEXT_COLOR_SECONDARY}
-                    style={styles.cardInputIcon}
-                  />
-                  <TextInput
-                    style={[styles.cardTextInput, { color: TEXT_COLOR }]}
-                    placeholder="123"
-                    placeholderTextColor={errorCvv ? 'red' : TEXT_COLOR_SECONDARY}
-                    value={cvv}
-                    onChangeText={(text) => {
-                      if (text.length <= 3 && /^\d*$/.test(text)) {
-                        setCvv(text);
-                        setErrorCvv('');
-                      }
-                    }}
-                    keyboardType="numeric"
-                    maxLength={3}
-                    secureTextEntry
-                  />
-                </View>
-                {errorCvv ? (
-                  <Text style={styles.cardErrorText}>{errorCvv}</Text>
-                ) : null}
-              </View>
-            </View>
-
-            {/* Security Notice */}
-            <View style={styles.securityNotice}>
-              <MaterialCommunityIcons
-                name="shield-check"
-                size={16}
-                color={PRIMARY_COLOR}
-              />
-              <Text style={[styles.securityText, { color: TEXT_COLOR_SECONDARY }]}>
-                Vos informations sont sécurisées et cryptées
-              </Text>
-            </View>
-          </ScrollView>
-
-          <View style={styles.cardModalFooter}>
-            <TouchableOpacity
-              onPress={() => setModalCardVisible(false)}
-              style={[styles.cardCancelButton, { borderColor: TEXT_COLOR_SECONDARY }]}
-            >
-              <Text style={[styles.cardCancelButtonText, { color: TEXT_COLOR }]}>
-                Annuler
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={handleSaveCard}
-              style={[styles.cardSaveButton, { backgroundColor: PRIMARY_COLOR }]}
-            >
-              <Text style={styles.cardSaveButtonText}>
-                Enregistrer
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -1761,6 +1378,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
+  disabledPaymentCard: {
+    // Additional styling for disabled card
+  },
   paymentMethodContent: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1795,41 +1415,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Card Details Display Styles
-  cardDetailsContainer: {
-    marginTop: 15,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  cardDetailsHeader: {
+  // Payment notice styles
+  paymentNotice: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 15,
   },
-  cardDetailsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
+  paymentNoticeText: {
+    fontSize: 12,
     marginLeft: 8,
     flex: 1,
-  },
-  cardNumber: {
-    fontSize: 16,
     fontWeight: '500',
-    letterSpacing: 2,
-    marginBottom: 4,
-  },
-  cardHolder: {
-    fontSize: 12,
-    fontWeight: '400',
-  },
-
-  // Error text
-  errorText: {
-    color: 'red',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 10,
   },
 
   // Order details section styles
@@ -1977,110 +1575,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
-  },
-
-  // Card Modal Styles
-  cardModalStyle: {
-    justifyContent: 'center',
-    margin: 20,
-  },
-  cardModalContainer: {
-    borderRadius: 20,
-    maxHeight: '85%',
-    elevation: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-  },
-  cardModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-  },
-  cardModalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  cardModalContent: {
-    padding: 20,
-  },
-  cardInputContainer: {
-    marginBottom: 20,
-  },
-  cardInputLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  cardInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  cardInputIcon: {
-    marginRight: 10,
-  },
-  cardTextInput: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  cardErrorText: {
-    color: 'red',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  cardRowContainer: {
-    flexDirection: 'row',
-    marginBottom: 20,
-  },
-  securityNotice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: 'rgba(0, 122, 254, 0.1)',
-    borderRadius: 8,
-    marginTop: 10,
-  },
-  securityText: {
-    fontSize: 12,
-    marginLeft: 8,
-    flex: 1,
-  },
-  cardModalFooter: {
-    flexDirection: 'row',
-    padding: 20,
-    justifyContent: 'space-between',
-  },
-  cardCancelButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  cardCancelButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  cardSaveButton: {
-    flex: 1,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginLeft: 10,
-  },
-  cardSaveButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
   },
   stockWarning: {
     fontSize: 11,
