@@ -1,14 +1,57 @@
 // services/order.service.ts
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert } from 'react-native';
+import { Alert, Platform, ToastAndroid } from 'react-native';
 import apiClient from '../axiosInstance/AxiosInstance'; // Use existing API client
+import Toast from 'react-native-simple-toast';
 import { 
   Order, 
   OrderFilterParams, 
   UpdateOrderStatusRequest, 
   UpdateOrderStatusResponse 
 } from '../types/order.types';
+
+// Enhanced types for cart integration
+interface CartProduct {
+  id: number;
+  label: string;
+  price_ttc: string | number;
+  photo_link: string;
+  description: string;
+  stock: number;
+}
+
+interface CartQuantities {
+  [productId: number]: number;
+}
+
+interface CreateOrderRequest {
+  products: CartProduct[];
+  quantities: CartQuantities;
+  address: string;
+  city: string;
+  zipCode: string;
+  paymentMethod: string;
+  cardDetails?: {
+    number: string;
+    holder: string;
+    expiry: string;
+    cvv: string;
+  };
+  userLocation?: {
+    latitude: number;
+    longitude: number;
+  };
+  distance?: number;
+  deliveryCost: number;
+}
+
+interface CreateOrderResponse {
+  success: boolean;
+  orderId?: number;
+  message?: string;
+  error?: string;
+}
 
 class OrderService {
   
@@ -41,6 +84,244 @@ class OrderService {
     // Try statut first (French), then status (English)
     const status = order.statut || order.status;
     return this.normalizeStatus(status);
+  }
+
+  /**
+   * Calculate total price from products and quantities (returns HT total)
+   */
+  private calculateTotal(products: CartProduct[], quantities: CartQuantities): number {
+    return products.reduce((acc, item) => {
+      const quantity = quantities[item.id] || 1;
+      const priceTTC = parseFloat(item.price_ttc?.toString() || '0') || 0;
+      // Since price_ttc already includes 20% VAT, calculate HT price
+      const priceHT = priceTTC / 1.20; // Remove 20% VAT to get HT price
+      const itemTotal = priceHT * quantity;
+      return acc + itemTotal;
+    }, 0);
+  }
+
+  /**
+   * Show toast message based on platform
+   */
+  private showToast(message: string, isLong: boolean = false) {
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(message, isLong ? ToastAndroid.LONG : ToastAndroid.SHORT);
+    } else {
+      Toast.show(message, isLong ? Toast.LONG : Toast.SHORT);
+    }
+  }
+
+  /**
+   * Create a new order from cart data
+   */
+  async createOrder(orderData: CreateOrderRequest): Promise<CreateOrderResponse> {
+    try {
+      const userData = await this.getCurrentUser();
+      const clientID = userData.id;
+
+      if (!clientID) {
+        throw new Error('User ID not found');
+      }
+
+      // Validate required fields
+      if (!orderData.address || !orderData.city || !orderData.zipCode) {
+        return {
+          success: false,
+          error: 'Adresse de livraison incomplète'
+        };
+      }
+
+      if (!orderData.paymentMethod) {
+        return {
+          success: false,
+          error: 'Mode de paiement requis'
+        };
+      }
+
+      if (orderData.paymentMethod === 'credit_card' && !orderData.cardDetails) {
+        return {
+          success: false,
+          error: 'Détails de carte bancaire requis'
+        };
+      }
+
+      if (!orderData.products || orderData.products.length === 0) {
+        return {
+          success: false,
+          error: 'Aucun produit dans le panier'
+        };
+      }
+
+      // Calculate subtotal and total with proper tax breakdown
+      let subtotalHT = 0;
+      let subtotalTTC = 0;
+      
+      // Calculate both HT and TTC totals in one loop
+      orderData.products.forEach(product => {
+        const quantity = orderData.quantities[product.id] || 1;
+        const priceTTC = parseFloat(product.price_ttc?.toString() || '0') || 0;
+        // Correct VAT calculation: Price HT = Price TTC / (1 + VAT rate)
+        // With 20% VAT: Price HT = Price TTC / 1.20
+        const priceHT = priceTTC / 1.20;
+        
+        subtotalHT += priceHT * quantity;
+        subtotalTTC += priceTTC * quantity;
+      });
+      
+      const totalTax = subtotalTTC - subtotalHT; // Total tax amount
+      const deliveryCost = orderData.deliveryCost || 0;
+      const totalAmountTTC = subtotalTTC + deliveryCost;
+
+      // Create order lines with proper tax calculation from TTC price
+      const orderLines = orderData.products.map(product => {
+        const quantity = orderData.quantities[product.id] || 1;
+        const priceTTC = parseFloat(product.price_ttc?.toString() || '0') || 0;
+        
+        // Correct VAT calculation from TTC price
+        // Formula: Price HT = Price TTC / (1 + VAT rate)
+        // With 20% VAT: Price HT = Price TTC / 1.20
+        const priceHT = Math.round((priceTTC / 1.20) * 100) / 100; // Round to 2 decimal places
+        const taxAmount = Math.round((priceTTC - priceHT) * 100) / 100; // Tax amount per unit
+        
+        return {
+          fk_product: product.id,
+          qty: quantity,
+          price: priceHT, // Send HT price to Dolibarr
+          subprice: Math.round((priceHT * quantity) * 100) / 100, // Total HT for this line
+          total_tva: Math.round((taxAmount * quantity) * 100) / 100, // Total tax for this line
+          tva_tx: 20, // 20% VAT rate
+        };
+      });
+
+      // Create delivery note for public note (customer-facing)
+      let deliveryNote = `Livraison à: ${orderData.address}, ${orderData.city} ${orderData.zipCode}`;
+      
+      if (orderData.distance !== undefined && orderData.distance !== null) {
+        deliveryNote += `\nDistance: ${orderData.distance.toFixed(1)}km`;
+      }
+      
+      if (deliveryCost > 0) {
+        deliveryNote += `\nFrais de livraison: ${deliveryCost.toFixed(2)} DH`;
+      }
+      
+      if (orderData.paymentMethod === 'credit_card' && orderData.cardDetails) {
+        deliveryNote += `\nPaiement par carte: ****${orderData.cardDetails.number.slice(-4)}`;
+      } else if (orderData.paymentMethod === 'espèces') {
+        deliveryNote += `\nPaiement en espèces à la livraison`;
+      }
+
+      // Create private note (internal use only - no payment or delivery info)
+      const privateNote = `Commande créée depuis l'application mobile\nClient ID: ${clientID}\nNombre d'articles: ${orderData.products.length}\nTotal HT: ${subtotalHT.toFixed(2)} DH\nTotal TTC: ${subtotalTTC.toFixed(2)} DH\nTVA: ${totalTax.toFixed(2)} DH`;
+
+      // Prepare order data for your custom Dolibarr API
+      // Based on your backend: { "socid": 2, "date": 1595196000, "type": 0, "lines": [{ "fk_product": 2, "qty": 1 }] }
+      const dolibarrOrderData = {
+        socid: clientID,
+        date: Math.floor(Date.now() / 1000), // Unix timestamp as shown in your example
+        type: 0,
+        lines: orderLines.map(line => ({
+          fk_product: line.fk_product,
+          qty: line.qty,
+          price: line.price, // HT price
+          subprice: line.subprice, // Total HT for this line
+          total_tva: line.total_tva, // Total tax for this line
+          tva_tx: line.tva_tx // VAT rate (20%)
+        })),
+        // Public note: delivery and payment info (customer-facing)
+        note_public: deliveryNote,
+        // Private note: internal info only (no sensitive payment/delivery details)
+        note_private: privateNote
+      };
+
+      // Create the order
+      const response = await apiClient.post('/orders', dolibarrOrderData);
+      
+      // Your backend returns "id :12345" format based on the code
+      if (response.data) {
+        let orderId;
+        
+        // Handle different response formats
+        if (typeof response.data === 'string' && response.data.includes('id :')) {
+          // Extract ID from "id :12345" format
+          orderId = parseInt(response.data.split('id :')[1]);
+        } else if (response.data.id) {
+          // Standard ID field
+          orderId = response.data.id;
+        } else if (typeof response.data === 'number') {
+          // Direct ID number
+          orderId = response.data;
+        }
+        
+        if (orderId) {
+          return {
+            success: true,
+            orderId: orderId,
+            message: 'Commande créée avec succès'
+          };
+        }
+      }
+      
+      throw new Error('Invalid response from server');
+
+    } catch (error) {
+      console.error('Error creating order:', error);
+      
+      let errorMessage = 'Erreur lors de la création de la commande';
+      
+      if (error.response) {
+        errorMessage = error.response.data?.message || error.response.data?.error || errorMessage;
+      } else if (error.request) {
+        errorMessage = 'Aucune réponse du serveur';
+      } else {
+        errorMessage = error.message || errorMessage;
+      }
+
+      return {
+        success: false,
+        error: errorMessage
+      };
+    }
+  }
+
+  /**
+   * Create order with UI integration (shows toasts and handles navigation)
+   */
+  async createOrderWithUI(
+    orderData: CreateOrderRequest,
+    clearCart: () => Promise<void>,
+    navigation: any,
+    setIsLoading?: (loading: boolean) => void
+  ): Promise<void> {
+    try {
+      if (setIsLoading) {
+        setIsLoading(true);
+      }
+
+      const result = await this.createOrder(orderData);
+
+      if (result.success) {
+        // Clear the cart
+        await clearCart();
+        
+        // Show success message
+        this.showToast('Les articles seront livrés BIENTÔT !', true);
+        
+        // Navigate to orders screen
+        navigation.navigate('OrderScreen');
+        
+      } else {
+        // Show error message
+        Alert.alert('Erreur', result.error || 'Une erreur est survenue lors de la commande');
+      }
+
+    } catch (error) {
+      console.error('Error in createOrderWithUI:', error);
+      Alert.alert('Erreur', 'Une erreur inattendue est survenue');
+    } finally {
+      if (setIsLoading) {
+        setIsLoading(false);
+      }
+    }
   }
 
   /**

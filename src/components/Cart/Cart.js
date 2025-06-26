@@ -30,6 +30,7 @@ import Modal from "react-native-modal";
 import { useTheme } from '../../context/ThemeContext';
 import { useCart } from '../../context/CartContext';
 import Geolocation from 'react-native-geolocation-service';
+import OrderService from '../../service/order.service'; // Import the enhanced order service
 
 export default function Cart({ navigation }) {
   const { theme, isDarkMode, toggleTheme, colorTheme, toggleColorTheme } = useTheme();
@@ -566,11 +567,8 @@ export default function Cart({ navigation }) {
     }
   };
 
-  // Enhanced checkout function
+  // Enhanced checkout function using OrderService
   const checkOut = async () => {
-    const userData = JSON.parse(await AsyncStorage.getItem('userData'));
-    const clientID = userData.id;
-
     let isValid = true;
 
     if (!address) {
@@ -606,58 +604,32 @@ export default function Cart({ navigation }) {
     try {
       const quantities = getQuantities();
 
-      const inputData = {
-        socid: clientID,
-        date: new Date().toISOString().split('T')[0],
-        type: 0,
-        brouillon: 1,
-        mode_reglement_id: 4,
-        mode_reglement_code: 'LIQ',
-        lines: products.map(product => ({
-          fk_product: product.id,
-          qty: quantities[product.id] || 1,
-          price: product.price_ttc,
-          subprice: product.price_ttc * (quantities[product.id] || 1),
-          product_type: 0,
-          tva_tx: 20,
-        })),
-        cond_reglement_id: 6,
-        date_validation: new Date().toISOString().split('T')[0],
-        ...(userLocation && {
-          note_public: `Livraison à: ${address}, ${city} ${zipCode}\nDistance: ${distance?.toFixed(1)}km\nFrais de livraison: ${deliveryCost} DH${modePaiement === 'credit_card' ? `\nPaiement par carte: ****${cardDetails?.number.slice(-4)}` : ''}`
-        })
-      }
+      // Prepare order data for the service
+      const orderData = {
+        products: products,
+        quantities: quantities,
+        address: address,
+        city: city,
+        zipCode: zipCode,
+        paymentMethod: modePaiement,
+        cardDetails: modePaiement === 'credit_card' ? cardDetails : null,
+        userLocation: userLocation,
+        distance: distance,
+        deliveryCost: deliveryCost
+      };
 
-      const res = await axios.post(API_BASE_URL + 'orders', inputData, {
-        headers: {
-          'Content-Type': 'application/json',
-          'DOLAPIKEY': Token
-        }
-      });
+      // Use the OrderService to create the order
+      await OrderService.createOrderWithUI(
+        orderData,
+        clearCart,
+        navigation,
+        setIsLoading
+      );
 
-      await clearCart();
-
-      if (Platform.OS === 'android') {
-        ToastAndroid.show('Les articles seront livrés BIENTOT !', ToastAndroid.SHORT);
-        setIsLoading(true);
-      } else if (Platform.OS === 'ios') {
-        Toast.show('Les articles seront livrés BIENTOT !', Toast.SHORT);
-        setIsLoading(true);
-      }
-      navigation.navigate('OrderScreen');
     } catch (error) {
       console.log("Error:", error);
-      if (error.response) {
-        console.log("API Error:", error.response.data);
-        Alert.alert('Error', error.response.data?.message || 'Something went wrong');
-      } else if (error.request) {
-        console.log("Request Error:", error.request);
-        Alert.alert('Error', 'No response received from the server');
-      } else {
-        console.log("Error:", error.message);
-        Alert.alert('Error', 'Something went wrong');
-      }
-      return error;
+      Alert.alert('Erreur', 'Une erreur inattendue est survenue');
+      setIsLoading(false);
     }
   };
 

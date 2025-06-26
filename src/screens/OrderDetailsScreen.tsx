@@ -11,13 +11,8 @@ import {
   StatusBar,
   Alert,
   ActivityIndicator,
-  Modal,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import Feather from 'react-native-vector-icons/Feather';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../context/ThemeContext';
 import { Order, OrderLine, OrderStatusInfo } from '../types/order.types';
@@ -36,9 +31,6 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
   const { theme, isDarkMode, colorTheme } = useTheme();
   const [order, setOrder] = useState<Order>(route.params.order);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [showNoteModal, setShowNoteModal] = useState<boolean>(false);
-  const [noteText, setNoteText] = useState<string>('');
-  const [noteType, setNoteType] = useState<'delivery' | 'private' | 'cancellation'>('delivery');
 
   // Define theme colors
   const PRIMARY_COLOR = colorTheme === 'blue' ? '#007afe' : '#fe9400';
@@ -114,139 +106,24 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
     }
   };
 
-  // Handle delivery with note
+  // Handle delivery without note
   const handleSetAsDelivered = () => {
     if (order.status === 3) {
       Alert.alert('Information', 'Cette commande est déjà marquée comme livrée.');
       return;
     }
 
-    Alert.alert(
-      'Marquer comme livrée',
-      'Voulez-vous ajouter une note de livraison ?',
-      [
-        {
-          text: 'Sans note',
-          style: 'default',
-          onPress: () => {
-            OrderService.setOrderAsDeliveredWithConfirmation(
-              order.id,
-              order.ref,
-              () => {
-                // Refresh order data
-                refreshOrderData();
-              },
-              (error) => {
-                console.error('Error setting order as delivered:', error);
-              }
-            );
-          },
-        },
-        {
-          text: 'Avec note',
-          style: 'default',
-          onPress: () => {
-            setNoteType('delivery');
-            setNoteText('');
-            setShowNoteModal(true);
-          },
-        },
-        {
-          text: 'Annuler',
-          style: 'cancel',
-        },
-      ]
+    OrderService.setOrderAsDeliveredWithConfirmation(
+      order.id,
+      order.ref,
+      () => {
+        // Refresh order data
+        refreshOrderData();
+      },
+      (error) => {
+        console.error('Error setting order as delivered:', error);
+      }
     );
-  };
-
-  // Handle updating private note
-  const handleUpdatePrivateNote = () => {
-    setNoteType('private');
-    setNoteText(order.note_private || '');
-    setShowNoteModal(true);
-  };
-
-  // Handle submitting note
-  const handleSubmitNote = () => {
-    if (!noteText.trim()) {
-      Alert.alert('Erreur', 'Veuillez saisir une note.');
-      return;
-    }
-
-    if (noteType === 'delivery') {
-      // Add delivery note to private note, then mark as delivered
-      const deliveryNote = `Livrée - ${noteText.trim()}`;
-      
-      OrderService.addNoteToOrderWithConfirmation(
-        order.id,
-        order.ref,
-        deliveryNote,
-        true, // isPrivate = true for private note
-        () => {
-          // After adding the note, mark as delivered
-          OrderService.setOrderAsDeliveredWithConfirmation(
-            order.id,
-            order.ref,
-            () => {
-              setShowNoteModal(false);
-              setNoteText('');
-              refreshOrderData();
-            },
-            (error) => {
-              console.error('Error setting order as delivered:', error);
-            }
-          );
-        },
-        (error) => {
-          console.error('Error adding delivery note:', error);
-        }
-      );
-    } else if (noteType === 'cancellation') {
-      // First add the cancellation reason to private note, then cancel the order
-      const cancellationNote = `Commande annulée - Raison: ${noteText.trim()}`;
-      
-      OrderService.addNoteToOrderWithConfirmation(
-        order.id,
-        order.ref,
-        cancellationNote,
-        true, // isPrivate = true for private note
-        () => {
-          // After adding the note, cancel the order
-          OrderService.cancelOrderWithConfirmation(
-            order.id,
-            order.ref,
-            noteText.trim(), // Pass the reason to the cancel function
-            () => {
-              setShowNoteModal(false);
-              setNoteText('');
-              refreshOrderData();
-            },
-            (error) => {
-              console.error('Error cancelling order:', error);
-            }
-          );
-        },
-        (error) => {
-          console.error('Error adding cancellation note:', error);
-        }
-      );
-    } else if (noteType === 'private') {
-      // Update private note
-      OrderService.addNoteToOrderWithConfirmation(
-        order.id,
-        order.ref,
-        noteText.trim(),
-        true, // isPrivate = true for private note
-        () => {
-          setShowNoteModal(false);
-          setNoteText('');
-          refreshOrderData();
-        },
-        (error) => {
-          console.error('Error updating private note:', error);
-        }
-      );
-    }
   };
 
   // Refresh order data
@@ -262,27 +139,35 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
     );
   };
 
-  // Handle status change
-  const handleStatusChange = (newStatus: number, statusText: string) => {
-    OrderService.updateOrderStatusWithConfirmation(
-      order.id,
-      order.ref,
-      newStatus,
-      statusText,
-      () => {
-        refreshOrderData();
-      },
-      (error) => {
-        console.error('Error updating order status:', error);
-      }
-    );
-  };
-
-  // Handle cancel order
+  // Handle cancel order (simple cancellation without reason)
   const handleCancelOrder = () => {
-    setNoteType('cancellation');
-    setNoteText('');
-    setShowNoteModal(true);
+    Alert.alert(
+      'Confirmer l\'annulation',
+      `Êtes-vous sûr de vouloir annuler la commande ${order.ref} ?`,
+      [
+        {
+          text: 'Non',
+          style: 'cancel',
+        },
+        {
+          text: 'Oui, annuler',
+          style: 'destructive',
+          onPress: () => {
+            OrderService.cancelOrderWithConfirmation(
+              order.id,
+              order.ref,
+              undefined, // No cancellation reason
+              () => {
+                refreshOrderData();
+              },
+              (error) => {
+                console.error('Error cancelling order:', error);
+              }
+            );
+          },
+        },
+      ]
+    );
   };
 
   // Render product item
@@ -349,7 +234,7 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
     const currentStatus = typeof order.statut === 'string' ? parseInt(order.statut, 10) : (order.statut || order.status);
 
     switch (currentStatus) {
-      case 0: // Draft - User can only cancel
+      case 0: // Draft - User can cancel
         actions.push(
           <TouchableOpacity
             key="cancel"
@@ -391,8 +276,6 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
         );
         break;
     }
-
-    // No general private note editing - only through cancel/delivery actions
 
     return actions;
   };
@@ -475,15 +358,6 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
               Commandé le {formatDate(order.date_commande)}
             </Text>
           </View>
-
-          {(order.note_private && order.note_private.trim().length > 0) && (
-            <View style={[styles.noteContainer, { backgroundColor: isDarkMode ? '#252525' : '#f5f5f5' }]}>
-              <View style={styles.noteSection}>
-                <Text style={[styles.noteLabel, { color: TEXT_COLOR_SECONDARY }]}>Note privée:</Text>
-                <Text style={[styles.noteText, { color: TEXT_COLOR }]}>{order.note_private}</Text>
-              </View>
-            </View>
-          )}
         </View>
 
         {/* Products List */}
@@ -531,7 +405,7 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
           </View>
         </View>
 
-          {/* Action Buttons */}
+        {/* Action Buttons */}
         {renderStatusActions().length > 0 && (
           <View style={[styles.card, { backgroundColor: CARD_BACKGROUND, borderColor: BORDER_COLOR }]}>
             <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>
@@ -542,88 +416,6 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
           </View>
         )}
       </ScrollView>
-
-      {/* Note Modal */}
-      <Modal
-        visible={showNoteModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowNoteModal(false)}
-      >
-        <KeyboardAvoidingView 
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-          <View style={[styles.modalContent, { backgroundColor: CARD_BACKGROUND }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: TEXT_COLOR }]}>
-                {noteType === 'delivery' ? 'Note de livraison' : 
-                 noteType === 'cancellation' ? 'Raison de l\'annulation' :
-                 noteType === 'private' ? 
-                 (order.note_private && order.note_private.trim().length > 0 ? 'Éditer note privée' : 'Ajouter note privée') :
-                 'Note'}
-              </Text>
-              <TouchableOpacity
-                style={[styles.closeButton, { backgroundColor: isDarkMode ? '#333' : '#f0f0f0' }]}
-                onPress={() => {
-                  setShowNoteModal(false);
-                  setNoteText('');
-                }}
-              >
-                <Ionicons name="close" size={20} color={TEXT_COLOR_SECONDARY} />
-              </TouchableOpacity>
-            </View>
-            
-            <TextInput
-              style={[styles.noteInput, { 
-                backgroundColor: isDarkMode ? '#252525' : '#f5f5f5',
-                color: TEXT_COLOR,
-                borderColor: BORDER_COLOR
-              }]}
-              placeholder={noteType === 'delivery' ? 'Détails de la livraison...' : 
-                          noteType === 'cancellation' ? 'Raison de l\'annulation (obligatoire)...' :
-                          noteType === 'private' ? 'Note privée pour votre usage...' :
-                          'Note...'}
-              placeholderTextColor={TEXT_COLOR_SECONDARY}
-              multiline={true}
-              numberOfLines={4}
-              value={noteText}
-              onChangeText={setNoteText}
-              textAlignVertical="top"
-            />
-            
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton, { 
-                  backgroundColor: isDarkMode ? '#2c2c2c' : '#ffffff',
-                  borderColor: isDarkMode ? '#404040' : '#e0e0e0'
-                }]}
-                onPress={() => {
-                  setShowNoteModal(false);
-                  setNoteText('');
-                }}
-              >
-                <Text style={[styles.cancelButtonText, { color: TEXT_COLOR }]}>Annuler</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.modalButton, styles.submitButton, { 
-                  backgroundColor: noteType === 'cancellation' ? '#f44336' : PRIMARY_COLOR 
-                }]}
-                onPress={handleSubmitNote}
-              >
-                <Text style={styles.submitButtonText}>
-                  {noteType === 'delivery' ? 'Livrer' : 
-                   noteType === 'cancellation' ? 'Annuler la commande' :
-                   noteType === 'private' ?
-                   (order.note_private && order.note_private.trim().length > 0 ? 'Mettre à jour' : 'Ajouter') :
-                   'Confirmer'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
     </View>
   );
 };
@@ -639,11 +431,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    elevation: 3,
+    elevation: 5,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
   },
   backButton: {
     width: 40,
@@ -651,12 +445,17 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#fff',
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   refreshButton: {
     width: 40,
@@ -664,14 +463,16 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   scrollContainer: {
     flex: 1,
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 100, // Increased padding to avoid tab menu overlap
   },
   card: {
     borderRadius: 16,
@@ -717,23 +518,6 @@ const styles = StyleSheet.create({
   orderDate: {
     fontSize: 14,
     marginLeft: 6,
-  },
-  noteContainer: {
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 8,
-  },
-  noteLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  noteText: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  noteSection: {
-    marginBottom: 4,
   },
   sectionTitle: {
     fontSize: 16,
@@ -850,89 +634,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    width: '100%',
-    maxWidth: 400,
-    borderRadius: 20,
-    padding: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.1)',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    flex: 1,
-    paddingRight: 16,
-  },
-  noteInput: {
-    borderWidth: 2,
-    borderRadius: 16,
-    padding: 16,
-    fontSize: 16,
-    minHeight: 120,
-    marginBottom: 24,
-    textAlignVertical: 'top',
-    lineHeight: 22,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 50,
-  },
-  cancelButton: {
-    borderWidth: 2,
-    borderColor: 'rgba(0,0,0,0.1)',
-  },
-  submitButton: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  submitButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });
 

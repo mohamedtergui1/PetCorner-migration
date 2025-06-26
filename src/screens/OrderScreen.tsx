@@ -44,6 +44,22 @@ const OrderScreen: React.FC<OrderScreenProps> = ({ navigation }) => {
   const TEXT_COLOR_SECONDARY = isDarkMode ? '#b3b3b3' : '#666666';
   const ERROR_COLOR = '#f44336';
 
+  // Enhanced price formatter for large numbers
+  const formatPrice = useCallback((price: number | string): string => {
+    const numPrice = parseFloat(price.toString());
+    if (isNaN(numPrice)) return '0.00 dhs';
+    
+    // For large numbers, add spacing and better formatting
+    if (numPrice >= 1000) {
+      return `${numPrice.toLocaleString('fr-FR', { 
+        minimumFractionDigits: 2, 
+        maximumFractionDigits: 2 
+      })} dhs`;
+    }
+    
+    return `${numPrice.toFixed(2)} dhs`;
+  }, []);
+
   // Memoized date formatters
   const formatDate = useCallback((timestamp: number): string => {
     const adjustedTimestamp = (timestamp + 43200) * 1000;
@@ -52,10 +68,8 @@ const OrderScreen: React.FC<OrderScreenProps> = ({ navigation }) => {
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
     
-    return `${day}/${month}/${year} à ${hours}:${minutes}`;
+    return `${day}/${month}/${year}`;
   }, []);
 
   const formatRelativeTime = useCallback((timestamp: number): string => {
@@ -265,7 +279,7 @@ const OrderScreen: React.FC<OrderScreenProps> = ({ navigation }) => {
                       </Text>
                     </View>
                     <Text style={[styles.price, { color: PRIMARY_COLOR }]}>
-                      {OrderUtils.formatPrice ? OrderUtils.formatPrice(line.subprice) : `${parseFloat(line.subprice).toFixed(2)} dhs`}
+                      {formatPrice(line.subprice)}
                     </Text>
                   </View>
                 </View>
@@ -292,7 +306,7 @@ const OrderScreen: React.FC<OrderScreenProps> = ({ navigation }) => {
             </Text>
             <View style={[styles.totalContainer, { backgroundColor: PRIMARY_COLOR + '15' }]}>
               <Text style={[styles.totalAmount, { color: PRIMARY_COLOR }]}>
-                {OrderUtils.formatPrice ? OrderUtils.formatPrice(item.total_ttc) : `${parseFloat(item.total_ttc).toFixed(2)} dhs`}
+                {formatPrice(item.total_ttc)}
               </Text>
             </View>
           </View>
@@ -460,8 +474,8 @@ const OrderScreen: React.FC<OrderScreenProps> = ({ navigation }) => {
           </View>
           <View style={[styles.summaryDivider, { backgroundColor: BORDER_COLOR }]} />
           <View style={styles.summaryItem}>
-            <Text style={[styles.summaryValue, { color: PRIMARY_COLOR }]}>
-              {OrderUtils.formatPrice ? OrderUtils.formatPrice(calculateOrderSummary().totalAmount) : `${calculateOrderSummary().totalAmount.toFixed(2)} dhs`}
+            <Text style={[styles.summaryValue, { color: PRIMARY_COLOR }]} numberOfLines={1} adjustsFontSizeToFit>
+              {formatPrice(calculateOrderSummary().totalAmount)}
             </Text>
             <Text style={[styles.summaryLabel, { color: TEXT_COLOR_SECONDARY }]}>
               Total
@@ -514,11 +528,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    elevation: 3,
+    elevation: 5,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
   },
   backButton: {
     width: 40,
@@ -526,12 +542,17 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#fff',
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   refreshButton: {
     width: 40,
@@ -539,7 +560,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   summaryContainer: {
     flexDirection: 'row',
@@ -558,23 +581,26 @@ const styles = StyleSheet.create({
   summaryItem: {
     flex: 1,
     alignItems: 'center',
+    paddingHorizontal: 4,
   },
   summaryValue: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     marginBottom: 4,
+    textAlign: 'center',
   },
   summaryLabel: {
-    fontSize: 12,
+    fontSize: 11,
     textAlign: 'center',
+    lineHeight: 14,
   },
   summaryDivider: {
     width: 1,
-    marginHorizontal: 12,
+    marginHorizontal: 8,
   },
   listContent: {
     padding: 16,
-    paddingBottom: 24,
+    paddingBottom: 100, // Increased padding to avoid tab menu overlap
   },
   centerContent: {
     flex: 1,
@@ -777,10 +803,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
+    minWidth: 80,
+    alignItems: 'center',
   },
   totalAmount: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
+    textAlign: 'center',
   },
   quickActions: {
     flexDirection: 'row',
