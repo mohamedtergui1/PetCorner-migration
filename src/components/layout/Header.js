@@ -14,10 +14,10 @@ const { width } = Dimensions.get('window');
 const Header = ({ navigation, theme }) => {
   const { cartCount } = useCart();
   const BadgeIcon = withBadge(cartCount)(Icon);
-  
+
   // Create an animated value for rotation
   const rotateAnim = useRef(new Animated.Value(0)).current;
-  
+
   // Create a rotation interpolation
   const spin = rotateAnim.interpolate({
     inputRange: [0, 1, 2],
@@ -28,7 +28,6 @@ const Header = ({ navigation, theme }) => {
   const animateLogo = () => {
     // Reset animation value
     rotateAnim.setValue(0);
-    
     // Create animation sequence
     Animated.timing(rotateAnim, {
       toValue: 2,
@@ -70,19 +69,26 @@ const Header = ({ navigation, theme }) => {
           alignItems: 'center',
           justifyContent: 'center',
         }}>
-        {/* Logo with circular background */}
-        <Animated.View 
-          style={[
-            styles.logoContainer,
-            { transform: [{ rotate: spin }] }
-          ]}
-        >
-          <Image
-            source={require('../../assets/images/logo.png')}
-            resizeMode="contain"
-            style={styles.logo}
-          />
-        </Animated.View>
+        {/* Logo with circular background and beta badge */}
+        <View style={styles.logoWrapper}>
+          <Animated.View
+            style={[
+              styles.logoContainer,
+              { transform: [{ rotate: spin }] }
+            ]}
+          >
+            <Image
+              source={require('../../assets/images/logo.png')}
+              resizeMode="contain"
+              style={styles.logo}
+            />
+          </Animated.View>
+          
+          {/* Beta Version Badge */}
+          <View style={styles.betaBadge}>
+            <Text style={styles.betaText}>BETA</Text>
+          </View>
+        </View>
       </View>
 
       <TouchableOpacity
@@ -111,6 +117,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 8,
   },
+  logoWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   logoContainer: {
     backgroundColor: 'white',
     width: 64,
@@ -130,6 +141,38 @@ const styles = StyleSheet.create({
   logo: {
     width: 60,
     height: 52
+  },
+  betaBadge: {
+    position: 'absolute',
+    top: -1,
+    right: -33,
+    backgroundColor: '#6C5CE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    shadowColor: '#6C5CE7',
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 6,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    transform: [{ rotate: '15deg' }],
+    minWidth: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  betaText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1,
   }
 });
 
