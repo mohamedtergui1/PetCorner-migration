@@ -17,16 +17,40 @@ import Header from "../components/layout/Header"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useFocusEffect } from "@react-navigation/native"
 import { useTheme } from "../context/ThemeContext"
+// NEW IMPORTS
+import WelcomeModal from "../components/WelcomeModal" // Adjust path as needed
+import { useWelcomeModal } from "../hooks/useWelcomeModal" // Adjust path as needed
 
 const { width, height } = Dimensions.get("window")
 
-export default function HomeScreen({ navigation }) {
-  const { theme, isDarkMode } = useTheme()
-  const [cartItemsCount, setCartItemsCount] = useState(0)
+interface RouteParams {
+  isFirstLogin?: boolean;
+  userData?: any;
+  [key: string]: any;
+}
 
-  const getCartItemsCount = async () => {
+interface HomeScreenProps {
+  navigation: any;
+  route?: {
+    params?: RouteParams;
+  };
+}
+
+export default function HomeScreen({ navigation, route }: HomeScreenProps) {
+  const { theme, isDarkMode } = useTheme()
+  const [cartItemsCount, setCartItemsCount] = useState<number>(0)
+  
+  // NEW: Use the welcome modal hook
+  const {
+    showWelcomeModal,
+    userData,
+    isFirstLogin,
+    closeWelcomeModal,
+  } = useWelcomeModal(route?.params)
+
+  const getCartItemsCount = async (): Promise<void> => {
     try {
-      const cartItems = JSON.parse(await AsyncStorage.getItem("cartItems")) || []
+      const cartItems = JSON.parse(await AsyncStorage.getItem("cartItems") || "[]")
       setCartItemsCount(cartItems.length)
     } catch (error) {
       console.error("Failed to retrieve cart items", error)
@@ -50,11 +74,11 @@ export default function HomeScreen({ navigation }) {
   }
 
   // Function to open directions
-  const openDirections = () => {
+  const openDirections = (): void => {
     const { latitude, longitude } = petCornerLocation
     
     // Platform-specific URLs for better compatibility
-    let url
+    let url: string
     if (Platform.OS === 'ios') {
       url = `http://maps.apple.com/?daddr=${latitude},${longitude}`
     } else {
@@ -76,8 +100,8 @@ export default function HomeScreen({ navigation }) {
   }
 
   // Function to make a phone call
-  const makePhoneCall = () => {
-    const phoneNumber = "tel:+212537123456" // Replace with actual phone number
+  const makePhoneCall = (): void => {
+    const phoneNumber = "tel:+212636041114"
 
     Linking.canOpenURL(phoneNumber)
       .then((supported) => {
@@ -94,8 +118,8 @@ export default function HomeScreen({ navigation }) {
   }
 
   // Function to open website
-  const openWebsite = () => {
-    const websiteUrl = "https://petcorner.ma" // Replace with actual website
+  const openWebsite = (): void => {
+    const websiteUrl = "https://petcorner.ma"
 
     Linking.canOpenURL(websiteUrl)
       .then((supported) => {
@@ -216,8 +240,6 @@ export default function HomeScreen({ navigation }) {
 
           {/* Quick Info */}
           <View style={[styles.quickInfo, { backgroundColor: theme.rowBackground }]}>
-            
-             
             <View style={styles.quickInfoItem}>
               <Ionicons name="card-outline" size={24} color={theme.primary} />
               <Text style={[styles.quickInfoText, { color: theme.textColor }]}>Carte Acceptée</Text>
@@ -230,6 +252,14 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       </ScrollView>
+
+      {/* NEW: Welcome Modal Component */}
+      <WelcomeModal
+        visible={showWelcomeModal}
+        onClose={closeWelcomeModal}
+        userData={userData}
+        theme={theme}
+      />
     </View>
   )
 }
