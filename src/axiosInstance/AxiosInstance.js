@@ -1,9 +1,10 @@
 import axios from 'axios';
 import Token from '../../config/TokenDolibar';
 
-// Standard Dolibarr API Client
+const API_BASE_URL =  process.env.API_BASE_URL;
+
 const apiClient = axios.create({
-  baseURL: 'https://ipos.ma/fide/api/index.php',
+  baseURL: API_BASE_URL,
   headers: {
     'DOLAPIKEY': Token,
     'Content-Type': 'application/json',
@@ -11,13 +12,10 @@ const apiClient = axios.create({
   timeout: 10000,
 });
 
-// Add request interceptor to log URLs with query parameters
 apiClient.interceptors.request.use(
   (config) => {
-    // Build the base URL
     let fullUrl = `${config.baseURL}${config.url || ''}`;
     
-    // Add query parameters if they exist
     if (config.params) {
       const queryString = new URLSearchParams(config.params).toString();
       fullUrl += `?${queryString}`;
@@ -25,10 +23,11 @@ apiClient.interceptors.request.use(
     
     console.log('🌐 API Request:', {
       method: config.method?.toUpperCase(),
-      url: fullUrl,  // Now includes query parameters
+      url: fullUrl,
       params: config.params,
       data: config.data
     });
+    
     return config;
   },
   (error) => {
@@ -37,10 +36,8 @@ apiClient.interceptors.request.use(
   }
 );
 
-// Add response interceptor for better error handling - Standard API
 apiClient.interceptors.response.use(
   (response) => {
-    // Reconstruct the URL with query parameters for response logging
     let fullUrl = `${response.config.baseURL}${response.config.url || ''}`;
     if (response.config.params) {
       const queryString = new URLSearchParams(response.config.params).toString();
@@ -48,14 +45,14 @@ apiClient.interceptors.response.use(
     }
     
     console.log('✅ API Response:', {
-      url: fullUrl,  // Now includes query parameters
+      url: fullUrl,
       status: response.status,
       statusText: response.statusText
     });
+    
     return response;
   },
   (error) => {
-    // Reconstruct the URL with query parameters for error logging
     let fullUrl = '';
     if (error.config) {
       fullUrl = `${error.config.baseURL}${error.config.url || ''}`;
@@ -66,14 +63,41 @@ apiClient.interceptors.response.use(
     }
     
     console.error('❌ Standard API Error:', {
-      url: fullUrl,  // Now includes query parameters
+      url: fullUrl,
       status: error.response?.status,
       statusText: error.response?.statusText,
       message: error.message
     });
+    
     return Promise.reject(error);
   }
 );
 
-// Standard API client (for existing Dolibarr endpoints)
+export const apiMethods = {
+  getFromBase: (params = {}) => {
+    return apiClient.get('', { params });
+  },
+  
+  postToBase: (data = {}, params = {}) => {
+    return apiClient.post('', data, { params });
+  },
+  
+  putToBase: (data = {}, params = {}) => {
+    return apiClient.put('', data, { params });
+  },
+  
+  deleteFromBase: (params = {}) => {
+    return apiClient.delete('', { params });
+  },
+  
+  requestFromBase: (config = {}) => {
+    return apiClient.request({
+      url: '',
+      ...config
+    });
+  }
+};
+
+export { API_BASE_URL };
+
 export default apiClient;

@@ -14,25 +14,23 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 export default function LoginScreen({ navigation, route }) {
-  // ✅ Get params from signup navigation
   const signupData = route?.params || {};
   const { email: signupEmail, phone: signupPhone, fromSignup } = signupData;
 
   const [inputs, setInputs] = useState({
-    email: signupPhone || '', // ✅ Pre-fill with phone from signup
+    phone: signupPhone || '',
     password: ''
   });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
-  const [showWelcomeMessage, setShowWelcomeMessage] = useState(false); // ✅ New state for welcome message
+  const [showWelcomeMessage, setShowWelcomeMessage] = useState(false);
   const [backPressCount, setBackPressCount] = useState(0);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const { theme, isDarkMode, toggleTheme, colorTheme, toggleColorTheme } = useTheme();
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef(null);
 
-  // Animation refs
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
   const logoRotateAnim = useRef(new Animated.Value(0)).current;
@@ -43,29 +41,24 @@ export default function LoginScreen({ navigation, route }) {
   const successAnim = useRef(new Animated.Value(0)).current;
   const logoContainerAnim = useRef(new Animated.Value(1)).current;
 
-  // ✅ New animation refs for success toast
   const successToastAnim = useRef(new Animated.Value(0)).current;
   const successToastSlideAnim = useRef(new Animated.Value(-100)).current;
 
-  // ✅ Show welcome message if coming from signup
   useEffect(() => {
     if (fromSignup) {
       setShowWelcomeMessage(true);
 
-      // Auto-hide welcome message after 3 seconds
       setTimeout(() => {
         setShowWelcomeMessage(false);
       }, 3000);
     }
   }, [fromSignup]);
 
-  // Keyboard event listeners
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
       'keyboardDidShow',
       () => {
         setKeyboardVisible(true);
-        // Animate logo container to be smaller when keyboard is visible
         Animated.timing(logoContainerAnim, {
           toValue: 0.6,
           duration: 300,
@@ -77,7 +70,6 @@ export default function LoginScreen({ navigation, route }) {
       'keyboardDidHide',
       () => {
         setKeyboardVisible(false);
-        // Animate logo container back to normal size
         Animated.timing(logoContainerAnim, {
           toValue: 1,
           duration: 300,
@@ -92,17 +84,13 @@ export default function LoginScreen({ navigation, route }) {
     };
   }, []);
 
-  // Start entrance animations on mount
   useEffect(() => {
-    // Staggered entrance animations
     Animated.sequence([
-      // Theme controls slide down
       Animated.timing(themeControlsAnim, {
         toValue: 0,
         duration: 800,
         useNativeDriver: true,
       }),
-      // Logo animations
       Animated.parallel([
         Animated.spring(logoScaleAnim, {
           toValue: 1,
@@ -118,7 +106,6 @@ export default function LoginScreen({ navigation, route }) {
       ]),
     ]).start();
 
-    // Form slide up animation
     setTimeout(() => {
       Animated.parallel([
         Animated.timing(fadeAnim, {
@@ -135,7 +122,6 @@ export default function LoginScreen({ navigation, route }) {
       ]).start();
     }, 400);
 
-    // Continuous button pulse animation
     const pulseAnimation = () => {
       Animated.sequence([
         Animated.timing(buttonPulseAnim, {
@@ -154,11 +140,9 @@ export default function LoginScreen({ navigation, route }) {
     setTimeout(pulseAnimation, 1000);
   }, []);
 
-  // ✅ Improved success toast animation with better timing
   const showSuccessToastWithAnimation = () => {
     setShowSuccessToast(true);
 
-    // Animate in with spring animation for smoothness
     Animated.parallel([
       Animated.spring(successToastAnim, {
         toValue: 1,
@@ -174,23 +158,21 @@ export default function LoginScreen({ navigation, route }) {
       }),
     ]).start();
 
-    // ✅ Hide after shorter duration for better flow
     setTimeout(() => {
       hideSuccessToast();
-    }, 1500); // Reduced from 2000 to 1500
+    }, 1500);
   };
 
-  // ✅ Faster hide animation
   const hideSuccessToast = () => {
     Animated.parallel([
       Animated.timing(successToastAnim, {
         toValue: 0,
-        duration: 200, // Faster fade out
+        duration: 200,
         useNativeDriver: true,
       }),
       Animated.timing(successToastSlideAnim, {
         toValue: -100,
-        duration: 200, // Faster slide up
+        duration: 200,
         useNativeDriver: true,
       }),
     ]).start(() => {
@@ -198,7 +180,6 @@ export default function LoginScreen({ navigation, route }) {
     });
   };
 
-  // Success animation when login succeeds
   const playSuccessAnimation = () => {
     Animated.sequence([
       Animated.spring(successAnim, {
@@ -245,7 +226,6 @@ export default function LoginScreen({ navigation, route }) {
   const validate = async () => {
     Keyboard.dismiss();
 
-    // Button press animation
     Animated.sequence([
       Animated.spring(buttonPulseAnim, {
         toValue: 0.95,
@@ -262,8 +242,8 @@ export default function LoginScreen({ navigation, route }) {
     ]).start();
 
     let isValid = true;
-    if (!inputs.email) {
-      handleError('Veuillez saisir le numéro de téléphone', 'email');
+    if (!inputs.phone) {
+      handleError('Veuillez saisir le numéro de téléphone', 'phone');
       isValid = false;
     }
     if (!inputs.password) {
@@ -275,13 +255,9 @@ export default function LoginScreen({ navigation, route }) {
     }
   };
 
-  // Add this to your login function in LoginScreen.js
-  // Replace the existing login function with this updated version:
-
   const login = async () => {
     setLoading(true);
 
-    // Loading animation - logo rotation
     const loadingRotation = Animated.loop(
       Animated.timing(logoRotateAnim, {
         toValue: 2,
@@ -299,16 +275,14 @@ export default function LoginScreen({ navigation, route }) {
           'DOLAPIKEY': Token
         },
         params: {
-          phone: inputs.email,
+          phone: inputs.phone,
           pwd: inputs.password
         }
       });
 
-      // Stop animations and hide loading immediately
       setLoading(false);
       loadingRotation.stop();
 
-      // Reset logo rotation to prevent visual glitches
       logoRotateAnim.setValue(1);
 
       if (response.status === 200) {
@@ -318,26 +292,20 @@ export default function LoginScreen({ navigation, route }) {
         if (idMatch && idMatch[1]) {
           const userId = parseInt(idMatch[1], 10);
 
-          // ✅ NEW: Check if this is a first login
-          const isFirstLogin = fromSignup || false; // Check if user came from signup
+          const isFirstLogin = fromSignup || false;
 
-          // Save user data with additional info
           const userDataToSave = {
             id: userId,
-            phone: inputs.email,
+            phone: inputs.phone,
             loggedIn: true,
-            // Store signup email if available for name reference
             ...(signupEmail && { email: signupEmail })
           };
 
           await AsyncStorage.setItem('userData', JSON.stringify(userDataToSave));
 
-          // Show success toast with improved timing
           showSuccessToastWithAnimation();
 
-          // Shorter delay for smoother transition
           setTimeout(() => {
-            // Fade out current screen before navigation
             Animated.parallel([
               Animated.timing(fadeAnim, {
                 toValue: 0,
@@ -350,7 +318,6 @@ export default function LoginScreen({ navigation, route }) {
                 useNativeDriver: true,
               }),
             ]).start(() => {
-              // ✅ NEW: Navigate with isFirstLogin parameter
               navigation.replace('Main', {
                 isFirstLogin: isFirstLogin,
                 userData: userDataToSave
@@ -367,10 +334,8 @@ export default function LoginScreen({ navigation, route }) {
       setLoading(false);
       loadingRotation.stop();
 
-      // Reset logo rotation on error
       logoRotateAnim.setValue(1);
 
-      // Error shake animation
       Animated.sequence([
         Animated.timing(formSlideAnim, { toValue: -10, duration: 100, useNativeDriver: true }),
         Animated.timing(formSlideAnim, { toValue: 10, duration: 100, useNativeDriver: true }),
@@ -390,7 +355,6 @@ export default function LoginScreen({ navigation, route }) {
     setErrors(prevState => ({ ...prevState, [input]: error }));
   };
 
-  // Function to scroll to input when focused
   const scrollToInput = (inputPosition) => {
     if (scrollViewRef.current) {
       scrollViewRef.current.scrollTo({
@@ -400,7 +364,6 @@ export default function LoginScreen({ navigation, route }) {
     }
   };
 
-  // Animated values for transforms
   const logoRotation = logoRotateAnim.interpolate({
     inputRange: [0, 1, 2],
     outputRange: ['0deg', '360deg', '720deg']
@@ -413,10 +376,8 @@ export default function LoginScreen({ navigation, route }) {
         backgroundColor={theme.backgroundColor}
       />
 
-      {/* ✅ Only show loader during login process, not after success */}
       <Loader visible={loading && !showSuccessToast} />
 
-      {/* ✅ Welcome Message for users coming from signup */}
       {showWelcomeMessage && (
         <Animated.View
           style={[
@@ -442,7 +403,6 @@ export default function LoginScreen({ navigation, route }) {
         </Animated.View>
       )}
 
-      {/* ✅ Beautiful Success Toast */}
       {showSuccessToast && (
         <Animated.View
           style={[
@@ -500,7 +460,6 @@ export default function LoginScreen({ navigation, route }) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        {/* Animated Theme Controls */}
         <Animated.View
           style={[
             styles.themeControls,
@@ -510,7 +469,6 @@ export default function LoginScreen({ navigation, route }) {
             }
           ]}
         >
-          {/* Dark Mode Toggle */}
           <TouchableOpacity
             style={[styles.themeButton, {
               backgroundColor: theme.cardBackground || (isDarkMode ? '#2a2a2a' : '#f0f0f0'),
@@ -529,7 +487,6 @@ export default function LoginScreen({ navigation, route }) {
             </Text>
           </TouchableOpacity>
 
-          {/* Color Theme Toggle */}
           <TouchableOpacity
             style={[styles.themeButton, {
               backgroundColor: theme.cardBackground || (isDarkMode ? '#2a2a2a' : '#f0f0f0'),
@@ -552,7 +509,6 @@ export default function LoginScreen({ navigation, route }) {
           keyboardShouldPersistTaps="handled"
           bounces={false}
         >
-          {/* Animated Logo Container */}
           <Animated.View
             style={[
               styles.logoContainer,
@@ -583,7 +539,6 @@ export default function LoginScreen({ navigation, route }) {
             </Animated.View>
           </Animated.View>
 
-          {/* Animated Form Container */}
           <Animated.View
             style={[
               styles.formContainer,
@@ -600,17 +555,16 @@ export default function LoginScreen({ navigation, route }) {
             <View style={styles.inputContainer}>
               <View style={styles.inputWrapper}>
                 <Input
-                  value={inputs.email} // ✅ Show pre-filled value
-                  onChangeText={text => handleOnchange(text, 'email')}
+                  value={inputs.phone}
+                  onChangeText={text => handleOnchange(text, 'phone')}
                   onFocus={() => {
-                    handleError(null, 'email');
-                    // Scroll to this input when focused
+                    handleError(null, 'phone');
                     setTimeout(() => scrollToInput(250), 100);
                   }}
                   iconName="phone-outline"
                   label="Téléphone"
                   placeholder="Entrez votre téléphone"
-                  error={errors.email}
+                  error={errors.phone}
                   labelColor={theme.textColor}
                   theme={theme}
                   isDarkMode={isDarkMode}
@@ -622,7 +576,6 @@ export default function LoginScreen({ navigation, route }) {
                   onChangeText={text => handleOnchange(text, 'password')}
                   onFocus={() => {
                     handleError(null, 'password');
-                    // Scroll to this input when focused
                     setTimeout(() => scrollToInput(350), 100);
                   }}
                   iconName="lock-outline"
@@ -751,7 +704,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textDecorationLine: 'underline',
   },
-  // ✅ New styles for success toast
   successToastContainer: {
     position: 'absolute',
     left: 20,
@@ -786,7 +738,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.9,
   },
-  // ✅ New styles for welcome message
   welcomeMessageContainer: {
     position: 'absolute',
     left: 20,

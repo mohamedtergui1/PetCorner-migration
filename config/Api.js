@@ -1,3 +1,3 @@
-const API_BASE_URL = 'https://ipos.ma/fide/api/index.php/';
+const API_BASE_URL = process.env.API_BASE_URL;
 
 export default API_BASE_URL;
