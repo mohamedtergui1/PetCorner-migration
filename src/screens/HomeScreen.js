@@ -159,13 +159,13 @@ export default function HomeScreen({ navigation }) {
               <View style={styles.detailRow}>
                 <Ionicons name="time-outline" size={20} color={theme.textColor} />
                 <Text style={[styles.detailText, { color: theme.textColor }]}>
-                  Lun - Sam: 9h00 - 20h00
+                 Ouvert 7 jours sur 7 : de 9h00 à 23h00
                 </Text>
               </View>
               
               <View style={styles.detailRow}>
                 <Ionicons name="call-outline" size={20} color={theme.textColor} />
-                <Text style={[styles.detailText, { color: theme.textColor }]}>+212 537 123 456</Text>
+                <Text style={[styles.detailText, { color: theme.textColor }]}>+212636041114</Text>
               </View>
             </View>
 
@@ -205,7 +205,7 @@ export default function HomeScreen({ navigation }) {
 
               <TouchableOpacity
                 style={[styles.additionalAction, { backgroundColor: theme.rowBackground }]}
-                onPress={() => Alert.alert("Réseaux Sociaux", "Suivez-nous sur Instagram @petcorner_maroc")}
+                onPress={() => Alert.alert("Réseaux Sociaux", "Suivez-nous sur Instagram @petcorner_ma")}
               >
                 <Ionicons name="logo-instagram" size={18} color={theme.textColor} />
                 <Text style={[styles.additionalActionText, { color: theme.textColor }]}>Nous Suivre</Text>

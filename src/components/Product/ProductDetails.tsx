@@ -17,9 +17,6 @@ import {
   Image
 } from 'react-native';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import Entypo from 'react-native-vector-icons/Entypo';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Toast from 'react-native-simple-toast';
@@ -117,26 +114,13 @@ const GAME_OPTIONS: { [key: string]: string } = {
   '3': 'Veterinary Line',
   '4': 'Natural Line'
 };
-
-// Updated brand mapping - you'll need to get the complete list from your API
-const BRAND_OPTIONS: { [key: string]: string } = {
-  'MANITOBA': 'Manitoba',
-  'SANTA': 'Santa',
-  '1': 'Royal Canin',
-  '2': 'Hill\'s',
-  '3': 'Purina',
-  '4': 'Whiskas',
-  '5': 'Pedigree',
-  '6': 'Manitoba',
-  '7': 'Santa'
-};
-
+ 
 const CATEGORY_NAMES: { [key: number]: string } = {
   1: 'Général',
   2: 'Chien',
   3: 'Chat',
-  4: 'Gamme Gold', // Based on your data showing "gamme": "4"
-  8: 'Tranche d\'âge adulte', // Based on "trancheage": "8,9"
+  4: 'Gamme Gold',
+  8: 'Tranche d\'âge adulte',
   9: 'Tranche d\'âge senior',
   20: 'Oiseau',
   21: 'Poisson',
@@ -144,7 +128,6 @@ const CATEGORY_NAMES: { [key: number]: string } = {
   184: 'Lapin'
 };
 
-// Functionality mapping based on your data
 const FUNCTIONALITY_OPTIONS: { [key: string]: string } = {
   '1': 'Nutrition complète',
   '2': 'Supplément nutritionnel',
@@ -161,7 +144,7 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
   const { addToCart } = useCart();
   const { isFavorite, toggleFavorite } = useFavorites();
   const insets = useSafeAreaInsets();
-  
+
   // Get product ID from route params
   const { productId } = route.params;
 
@@ -174,7 +157,7 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
   const [loadingSimilar, setLoadingSimilar] = useState<boolean>(false);
   const [loadingProduct, setLoadingProduct] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Image viewing states
   const [imageViewVisible, setImageViewVisible] = useState<boolean>(false);
   const [scale, setScale] = useState<Animated.Value>(new Animated.Value(1));
@@ -190,43 +173,33 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
 
   const formatPrice = (product: EnhancedProduct | null): string => {
     if (!product) return '0,00 DH';
-    
     const price = parseFloat(String(product.price_ttc || product.price || 0));
     return `${price.toFixed(2).replace('.', ',')} DH`;
   };
 
   const getPriceHT = (product: EnhancedProduct | null): string => {
     if (!product) return '0,00 DH';
-    
     const priceHT = parseFloat(String(product.price || 0));
     return `${priceHT.toFixed(2).replace('.', ',')} DH`;
   };
 
   const getTaxAmount = (product: EnhancedProduct | null): string => {
     if (!product) return '0,00 DH';
-    
     const priceTTC = parseFloat(String(product.price_ttc || 0));
     const priceHT = parseFloat(String(product.price || 0));
     const taxAmount = priceTTC - priceHT;
-    
     return `${taxAmount.toFixed(2).replace('.', ',')} DH`;
   };
 
-  // Enhanced functions using both extended_options and array_options
   const getBrand = (product: EnhancedProduct | null): string | null => {
     if (!product) return null;
-    
-    // First try extended_options
     if (product.extended_options?.brand_id) {
-      return BRAND_OPTIONS[product.extended_options.brand_id] || product.extended_options.brand_id;
+      return product.extended_options.brand_id || product.extended_options.brand_id;
     }
-    
-    // Then try array_options
     if (product.array_options?.options_marque) {
       const brandKey = product.array_options.options_marque;
-      return BRAND_OPTIONS[brandKey] || brandKey;
+      return  brandKey;
     }
-    
     return null;
   };
 
@@ -252,27 +225,20 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
 
   const getGame = (product: EnhancedProduct | null): string | null => {
     if (!product) return null;
-    
-    // Try extended_options first
     if (product.extended_options?.game_id) {
       return GAME_OPTIONS[product.extended_options.game_id] || product.extended_options.game_id;
     }
-    
-    // Try array_options gamme field
     if (product.array_options?.options_gamme) {
       const gameKey = product.array_options.options_gamme;
       return GAME_OPTIONS[gameKey] || `Gamme ${gameKey}`;
     }
-    
     return null;
   };
 
   const getCategories = (product: EnhancedProduct | null): string[] => {
     if (!product) return [];
-    
     const categories: string[] = [];
     
-    // From extended_options
     if (product.extended_options?.category_ids) {
       const extendedCategories = product.extended_options.category_ids.map(id => 
         CATEGORY_NAMES[id] || `Catégorie ${id}`
@@ -280,7 +246,6 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
       categories.push(...extendedCategories);
     }
     
-    // From array_options gamme
     if (product.array_options?.options_gamme) {
       const gammeId = parseInt(product.array_options.options_gamme);
       if (CATEGORY_NAMES[gammeId]) {
@@ -288,7 +253,6 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
       }
     }
     
-    // From array_options trancheage (age ranges)
     if (product.array_options?.options_trancheage) {
       const trancheIds = product.array_options.options_trancheage.split(',').map(id => parseInt(id.trim()));
       trancheIds.forEach(id => {
@@ -298,23 +262,7 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
       });
     }
     
-    return [...new Set(categories)]; // Remove duplicates
-  };
-
-  const getFunctionalities = (product: EnhancedProduct | null): string[] => {
-    if (!product?.array_options?.options_ftfonctionnalites) return [];
-    
-    const functionalityIds = product.array_options.options_ftfonctionnalites.split(',').map(id => id.trim());
-    return functionalityIds.map(id => FUNCTIONALITY_OPTIONS[id] || `Fonctionnalité ${id}`);
-  };
-
-  const getTags = (product: EnhancedProduct | null): string[] => {
-    if (!product?.array_options?.options_tags) return [];
-    
-    return product.array_options.options_tags
-      .split(',')
-      .map(tag => tag.trim())
-      .filter(tag => tag.length > 0);
+    return [...new Set(categories)];
   };
 
   const getFormattedWeight = (product: EnhancedProduct | null): string | null => {
@@ -334,7 +282,6 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
 
   const getStockStatusText = (product: EnhancedProduct | null): string => {
     if (!product) return 'Indisponible';
-    
     const stock = parseInt(String(product.stock_reel || 0));
     if (stock > 0) {
       return stock > 5 ? 'En stock' : `Stock limité (${stock})`;
@@ -344,11 +291,8 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
 
   const getProductImageUrl = (product: EnhancedProduct | null): string | null => {
     if (!product) return null;
-    
-    // Try multiple image URL sources
     if (product.image_link) return product.image_link;
     if (product.photo_link) return product.photo_link;
-    
     return null;
   };
 
@@ -356,7 +300,6 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
   // API FUNCTIONS
   // =====================================
 
-  // Function to load product data using enhanced endpoint
   const loadProductData = async (id: string | number): Promise<void> => {
     if (!id) {
       setError('ID produit manquant');
@@ -367,10 +310,8 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
     try {
       setLoadingProduct(true);
       setError(null);
-      
       console.log('Loading enhanced product with ID:', id);
       
-      // Use the enhanced endpoint to get all product data including extended_options
       const productData = await ProductService.getEnhancedProduct(id, {
         includestockdata: 1,
         includesubproducts: false,
@@ -378,22 +319,18 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
         includetrans: false,
         includeextendedoptions: true
       });
-      
+
       console.log('Loaded enhanced product data:', productData);
-      console.log('Extended options:', productData.extended_options);
-      console.log('Array options:', productData.array_options);
-      
+
       if (productData) {
         setProduct(productData as EnhancedProduct);
         
-        // Load similar products if available
         if (productData.array_options?.options_similaire) {
-          // Parse similar product IDs from string
           const similarIds = String(productData.array_options.options_similaire)
             .split(',')
             .map(id => id.trim())
             .filter(id => id && id !== String(productData.id));
-          
+
           if (similarIds.length > 0) {
             loadSimilarProducts(similarIds);
           }
@@ -401,7 +338,6 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
       } else {
         setError('Produit non trouvé');
       }
-      
     } catch (error: any) {
       console.error('Error loading enhanced product:', error);
       setError(error.message || 'Erreur lors du chargement du produit');
@@ -410,38 +346,29 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
     }
   };
 
-  // Function to load similar products
   const loadSimilarProducts = async (similarIds: string[]): Promise<void> => {
     if (!similarIds || similarIds.length === 0) return;
-    
+
     try {
       setLoadingSimilar(true);
-      
       console.log('Loading similar products with IDs:', similarIds);
       
-      // Load similar products using ProductService.getMultipleProducts
       const similarProductsResponse = await ProductService.getMultipleProducts(similarIds, {
         includestockdata: 0,
         pagination_data: false
       });
-      
-      console.log('Loaded similar products:', similarProductsResponse);
-      
-      // Handle both paginated and non-paginated responses
+
       const similarProductsData = Array.isArray(similarProductsResponse) 
         ? similarProductsResponse 
         : similarProductsResponse.data || [];
-      
-      // Filter out current product if present
+
       const filteredSimilar = similarProductsData.filter(
         (item: Product) => item && String(item.id) !== String(productId)
       );
-      
+
       setSimilarProducts(filteredSimilar);
-      
     } catch (error: any) {
       console.error('Error loading similar products:', error);
-      // Don't show error for similar products, just log it
     } finally {
       setLoadingSimilar(false);
     }
@@ -451,7 +378,6 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
   // EFFECTS
   // =====================================
 
-  // Load product data on component mount
   useEffect(() => {
     if (productId) {
       loadProductData(productId);
@@ -462,7 +388,6 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
     }
   }, [productId]);
 
-  // Calculate derived values
   const isAvailable = product ? isProductInStock(product) : false;
   const isInFavorites = product ? isFavorite(String(product.id)) : false;
 
@@ -470,7 +395,6 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
   // EVENT HANDLERS
   // =====================================
 
-  // Setup pan responder for image zooming and panning
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -478,12 +402,10 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
         if (evt.nativeEvent.changedTouches.length === 2) {
           const touch1 = evt.nativeEvent.changedTouches[0];
           const touch2 = evt.nativeEvent.changedTouches[1];
-          
           const distance = Math.sqrt(
             Math.pow(touch2.pageX - touch1.pageX, 2) +
             Math.pow(touch2.pageY - touch1.pageY, 2)
           );
-          
           const newScale = Math.max(1, Math.min(lastScale * (distance / 150), 3));
           scale.setValue(newScale);
         } else if (lastScale > 1) {
@@ -495,7 +417,6 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
         setLastScale((scale as any)._value);
         setLastTranslateX((translateX as any)._value);
         setLastTranslateY((translateY as any)._value);
-        
         if ((scale as any)._value < 1.1) {
           Animated.parallel([
             Animated.spring(scale, { toValue: 1, useNativeDriver: true }),
@@ -511,7 +432,6 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
     })
   ).current;
 
-  // Function to open image viewer
   const openImageViewer = (): void => {
     scale.setValue(1);
     translateX.setValue(0);
@@ -522,17 +442,14 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
     setImageViewVisible(true);
   };
 
-  // Function to close image viewer
   const closeImageViewer = (): void => {
     setImageViewVisible(false);
   };
 
-  // Double tap handler for image
   const lastTap = useRef<number>(0);
   const handleDoubleTap = (): void => {
     const now = Date.now();
     const DOUBLE_TAP_DELAY = 300;
-    
     if (now - lastTap.current < DOUBLE_TAP_DELAY) {
       if (lastScale > 1) {
         Animated.parallel([
@@ -553,17 +470,13 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
     lastTap.current = now;
   };
 
-  // Function to add/remove from favorites using context
   const handleAddToFavorites = (): void => {
     if (!product) return;
-    
     toggleFavorite(String(product.id));
-    
     const message = isInFavorites ? 'Retiré de la liste des favoris' : 'Ajouté à la liste des favoris';
     showToast(message);
   };
 
-  // Helper function for showing toast
   const showToast = (message: string): void => {
     if (Platform.OS === 'android') {
       ToastAndroid.show(message, ToastAndroid.SHORT);
@@ -572,18 +485,14 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
     }
   };
 
-  // Function to add product to cart using context
   const handleAddToCart = useCallback(async (): Promise<void> => {
     if (!product || !isAvailable || loading) return;
-    
+
     setLoading(true);
-    
     try {
       const result = await addToCart(product.id);
-      
       if (result.success) {
         showToast('Article ajouté avec succès au panier');
-        
         setTimeout(() => {
           setLoading(false);
           navigation.navigate('CartScreen');
@@ -591,14 +500,12 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
       } else {
         throw new Error(result.error);
       }
-      
     } catch (error: any) {
       showToast('Erreur lors de l\'ajout au panier');
       setLoading(false);
     }
   }, [addToCart, product, isAvailable, loading, navigation]);
 
-  // Function to get user data
   const getUserData = async (): Promise<void> => {
     try {
       const userData = await AsyncStorage.getItem('userData');
@@ -613,12 +520,9 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
     }
   };
 
-  // Function to share product
   const handleShareProduct = (): void => {
     if (!product) return;
-    
     const formattedPrice = formatPrice(product);
-    
     Share.share({
       message: `Découvrez ${product.label} à ${formattedPrice} sur notre application!`,
       title: 'Partager ce produit',
@@ -627,13 +531,10 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
     .catch(error => {});
   };
 
-  // Function to navigate to similar product
   const handleSimilarProductPress = (similarProduct: Product): void => {
-    // Use push instead of reset to maintain navigation stack
     navigation.push('ProductDetails', { productId: similarProduct.id });
   };
 
-  // Function to retry loading product
   const retryLoadProduct = (): void => {
     if (productId) {
       loadProductData(productId);
@@ -644,7 +545,6 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
   // RENDER FUNCTIONS
   // =====================================
 
-  // Render similar product item
   const renderSimilarProduct = ({ item }: { item: Product }) => {
     const similarAvailable = isProductInStock(item);
     const imageUrl = getProductImageUrl(item);
@@ -661,7 +561,6 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
           onError={(error) => {
             if (__DEV__) {
               console.log('Similar product image error:', error?.nativeEvent?.error);
-              console.log('Product ID:', item.id);
             }
           }}
         />
@@ -691,9 +590,6 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
     );
   };
 
-  
-
-  // Render enhanced badges section
   const renderEnhancedBadges = () => {
     if (!product) return null;
 
@@ -706,65 +602,65 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
     const categories = getCategories(product);
 
     return (
-      <View style={styles.badgeRow}>
+      <View style={styles.badgeContainer}>
         {brand && (
-          <View style={[styles.brandBadge, { backgroundColor: theme.primary + '20' }]}>
-            <Ionicons name="business" size={14} color={theme.primary} style={styles.badgeIcon} />
-            <Text style={[styles.brandText, { color: theme.primary }]}>
+          <View style={[styles.badge, styles.brandBadge, { backgroundColor: theme.primary + '15' }]}>
+            <Ionicons name="business-outline" size={16} color={theme.primary} style={styles.badgeIcon} />
+            <Text style={[styles.badgeText, { color: theme.primary }]}>
               {brand}
             </Text>
           </View>
         )}
-
+        
         {categories.map((category, index) => (
-          <View key={index} style={[styles.categoryBadge, { backgroundColor: theme.primary + '20' }]}>
-            <Entypo name="tag" size={14} color={theme.primary} style={styles.badgeIcon} />
-            <Text style={[styles.categoryText, { color: theme.primary }]}>
+          <View key={index} style={[styles.badge, styles.categoryBadge, { backgroundColor: theme.primary + '15' }]}>
+            <Ionicons name="pricetag-outline" size={16} color={theme.primary} style={styles.badgeIcon} />
+            <Text style={[styles.badgeText, { color: theme.primary }]}>
               {category}
             </Text>
           </View>
         ))}
-
+        
         {healthOption && (
-          <View style={[styles.customBadge, { backgroundColor: '#4CAF5020' }]}>
-            <Ionicons name="medical" size={14} color="#4CAF50" style={styles.badgeIcon} />
-            <Text style={[styles.customBadgeText, { color: '#4CAF50' }]}>
+          <View style={[styles.badge, styles.healthBadge, { backgroundColor: '#4CAF5015' }]}>
+            <Ionicons name="medical-outline" size={16} color="#4CAF50" style={styles.badgeIcon} />
+            <Text style={[styles.badgeText, { color: '#4CAF50' }]}>
               Santé: {healthOption}
             </Text>
           </View>
         )}
-
+        
         {age && (
-          <View style={[styles.customBadge, { backgroundColor: '#2196F320' }]}>
-            <Ionicons name="time" size={14} color="#2196F3" style={styles.badgeIcon} />
-            <Text style={[styles.customBadgeText, { color: '#2196F3' }]}>
+          <View style={[styles.badge, styles.ageBadge, { backgroundColor: '#2196F315' }]}>
+            <Ionicons name="time-outline" size={16} color="#2196F3" style={styles.badgeIcon} />
+            <Text style={[styles.badgeText, { color: '#2196F3' }]}>
               Âge: {age}
             </Text>
           </View>
         )}
-
+        
         {taste && (
-          <View style={[styles.customBadge, { backgroundColor: '#FF980020' }]}>
-            <Ionicons name="restaurant" size={14} color="#FF9800" style={styles.badgeIcon} />
-            <Text style={[styles.customBadgeText, { color: '#FF9800' }]}>
+          <View style={[styles.badge, styles.tasteBadge, { backgroundColor: '#FF980015' }]}>
+            <Ionicons name="restaurant-outline" size={16} color="#FF9800" style={styles.badgeIcon} />
+            <Text style={[styles.badgeText, { color: '#FF9800' }]}>
               Goût: {taste}
             </Text>
           </View>
         )}
-
+        
         {nutritionalOption && (
-          <View style={[styles.customBadge, { backgroundColor: '#9C27B020' }]}>
-            <Ionicons name="leaf" size={14} color="#9C27B0" style={styles.badgeIcon} />
-            <Text style={[styles.customBadgeText, { color: '#9C27B0' }]}>
+          <View style={[styles.badge, styles.nutritionalBadge, { backgroundColor: '#9C27B015' }]}>
+            <Ionicons name="leaf-outline" size={16} color="#9C27B0" style={styles.badgeIcon} />
+            <Text style={[styles.badgeText, { color: '#9C27B0' }]}>
               {nutritionalOption}
             </Text>
           </View>
         )}
-
+        
         {game && (
-          <View style={[styles.customBadge, { backgroundColor: '#00BCD420' }]}>
-            <Ionicons name="star" size={14} color="#00BCD4" style={styles.badgeIcon} />
-            <Text style={[styles.customBadgeText, { color: '#00BCD4' }]}>
+          <View style={[styles.badge, styles.gameBadge, { backgroundColor: '#00BCD415' }]}>
+            <Ionicons name="star-outline" size={16} color="#00BCD4" style={styles.badgeIcon} />
+            <Text style={[styles.badgeText, { color: '#00BCD4' }]}>
               Gamme: {game}
             </Text>
           </View>
@@ -773,7 +669,6 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
     );
   };
 
-  // Enhanced specifications render
   const renderEnhancedSpecifications = () => {
     if (!product) return null;
 
@@ -786,77 +681,110 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
 
     return (
       <View style={styles.specificationsContainer}>
-        <Text style={[styles.sectionTitle, { color: theme.textColor }]}>
-          Spécifications détaillées
-        </Text>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="information-circle-outline" size={24} color={theme.primary} />
+          <Text style={[styles.sectionTitle, { color: theme.textColor }]}>
+            Spécifications détaillées
+          </Text>
+        </View>
         
         <View style={[styles.specGrid, { backgroundColor: theme.cardBackground }]}>
           {product.barcode && (
             <View style={styles.specItem}>
-              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Code-barres:</Text>
+              <View style={styles.specLabelContainer}>
+                <Ionicons name="barcode-outline" size={18} color={theme.primary} />
+                <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Code-barres:</Text>
+              </View>
               <Text style={[styles.specValue, { color: theme.textColor }]}>{product.barcode}</Text>
             </View>
           )}
           
           {product.weight && (
             <View style={styles.specItem}>
-              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Poids:</Text>
+              <View style={styles.specLabelContainer}>
+                <Ionicons name="scale-outline" size={18} color={theme.primary} />
+                <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Poids:</Text>
+              </View>
               <Text style={[styles.specValue, { color: theme.textColor }]}>{getFormattedWeight(product)}</Text>
             </View>
           )}
-
+          
           {brand && (
             <View style={styles.specItem}>
-              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Marque:</Text>
+              <View style={styles.specLabelContainer}>
+                <Ionicons name="business-outline" size={18} color={theme.primary} />
+                <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Marque:</Text>
+              </View>
               <Text style={[styles.specValue, { color: theme.textColor }]}>{brand}</Text>
             </View>
           )}
-
+          
           {age && (
             <View style={styles.specItem}>
-              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Tranche d'âge:</Text>
+              <View style={styles.specLabelContainer}>
+                <Ionicons name="time-outline" size={18} color={theme.primary} />
+                <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Tranche d'âge:</Text>
+              </View>
               <Text style={[styles.specValue, { color: theme.textColor }]}>{age}</Text>
             </View>
           )}
-
+          
           {taste && (
             <View style={styles.specItem}>
-              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Goût:</Text>
+              <View style={styles.specLabelContainer}>
+                <Ionicons name="restaurant-outline" size={18} color={theme.primary} />
+                <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Goût:</Text>
+              </View>
               <Text style={[styles.specValue, { color: theme.textColor }]}>{taste}</Text>
             </View>
           )}
-
+          
           {healthOption && (
             <View style={styles.specItem}>
-              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Option santé:</Text>
+              <View style={styles.specLabelContainer}>
+                <Ionicons name="medical-outline" size={18} color={theme.primary} />
+                <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Option santé:</Text>
+              </View>
               <Text style={[styles.specValue, { color: theme.textColor }]}>{healthOption}</Text>
             </View>
           )}
-
+          
           {nutritionalOption && (
             <View style={styles.specItem}>
-              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Option nutritionnelle:</Text>
+              <View style={styles.specLabelContainer}>
+                <Ionicons name="leaf-outline" size={18} color={theme.primary} />
+                <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Option nutritionnelle:</Text>
+              </View>
               <Text style={[styles.specValue, { color: theme.textColor }]}>{nutritionalOption}</Text>
             </View>
           )}
-
+          
           {game && (
             <View style={styles.specItem}>
-              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Gamme produit:</Text>
+              <View style={styles.specLabelContainer}>
+                <Ionicons name="star-outline" size={18} color={theme.primary} />
+                <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Gamme produit:</Text>
+              </View>
               <Text style={[styles.specValue, { color: theme.textColor }]}>{game}</Text>
             </View>
           )}
           
           {product.ref && (
             <View style={styles.specItem}>
-              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Référence:</Text>
+              <View style={styles.specLabelContainer}>
+                <Ionicons name="document-text-outline" size={18} color={theme.primary} />
+                <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Référence:</Text>
+              </View>
               <Text style={[styles.specValue, { color: theme.textColor }]}>{product.ref}</Text>
             </View>
           )}
-
+          
           {product.stock_reel !== undefined && (
             <View style={styles.specItem}>
-              <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Stock:</Text>
+              <View style={styles.specLabelContainer}>
+                <Ionicons name="cube-outline" size={18} color={theme.primary} />
+                <Text style={[styles.specLabel, { color: theme.secondaryTextColor }]}>Stock:</Text>
+              </View>
               <Text style={[styles.specValue, { color: theme.textColor }]}>{product.stock_reel} unités</Text>
             </View>
           )}
@@ -869,7 +797,6 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
   // MAIN RENDER
   // =====================================
 
-  // Show loading indicator while product is being loaded
   if (loadingProduct) {
     return (
       <View style={[styles.container, styles.loadingContainer, { backgroundColor: theme.backgroundColor }]}>
@@ -878,15 +805,16 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
           backgroundColor="transparent" 
           translucent={true}
         />
-        <ActivityIndicator size="large" color={theme.primary} />
-        <Text style={[styles.loadingText, { color: theme.textColor }]}>
-          Chargement du produit...
-        </Text>
+        <View style={styles.loadingContent}>
+          <ActivityIndicator size="large" color={theme.primary} />
+          <Text style={[styles.loadingText, { color: theme.textColor }]}>
+            Chargement du produit...
+          </Text>
+        </View>
       </View>
     );
   }
 
-  // Show error state
   if (error || !product) {
     return (
       <View style={[styles.container, styles.errorContainer, { backgroundColor: theme.backgroundColor }]}>
@@ -896,36 +824,35 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
           translucent={true}
         />
         
-        {/* Back Button */}
         <TouchableOpacity 
           style={[
             styles.iconButton, 
             styles.backButton, 
-            { 
-              top: insets.top + 10
-            }
+            { top: insets.top + 10 }
           ]} 
           onPress={() => navigation.goBack()}
         >
-           <Ionicons name='arrow-back' size={24} color="#ffffff" />
+          <Ionicons name='arrow-back' size={24} color="#ffffff" />
         </TouchableOpacity>
-
-        <MaterialCommunityIcons name="alert-circle-outline" size={64} color={theme.primary} />
-        <Text style={[styles.errorTitle, { color: theme.textColor }]}>
-          Produit non disponible
-        </Text>
-        <Text style={[styles.errorMessage, { color: theme.secondaryTextColor }]}>
-          {error || 'Impossible de charger les détails du produit'}
-        </Text>
         
-        <TouchableOpacity 
-          style={[styles.retryButton, { backgroundColor: theme.primary }]} 
-          onPress={retryLoadProduct}
-        >
-          <Text style={[styles.retryButtonText, { color: '#ffffff' }]}>
-            Réessayer
+        <View style={styles.errorContent}>
+          <Ionicons name="alert-circle-outline" size={64} color={theme.primary} />
+          <Text style={[styles.errorTitle, { color: theme.textColor }]}>
+            Produit non disponible
           </Text>
-        </TouchableOpacity>
+          <Text style={[styles.errorMessage, { color: theme.secondaryTextColor }]}>
+            {error || 'Impossible de charger les détails du produit'}
+          </Text>
+          <TouchableOpacity 
+            style={[styles.retryButton, { backgroundColor: theme.primary }]} 
+            onPress={retryLoadProduct}
+          >
+            <Ionicons name="refresh-outline" size={20} color="#ffffff" style={styles.retryIcon} />
+            <Text style={[styles.retryButtonText, { color: '#ffffff' }]}>
+              Réessayer
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -939,7 +866,7 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
         backgroundColor="transparent" 
         translucent={true}
       />
-      
+
       {/* Product Image */}
       <View style={styles.imageContainer}>
         <TouchableWithoutFeedback onPress={openImageViewer}>
@@ -950,68 +877,44 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
             onError={(error) => {
               console.log('Main product image error:', error?.nativeEvent?.error);
             }}
-            onLoadEnd={() => {
-              console.log('Main product image loaded successfully');
-            }}
           />
         </TouchableWithoutFeedback>
-        
+
         {/* Image Tap Indicator */}
         <View style={styles.tapIndicatorContainer}>
-          <MaterialCommunityIcons 
-            name="gesture-tap" 
-            size={24} 
-            color="white" 
-            style={styles.tapIcon} 
-          />
+          <Ionicons name="expand-outline" size={20} color="white" style={styles.tapIcon} />
           <Text style={styles.tapText}>Tap pour agrandir</Text>
         </View>
-        
-        {/* Back Button */}
-        <TouchableOpacity 
-          style={[
-            styles.iconButton, 
-            styles.backButton, 
-            { 
-              top: insets.top + 10
-            }
-          ]} 
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name='arrow-back' size={24} color="#ffffff" />
-        </TouchableOpacity>
 
-        {/* Wishlist Button */}
-        <TouchableOpacity 
-          style={[
-            styles.iconButton, 
-            styles.heartButton, 
-            { 
-              top: insets.top + 10
-            }
-          ]} 
-          onPress={handleAddToFavorites}
-        >
-          <MaterialCommunityIcons 
-            name={isInFavorites ? "heart" : "heart-outline"} 
-            size={24} 
-            color={isInFavorites ? "#e91e63" : "#ffffff"} 
-          />
-        </TouchableOpacity>
-
-        {/* Share Button */}
-        <TouchableOpacity 
-          style={[
-            styles.iconButton, 
-            styles.shareButton, 
-            { 
-              top: insets.top + 10
-            }
-          ]} 
-          onPress={handleShareProduct}
-        >
-          <Ionicons name="share-social-outline" size={22} color="#ffffff" />
-        </TouchableOpacity>
+        {/* Header Buttons */}
+        <View style={[styles.headerButtons, { top: insets.top + 10 }]}>
+          <TouchableOpacity 
+            style={[styles.iconButton, styles.backButton]} 
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name='arrow-back' size={24} color="#ffffff" />
+          </TouchableOpacity>
+          
+          <View style={styles.rightButtons}>
+            <TouchableOpacity 
+              style={[styles.iconButton, styles.heartButton]} 
+              onPress={handleAddToFavorites}
+            >
+              <Ionicons 
+                name={isInFavorites ? "heart" : "heart-outline"} 
+                size={24} 
+                color={isInFavorites ? "#e91e63" : "#ffffff"} 
+              />
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.iconButton, styles.shareButton]} 
+              onPress={handleShareProduct}
+            >
+              <Ionicons name="share-social-outline" size={22} color="#ffffff" />
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
 
       {/* Product Details */}
@@ -1020,7 +923,7 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.detailsContainer}>
-          {/* Enhanced Badges with all product data */}
+          {/* Enhanced Badges */}
           {renderEnhancedBadges()}
 
           {/* Product Name and Status */}
@@ -1029,18 +932,24 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
               {product.label}
             </Text>
             
-            {/* Product Reference */}
             {product.ref && (
-              <Text style={[styles.productRef, { color: theme.secondaryTextColor }]}>
-                Référence: {product.ref}
-              </Text>
+              <View style={styles.refContainer}>
+                <Ionicons name="document-text-outline" size={16} color={theme.secondaryTextColor} />
+                <Text style={[styles.productRef, { color: theme.secondaryTextColor }]}>
+                  Référence: {product.ref}
+                </Text>
+              </View>
             )}
-            
-            {/* Status Badge */}
+
             <View style={[
               styles.statusBadge, 
               { backgroundColor: isAvailable ? theme.primary + '20' : '#f4433620' }
             ]}>
+              <Ionicons 
+                name={isAvailable ? "checkmark-circle-outline" : "close-circle-outline"} 
+                size={16} 
+                color={isAvailable ? theme.primary : '#f44336'} 
+              />
               <Text style={[
                 styles.statusText, 
                 { color: isAvailable ? theme.primary : '#f44336' }
@@ -1052,20 +961,34 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
 
           {/* Price Section */}
           <View style={[styles.priceContainer, { borderColor: theme.border }]}>
-            <View>
-              <Text style={[styles.price, { color: theme.textColor }]}>
-                {formatPrice(product)}
-              </Text>
-              <Text style={[styles.priceHT, { color: theme.secondaryTextColor }]}>
-                Prix HT: {getPriceHT(product)}
-              </Text>
-              <Text style={[styles.taxInfo, { color: theme.secondaryTextColor }]}>
-                TVA ({product.tva_tx || 20}%): {getTaxAmount(product)}
-              </Text>
+            <View style={styles.priceInfo}>
+              <View style={styles.mainPriceContainer}>
+                <Ionicons name="pricetag" size={24} color={theme.primary} />
+                <Text style={[styles.price, { color: theme.textColor }]}>
+                  {formatPrice(product)}
+                </Text>
+              </View>
+              
+              <View style={styles.priceDetails}>
+                <View style={styles.priceDetailItem}>
+                  <Ionicons name="calculator-outline" size={16} color={theme.secondaryTextColor} />
+                  <Text style={[styles.priceHT, { color: theme.secondaryTextColor }]}>
+                    Prix HT: {getPriceHT(product)}
+                  </Text>
+                </View>
+                
+                <View style={styles.priceDetailItem}>
+                  <Ionicons name="receipt-outline" size={16} color={theme.secondaryTextColor} />
+                  <Text style={[styles.taxInfo, { color: theme.secondaryTextColor }]}>
+                    TVA ({product.tva_tx || 20}%): {getTaxAmount(product)}
+                  </Text>
+                </View>
+              </View>
             </View>
-            
+
             {getFormattedWeight(product) && (
               <View style={[styles.weightBadge, { backgroundColor: theme.primary }]}>
+                <Ionicons name="scale-outline" size={16} color="#ffffff" />
                 <Text style={[styles.weightText, { color: '#ffffff' }]}>
                   {getFormattedWeight(product)}
                 </Text>
@@ -1078,9 +1001,13 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
 
           {/* Description */}
           <View style={styles.descriptionContainer}>
-            <Text style={[styles.sectionTitle, { color: theme.textColor }]}>
-              Description
-            </Text>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="document-text-outline" size={24} color={theme.primary} />
+              <Text style={[styles.sectionTitle, { color: theme.textColor }]}>
+                Description
+              </Text>
+            </View>
+            
             <Text 
               style={[styles.description, { color: theme.secondaryTextColor }]} 
               numberOfLines={isExpanded ? undefined : 4}
@@ -1097,6 +1024,11 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
                 style={[styles.showMoreButton, { borderColor: theme.border }]} 
                 onPress={() => setIsExpanded(!isExpanded)}
               >
+                <Ionicons 
+                  name={isExpanded ? "chevron-up-outline" : "chevron-down-outline"} 
+                  size={16} 
+                  color={theme.primary} 
+                />
                 <Text style={[styles.showMoreText, { color: theme.primary }]}>
                   {isExpanded ? 'Voir moins' : 'Voir plus'}
                 </Text>
@@ -1107,9 +1039,12 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
           {/* Similar Products Section */}
           {similarProducts.length > 0 && (
             <View style={styles.similarProductsContainer}>
-              <Text style={[styles.sectionTitle, { color: theme.textColor }]}>
-                Produits similaires
-              </Text>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="grid-outline" size={24} color={theme.primary} />
+                <Text style={[styles.sectionTitle, { color: theme.textColor }]}>
+                  Produits similaires
+                </Text>
+              </View>
               
               {loadingSimilar ? (
                 <ActivityIndicator size="large" color={theme.primary} style={styles.loadingIndicator} />
@@ -1125,9 +1060,8 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
               )}
             </View>
           )}
-          
-          {/* Extra padding at bottom for the fixed button */}
-          <View style={{ height: 80 }} />
+
+          <View style={{ height: 100 }} />
         </View>
       </ScrollView>
 
@@ -1154,7 +1088,12 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
             <ActivityIndicator color="#ffffff" size="small" />
           ) : (
             <>
-              <MaterialCommunityIcons name="cart-plus" size={20} color="#ffffff" style={styles.cartIcon} />
+              <Ionicons 
+                name={isAvailable ? "cart-outline" : "ban-outline"} 
+                size={22} 
+                color="#ffffff" 
+                style={styles.cartIcon} 
+              />
               <Text style={[styles.cartButtonText, { color: '#ffffff' }]}>
                 {isAvailable ? 'Ajouter au panier' : 'Indisponible'}
               </Text>
@@ -1173,15 +1112,13 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
         <View style={styles.modalContainer}>
           <StatusBar backgroundColor="#000" barStyle="light-content" />
           
-          {/* Close button */}
           <TouchableOpacity 
             style={styles.closeButton} 
             onPress={closeImageViewer}
           >
-            <MaterialCommunityIcons name="close" size={28} color="#fff" />
+            <Ionicons name="close" size={28} color="#fff" />
           </TouchableOpacity>
-          
-          {/* Image viewer content */}
+
           <TouchableWithoutFeedback onPress={handleDoubleTap}>
             <View 
               style={styles.imageViewerContainer} 
@@ -1203,16 +1140,13 @@ export default function ProductDetails({ route, navigation }: ProductDetailsProp
                   source={{ uri: imageUrl || 'https://via.placeholder.com/400x400' }}
                   style={styles.fullscreenImage}
                   resizeMode="contain"
-                  onError={(error) => {
-                    console.log('Modal image error:', error?.nativeEvent?.error);
-                  }}
                 />
               </Animated.View>
             </View>
           </TouchableWithoutFeedback>
-          
-          {/* Help text */}
+
           <View style={styles.helpTextContainer}>
+            <Ionicons name="information-circle-outline" size={16} color="rgba(255,255,255,0.7)" />
             <Text style={styles.helpText}>Pincez pour zoomer • Double-tapez pour agrandir</Text>
           </View>
         </View>
@@ -1233,13 +1167,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  loadingContent: {
+    alignItems: 'center',
+    padding: 20,
+  },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
     fontWeight: '500',
   },
   errorContainer: {
+    flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorContent: {
     alignItems: 'center',
     padding: 20,
   },
@@ -1255,9 +1198,19 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 20,
+    borderRadius: 25,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  retryIcon: {
+    marginRight: 8,
   },
   retryButtonText: {
     fontSize: 16,
@@ -1271,214 +1224,274 @@ const styles = StyleSheet.create({
   productImage: {
     width: '100%',
     height: '100%',
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
   },
   tapIndicatorContainer: {
     position: 'absolute',
     right: 15,
     bottom: 15,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     borderRadius: 20,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
   },
   tapIcon: {
-    marginRight: 5,
+    marginRight: 6,
   },
   tapText: {
     color: 'white',
     fontSize: 12,
     fontWeight: '500',
   },
-  
-  iconButton: {
+  headerButtons: {
     position: 'absolute',
-    padding: 10,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    zIndex: 10,
+  },
+  rightButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconButton: {
+    padding: 12,
     borderRadius: 25,
     elevation: 5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.3,
     shadowRadius: 4,
-    zIndex: 10,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
   },
   backButton: {
-    left: 15,
+    // Individual styling if needed
   },
   heartButton: {
-    right: 60,
+    marginRight: 10,
   },
   shareButton: {
-    right: 15,
+    // Individual styling if needed
   },
   scrollContent: {
     flexGrow: 1,
   },
   detailsContainer: {
-    padding: 16,
+    padding: 20,
   },
-  badgeRow: {
+  badgeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 8,
+    marginTop: 10,
+    marginBottom: 15,
     flexWrap: 'wrap',
   },
-  brandBadge: {
+  badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 10,
     marginBottom: 8,
-  },
-  brandText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  categoryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  categoryText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  customBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  customBadgeText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  badgeIcon: {
-    marginRight: 6,
-  },
-  nameContainer: {
-    marginVertical: 8,
-  },
-  productName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    letterSpacing: 0.3,
-    marginBottom: 4,
-  },
-  productRef: {
-    fontSize: 14,
-    marginBottom: 8,
-    fontStyle: 'italic',
-  },
-  statusBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  priceContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    marginBottom: 16,
-  },
-  price: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  priceHT: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  taxInfo: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  weightBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  weightText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  specificationsContainer: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  specGrid: {
-    borderRadius: 12,
-    padding: 16,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
+  brandBadge: {
+    // Specific styling for brand badge
+  },
+  categoryBadge: {
+    // Specific styling for category badge
+  },
+  healthBadge: {
+    // Specific styling for health badge
+  },
+  ageBadge: {
+    // Specific styling for age badge
+  },
+  tasteBadge: {
+    // Specific styling for taste badge
+  },
+  nutritionalBadge: {
+    // Specific styling for nutritional badge
+  },
+  gameBadge: {
+    // Specific styling for game badge
+  },
+  badgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  badgeIcon: {
+    marginRight: 6,
+  },
+  nameContainer: {
+    marginVertical: 15,
+  },
+  productName: {
+    fontSize: 26,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    lineHeight: 32,
+  },
+  refContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  productRef: {
+    fontSize: 14,
+    marginLeft: 6,
+    fontStyle: 'italic',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+  },
+  statusText: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  priceContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 20,
+    borderBottomWidth: 1,
+    marginBottom: 20,
+  },
+  priceInfo: {
+    flex: 1,
+  },
+  mainPriceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  price: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  priceDetails: {
+    marginLeft: 32,
+  },
+  priceDetailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  priceHT: {
+    fontSize: 13,
+    marginLeft: 6,
+  },
+  taxInfo: {
+    fontSize: 13,
+    marginLeft: 6,
+  },
+  weightBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  weightText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    marginLeft: 6,
+  },
+  specificationsContainer: {
+    marginBottom: 25,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginLeft: 10,
+  },
+  specGrid: {
+    borderRadius: 15,
+    padding: 20,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
   specItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    alignItems: 'center',
+    paddingVertical: 12,
     borderBottomWidth: 0.5,
     borderBottomColor: 'rgba(0,0,0,0.1)',
   },
-  specLabel: {
-    fontSize: 14,
+  specLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
+  },
+  specLabel: {
+    fontSize: 15,
     fontWeight: '500',
+    marginLeft: 8,
   },
   specValue: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    flex: 1,
     textAlign: 'right',
+    flex: 1,
   },
   descriptionContainer: {
-    marginBottom: 20,
+    marginBottom: 25,
   },
   description: {
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 15,
+    lineHeight: 24,
+    textAlign: 'justify',
   },
   showMoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     alignSelf: 'center',
-    marginTop: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 16,
-    borderRadius: 16,
+    marginTop: 15,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderRadius: 20,
     borderWidth: 1,
   },
   showMoreText: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 6,
   },
   similarProductsContainer: {
-    marginBottom: 20,
+    marginBottom: 25,
   },
   loadingIndicator: {
     marginVertical: 20,
@@ -1487,77 +1500,82 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   similarProductCard: {
-    width: 150,
-    marginRight: 12,
-    borderRadius: 12,
-    padding: 8,
-    elevation: 2,
+    width: 160,
+    marginRight: 15,
+    borderRadius: 15,
+    padding: 12,
+    elevation: 3,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 4,
   },
   similarProductImage: {
     width: '100%',
-    height: 100,
-    borderRadius: 8,
-    marginBottom: 8,
+    height: 110,
+    borderRadius: 10,
+    marginBottom: 10,
   },
   similarProductInfo: {
     flex: 1,
   },
   similarProductName: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginBottom: 4,
-    minHeight: 32,
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 6,
+    minHeight: 36,
+    lineHeight: 18,
   },
   similarProductPrice: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: 'bold',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   similarProductStatus: {
     alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
   },
   similarProductStatusText: {
-    fontSize: 10,
-    fontWeight: '500',
+    fontSize: 11,
+    fontWeight: '600',
   },
   bottomContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    elevation: 8,
+    paddingHorizontal: 20,
+    paddingTop: 15,
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
+    elevation: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
   },
   cartButton: {
-    height: 50,
-    borderRadius: 25,
+    height: 55,
+    borderRadius: 28,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
   },
   cartIcon: {
-    marginRight: 8,
+    marginRight: 10,
   },
   cartButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
-  
   // Image Viewer Modal Styles
   modalContainer: {
     flex: 1,
@@ -1581,24 +1599,27 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: 'absolute',
-    top: 40,
+    top: 50,
     right: 20,
     zIndex: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 20,
-    padding: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 25,
+    padding: 12,
   },
   helpTextContainer: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 40,
     left: 0,
     right: 0,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 20,
   },
   helpText: {
     color: 'rgba(255,255,255,0.7)',
     fontSize: 14,
     textAlign: 'center',
+    marginLeft: 6,
   },
 });
