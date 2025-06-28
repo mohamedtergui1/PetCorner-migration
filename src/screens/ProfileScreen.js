@@ -1,4 +1,5 @@
 // ProfileScreen.js modifié pour inclure la navigation vers UserDetailsScreen
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -13,14 +14,12 @@ import {
   Image,
   StatusBar,
 } from 'react-native';
-import FeatherIcon from 'react-native-vector-icons/Feather';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
 import Token from '../../config/TokenDolibar';
 import { useFocusEffect } from '@react-navigation/native';
 import API_BASE_URL from '../../config/Api';
 import { useTheme } from '../context/ThemeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function ProfileScreen({navigation}) {
   const [userDetails, setUserDetails] = useState();
@@ -29,34 +28,43 @@ export default function ProfileScreen({navigation}) {
     pushNotifications: false,
   });
 
+  // Get safe area insets for proper padding
+  const insets = useSafeAreaInsets();
+
   // Utiliser le hook useTheme avec les couleurs
   const { theme, isDarkMode, toggleTheme, colorTheme, toggleColorTheme } = useTheme();
 
   // Définir les couleurs primaire et secondaire en fonction du thème
   const PRIMARY_COLOR = colorTheme === 'blue' ? '#007afe' : '#fe9400';
   const SECONDARY_COLOR = colorTheme === 'blue' ? '#fe9400' : '#007afe';
-  
+
   // Additional color variables for better dark mode support
   const BACKGROUND_COLOR = isDarkMode ? '#121212' : '#ffffff';
   const CARD_BACKGROUND = isDarkMode ? '#1e1e1e' : '#f8f8f8';
   const TEXT_COLOR = isDarkMode ? '#ffffff' : '#000000';
   const TEXT_COLOR_SECONDARY = isDarkMode ? '#b3b3b3' : '#666666';
   const BORDER_COLOR = isDarkMode ? '#2c2c2c' : '#e0e0e0';
-  
+  const DISABLED_COLOR = isDarkMode ? '#333333' : '#f0f0f0';
+  const DISABLED_TEXT_COLOR = isDarkMode ? '#666666' : '#999999';
+
   // Add dark mode overlay for profile section
   const DARK_OVERLAY = isDarkMode ? 'rgba(0,0,0,0.3)' : 'transparent';
+
+  // Calculate bottom padding for tab navigation
+  const TAB_HEIGHT = 60; // Standard tab bar height
+  const BOTTOM_PADDING = TAB_HEIGHT + insets.bottom + 20; // Tab height + safe area + extra padding
 
   const getUserData = async () => {
     try {
       const userData = JSON.parse(await AsyncStorage.getItem('userData'));
       if (!userData) return;
-      
+
       const clientID = userData.id;
       const headers = {
         'Content-Type': 'application/json',
         'DOLAPIKEY': Token
       };
-      
+
       const res = await axios.get(API_BASE_URL + 'thirdparties/' + clientID, { headers });
       setUserDetails(res.data);
     } catch (error) {
@@ -74,6 +82,32 @@ export default function ProfileScreen({navigation}) {
     navigation.goBack();
   };
 
+  // Component for disabled buttons with "Coming soon" indicator
+  const DisabledRow = ({ icon, label, borderColor, iconBgColor }) => (
+    <View style={[styles.row, styles.disabledRow, { 
+      backgroundColor: DISABLED_COLOR,
+      borderLeftWidth: 3,
+      borderLeftColor: DISABLED_TEXT_COLOR,
+      opacity: 0.6
+    }]}>
+      <View style={[styles.rowIcon, { backgroundColor: DISABLED_TEXT_COLOR }]}>
+        <Ionicons color="#fff" name={icon} size={18} />
+      </View>
+      <View style={styles.rowLabelContainer}>
+        <Text style={[styles.rowLabel, { color: DISABLED_TEXT_COLOR }]}>{label}</Text>
+        <Text style={[styles.comingSoonText, { color: DISABLED_TEXT_COLOR }]}>
+          Disponible dans la prochaine version
+        </Text>
+      </View>
+      <View style={styles.rowSpacer} />
+      <Ionicons
+        color={DISABLED_TEXT_COLOR}
+        name="time-outline"
+        size={20} 
+      />
+    </View>
+  );
+
   return (
     <SafeAreaView style={{ 
       flex: 1, 
@@ -83,7 +117,7 @@ export default function ProfileScreen({navigation}) {
         barStyle={isDarkMode ? 'light-content' : 'dark-content'} 
         backgroundColor={isDarkMode ? '#000000' : '#ffffff'} 
       />
-      
+
       {/* Header with back button */}
       <View style={[styles.header, { backgroundColor: PRIMARY_COLOR }]}>
         <TouchableOpacity 
@@ -101,19 +135,19 @@ export default function ProfileScreen({navigation}) {
         <View style={[styles.darkModeOverlay, { backgroundColor: DARK_OVERLAY }]} />
         <View style={styles.profileInner}>
           <View style={styles.profile}>
-            <TouchableOpacity>
+            <TouchableOpacity disabled={true}>
               <View style={styles.profileAvatarWrapper}>
                 <Image
                   alt=""
                   source={require('../assets/images/inconnu.jpg')}
-                  style={styles.profileAvatar} />
-                <TouchableOpacity>
-                  <View style={[styles.profileAction, { backgroundColor: SECONDARY_COLOR }]}>
-                    <FontAwesome5 color="#fff" name="edit" size={14} />
-                  </View>
-                </TouchableOpacity>
+                  style={styles.profileAvatar} 
+                />
+                <View style={[styles.profileAction, { backgroundColor: DISABLED_TEXT_COLOR }]}>
+                  <Ionicons color="#fff" name="camera-outline" size={14} />
+                </View>
               </View>
             </TouchableOpacity>
+
             <View>
               <Text style={styles.profileName}>
                 {userDetails && userDetails.name}
@@ -129,13 +163,19 @@ export default function ProfileScreen({navigation}) {
 
       <ScrollView 
         style={[styles.scrollContainer, { backgroundColor: BACKGROUND_COLOR }]}
-        contentContainerStyle={{ paddingBottom: 30 }}
+        contentContainerStyle={{ 
+          paddingBottom: BOTTOM_PADDING,
+          flexGrow: 1 
+        }}
+        showsVerticalScrollIndicator={false}
       >
         {/* Account Section */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: PRIMARY_COLOR }]}>Mon Compte</Text>
-          
-          {/* User Details Navigation */}
+          <Text style={[styles.sectionTitle, { color: PRIMARY_COLOR }]}>
+            <Ionicons name="person-circle-outline" size={18} color={PRIMARY_COLOR} /> Mon Compte
+          </Text>
+
+          {/* User Details Navigation - FUNCTIONAL */}
           <TouchableOpacity 
             style={[styles.row, { 
               backgroundColor: CARD_BACKGROUND,
@@ -148,52 +188,24 @@ export default function ProfileScreen({navigation}) {
             }}
           >
             <View style={[styles.rowIcon, { backgroundColor: PRIMARY_COLOR }]}>
-              <FontAwesome5 color="#fff" name="user-edit" size={18} />
+              <Ionicons color="#fff" name="person-outline" size={18} />
             </View>
             <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Mes Informations</Text>
             <View style={styles.rowSpacer} />
             <Ionicons
               color={TEXT_COLOR_SECONDARY}
               name="chevron-forward"
-              size={20} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={[styles.row, { 
-            backgroundColor: CARD_BACKGROUND,
-            borderLeftWidth: 3,
-            borderLeftColor: '#32c759'
-          }]}>
-            <View style={[styles.rowIcon, { backgroundColor: '#32c759' }]}>
-              <Ionicons color="#fff" name="shield-checkmark" size={20} />
-            </View>
-            <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Sécurité</Text>
-            <View style={styles.rowSpacer} />
-            <Ionicons
-              color={TEXT_COLOR_SECONDARY}
-              name="chevron-forward"
-              size={20} />
+              size={20} 
+            />
           </TouchableOpacity>
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: PRIMARY_COLOR }]}>Préférences</Text>
-          
-          <TouchableOpacity style={[styles.row, { 
-            backgroundColor: CARD_BACKGROUND,
-            borderLeftWidth: 3,
-            borderLeftColor: '#fe9400'
-          }]}>
-            <View style={[styles.rowIcon, { backgroundColor: '#fe9400' }]}>
-              <Ionicons color="#fff" name="globe" size={20} />
-            </View>
-            <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Langue</Text>
-            <View style={styles.rowSpacer} />
-            <Ionicons
-              color={TEXT_COLOR_SECONDARY}
-              name="chevron-forward"
-              size={20} />
-          </TouchableOpacity>
-          
+          <Text style={[styles.sectionTitle, { color: PRIMARY_COLOR }]}>
+            <Ionicons name="settings-outline" size={18} color={PRIMARY_COLOR} /> Préférences
+          </Text>
+
+          {/* Dark Mode Toggle - FUNCTIONAL */}
           <View style={[styles.row, { 
             backgroundColor: CARD_BACKGROUND,
             borderLeftWidth: 3,
@@ -209,10 +221,11 @@ export default function ProfileScreen({navigation}) {
               trackColor={{ false: isDarkMode ? "#555" : "#767577", true: `${PRIMARY_COLOR}80` }}
               ios_backgroundColor={isDarkMode ? "#555" : "#3e3e3e"}
               onValueChange={toggleTheme}
-              value={isDarkMode} />
+              value={isDarkMode} 
+            />
           </View>
-          
-          {/* Option pour le choix de couleur avec style amélioré */}
+
+          {/* Color Theme Toggle - FUNCTIONAL */}
           <View style={[styles.row, { 
             backgroundColor: CARD_BACKGROUND,
             borderLeftWidth: 3,
@@ -230,145 +243,143 @@ export default function ProfileScreen({navigation}) {
               trackColor={{ false: isDarkMode ? "#555" : "#767577", true: "#fe940080" }}
               ios_backgroundColor={isDarkMode ? "#555" : "#3e3e3e"}
               onValueChange={toggleColorTheme}
-              value={colorTheme === 'orange'} />
+              value={colorTheme === 'orange'} 
+            />
           </View>
-          
-          <TouchableOpacity
-            style={[styles.row, { 
-              backgroundColor: CARD_BACKGROUND,
-              borderLeftWidth: 3,
-              borderLeftColor: '#32c759'
-            }]}>
-            <View style={[styles.rowIcon, { backgroundColor: '#32c759' }]}>
-              <Ionicons
-                color="#fff"
-                name="location"
-                size={20} />
-            </View>
-            <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Localisation</Text>
-            <View style={styles.rowSpacer} />
-            <Ionicons
-              color={TEXT_COLOR_SECONDARY}
-              name="chevron-forward"
-              size={20} />
-          </TouchableOpacity>
-          
-          <View style={[styles.row, { 
-            backgroundColor: CARD_BACKGROUND,
+
+          {/* Email Notifications - DISABLED */}
+          <View style={[styles.row, styles.disabledRow, { 
+            backgroundColor: DISABLED_COLOR,
             borderLeftWidth: 3,
-            borderLeftColor: '#38C959'
+            borderLeftColor: DISABLED_TEXT_COLOR,
+            opacity: 0.6
           }]}>
-            <View style={[styles.rowIcon, { backgroundColor: '#38C959' }]}>
-              <Ionicons color="#fff" name="mail" size={20} />
+            <View style={[styles.rowIcon, { backgroundColor: DISABLED_TEXT_COLOR }]}>
+              <Ionicons color="#fff" name="mail-outline" size={20} />
             </View>
-            <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Notifications Email</Text>
+            <View style={styles.rowLabelContainer}>
+              <Text style={[styles.rowLabel, { color: DISABLED_TEXT_COLOR }]}>Notifications Email</Text>
+              <Text style={[styles.comingSoonText, { color: DISABLED_TEXT_COLOR }]}>
+                Prochaine version
+              </Text>
+            </View>
             <View style={styles.rowSpacer} />
             <Switch
-              thumbColor={form.emailNotifications ? PRIMARY_COLOR : "#f4f3f4"}
-              trackColor={{ false: isDarkMode ? "#555" : "#767577", true: `${PRIMARY_COLOR}80` }}
-              ios_backgroundColor={isDarkMode ? "#555" : "#3e3e3e"}
-              onValueChange={emailNotifications =>
-                setForm({ ...form, emailNotifications })
-              }
-              value={form.emailNotifications} />
+              disabled={true}
+              thumbColor="#f4f3f4"
+              trackColor={{ false: "#767577", true: "#767577" }}
+              ios_backgroundColor="#3e3e3e"
+              value={false} 
+            />
           </View>
-          
-          <View style={[styles.row, { 
-            backgroundColor: CARD_BACKGROUND,
+
+          {/* Push Notifications - DISABLED */}
+          <View style={[styles.row, styles.disabledRow, { 
+            backgroundColor: DISABLED_COLOR,
             borderLeftWidth: 3,
-            borderLeftColor: '#38C959'
+            borderLeftColor: DISABLED_TEXT_COLOR,
+            opacity: 0.6
           }]}>
-            <View style={[styles.rowIcon, { backgroundColor: '#38C959' }]}>
-              <Ionicons color="#fff" name="notifications" size={20} />
+            <View style={[styles.rowIcon, { backgroundColor: DISABLED_TEXT_COLOR }]}>
+              <Ionicons color="#fff" name="notifications-outline" size={20} />
             </View>
-            <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Notifications Push</Text>
+            <View style={styles.rowLabelContainer}>
+              <Text style={[styles.rowLabel, { color: DISABLED_TEXT_COLOR }]}>Notifications Push</Text>
+              <Text style={[styles.comingSoonText, { color: DISABLED_TEXT_COLOR }]}>
+                Prochaine version
+              </Text>
+            </View>
             <View style={styles.rowSpacer} />
             <Switch
-              thumbColor={form.pushNotifications ? PRIMARY_COLOR : "#f4f3f4"}
-              trackColor={{ false: isDarkMode ? "#555" : "#767577", true: `${PRIMARY_COLOR}80` }}
-              ios_backgroundColor={isDarkMode ? "#555" : "#3e3e3e"}
-              onValueChange={pushNotifications =>
-                setForm({ ...form, pushNotifications })
-              }
-              value={form.pushNotifications} />
+              disabled={true}
+              thumbColor="#f4f3f4"
+              trackColor={{ false: "#767577", true: "#767577" }}
+              ios_backgroundColor="#3e3e3e"
+              value={false} 
+            />
           </View>
         </View>
-        
+
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: PRIMARY_COLOR }]}>Ressources</Text>
-          
+          <Text style={[styles.sectionTitle, { color: PRIMARY_COLOR }]}>
+            <Ionicons name="help-circle-outline" size={18} color={PRIMARY_COLOR} /> Ressources
+          </Text>
+
+          {/* Bug Report - FUNCTIONAL */}
           <TouchableOpacity
-            onPress={ () =>  navigation.navigate("SignatureClient")}
+            onPress={() => navigation.navigate("SignatureClient")}
             style={[styles.row, { 
               backgroundColor: CARD_BACKGROUND,
               borderLeftWidth: 3,
               borderLeftColor: '#8e8d91'
-            }]}>
+            }]}
+          >
             <View style={[styles.rowIcon, { backgroundColor: '#8e8d91' }]}>
-              <Ionicons color="#fff" name="bug" size={20} />
+              <Ionicons color="#fff" name="bug-outline" size={20} />
             </View>
             <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Signaler un bug</Text>
             <View style={styles.rowSpacer} />
             <Ionicons
               color={TEXT_COLOR_SECONDARY}
               name="chevron-forward"
-              size={20} />
+              size={20} 
+            />
           </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.row, { 
-              backgroundColor: CARD_BACKGROUND,
-              borderLeftWidth: 3,
-              borderLeftColor: '#007afe'
-            }]}>
-            <View style={[styles.rowIcon, { backgroundColor: '#007afe' }]}>
-              <Ionicons color="#fff" name="chatbubble-ellipses" size={20} />
-            </View>
-            <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Contactez-nous</Text>
-            <View style={styles.rowSpacer} />
-            <Ionicons
-              color={TEXT_COLOR_SECONDARY}
-              name="chevron-forward"
-              size={20} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.row, { 
-              backgroundColor: CARD_BACKGROUND,
-              borderLeftWidth: 3,
-              borderLeftColor: '#32c759'
-            }]}>
-            <View style={[styles.rowIcon, { backgroundColor: '#32c759' }]}>
-              <Ionicons color="#fff" name="star" size={20} />
-            </View>
-            <Text style={[styles.rowLabel, { color: TEXT_COLOR }]}>Notez l'application</Text>
-            <View style={styles.rowSpacer} />
-            <Ionicons
-              color={TEXT_COLOR_SECONDARY}
-              name="chevron-forward"
-              size={20} />
+
+          {/* Contact Us - DISABLED */}
+          <DisabledRow 
+            icon="chatbubble-ellipses-outline"
+            label="Contactez-nous"
+            borderColor="#007afe"
+            iconBgColor="#007afe"
+          />
+
+          {/* Rate App - DISABLED */}
+          <DisabledRow 
+            icon="star-outline"
+            label="Notez l'application"
+            borderColor="#32c759"
+            iconBgColor="#32c759"
+          />
+        </View>
+
+        {/* Logout button - FUNCTIONAL */}
+        <View style={styles.logoutSection}>
+          <TouchableOpacity 
+            style={[styles.logoutButton, { 
+              backgroundColor: SECONDARY_COLOR,
+              shadowOpacity: isDarkMode ? 0.5 : 0.2,
+            }]}
+            onPress={() => {
+              AsyncStorage.setItem(
+                'userData',
+                JSON.stringify({...userDetails, loggedIn: false}),
+              );
+              navigation.navigate('Auth', {
+                screen: 'Login',
+              });
+            }}
+          >
+            <Ionicons name="log-out-outline" size={20} color="#fff" />
+            <Text style={styles.logoutText}>Se déconnecter</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Logout button */}
-        <TouchableOpacity 
-          style={[styles.logoutButton, { 
-            backgroundColor: SECONDARY_COLOR,
-            shadowOpacity: isDarkMode ? 0.5 : 0.2,
-          }]}
-          onPress={() => {
-            AsyncStorage.setItem(
-              'userData',
-              JSON.stringify({...userDetails, loggedIn: false}),
-            );
-            navigation.navigate('Auth', {
-              screen: 'Login',
-            });
-          }}
-        >
-          <Ionicons name="log-out-outline" size={20} color="#fff" />
-          <Text style={styles.logoutText}>Se déconnecter</Text>
-        </TouchableOpacity>
+        {/* Version Info */}
+        <View style={styles.versionContainer}>
+          <View style={styles.versionBadge}>
+            <Ionicons name="information-circle-outline" size={16} color={TEXT_COLOR_SECONDARY} />
+            <Text style={[styles.versionText, { color: TEXT_COLOR_SECONDARY }]}>
+              Version 1.0.0
+            </Text>
+          </View>
+          <Text style={[styles.versionSubText, { color: DISABLED_TEXT_COLOR }]}>
+            Nouvelles fonctionnalités à venir
+          </Text>
+        </View>
+
+        {/* Extra bottom spacing to ensure content is visible above tab bar */}
+        <View style={styles.bottomSpacer} />
       </ScrollView>
     </SafeAreaView>
   )
@@ -482,7 +493,7 @@ const styles = StyleSheet.create({
   },
   section: {
     paddingHorizontal: 24,
-    marginBottom: 20,
+    marginBottom: 25,
   },
   sectionTitle: {
     paddingVertical: 12,
@@ -490,17 +501,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 1.1,
-    marginBottom: 5,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-start',
-    height: 56,
-    borderRadius: 10,
+    minHeight: 56,
+    borderRadius: 12,
     marginBottom: 12,
     paddingHorizontal: 15,
-    elevation: 1,
+    paddingVertical: 8,
+    elevation: 2,
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -508,6 +522,9 @@ const styles = StyleSheet.create({
     },
     shadowOpacity: 0.15,
     shadowRadius: 2.22,
+  },
+  disabledRow: {
+    // Additional styling for disabled rows
   },
   rowIcon: {
     width: 36,
@@ -526,36 +543,70 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 1.41,
   },
+  rowLabelContainer: {
+    flex: 1,
+  },
   rowLabel: {
     fontSize: 16,
     fontWeight: '500',
+  },
+  comingSoonText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 2,
   },
   rowSpacer: {
     flexGrow: 1,
     flexShrink: 1,
     flexBasis: 0,
   },
+  logoutSection: {
+    paddingHorizontal: 24,
+    marginBottom: 20,
+  },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 24,
-    marginTop: 20,
-    paddingVertical: 15,
-    borderRadius: 10,
-    elevation: 2,
+    paddingVertical: 16,
+    borderRadius: 12,
+    elevation: 3,
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
-      height: 1,
+      height: 2,
     },
     shadowOpacity: 0.2,
-    shadowRadius: 1.41,
+    shadowRadius: 2.5,
   },
   logoutText: {
     marginLeft: 10,
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
-  }
+  },
+  versionContainer: {
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 10,
+    paddingHorizontal: 24,
+  },
+  versionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  versionText: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 6,
+  },
+  versionSubText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  bottomSpacer: {
+    height: 20, // Extra spacing at the bottom
+  },
 });

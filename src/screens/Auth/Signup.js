@@ -1,4 +1,4 @@
-import { Alert, Keyboard, SafeAreaView, ScrollView, StyleSheet, Text, View, TouchableOpacity, StatusBar, Platform, PermissionsAndroid, Animated, KeyboardAvoidingView } from 'react-native'
+import { Alert, Keyboard, SafeAreaView, ScrollView, StyleSheet, Text, View, TouchableOpacity, StatusBar, Platform, PermissionsAndroid, Animated, KeyboardAvoidingView, Linking } from 'react-native'
 import React, { useState, useRef, useEffect } from 'react'
 import Toast from 'react-native-toast-message';
 import Geolocation from 'react-native-geolocation-service';
@@ -13,520 +13,474 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function Signup({navigation}) {
-    const [inputs, setInputs] = useState({
-        email: '',
-        fullname: '',
-        address: '',
-        city: '',
-        postalCode: '',
-        phone: '',
-        password: '',
+  const [inputs, setInputs] = useState({
+    email: '',
+    fullname: '',
+    address: '',
+    city: '',
+    postalCode: '',
+    phone: '',
+    password: '',
+  });
+  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [gettingLocation, setGettingLocation] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  // NEW STATE: Terms and Conditions acceptance
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const { theme, isDarkMode, toggleTheme, colorTheme, toggleColorTheme } = useTheme();
+  const insets = useSafeAreaInsets();
+  const scrollViewRef = useRef(null);
+
+  // Animation refs for smooth transitions
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const successToastAnim = useRef(new Animated.Value(0)).current;
+  const successToastSlideAnim = useRef(new Animated.Value(-100)).current;
+
+  // Initialize entrance animations and keyboard listeners
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+
+    // Keyboard event listeners
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => setKeyboardVisible(true)
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+
+    return () => {
+      keyboardDidShowListener?.remove();
+      keyboardDidHideListener?.remove();
+    };
+  }, []);
+
+  // Success toast animation functions
+  const showSuccessToastWithAnimation = () => {
+    setShowSuccessToast(true);
+    Animated.parallel([
+      Animated.spring(successToastAnim, {
+        toValue: 1,
+        tension: 120,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+      Animated.spring(successToastSlideAnim, {
+        toValue: 0,
+        tension: 140,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    setTimeout(() => {
+      hideSuccessToast();
+    }, 2000);
+  };
+
+  const hideSuccessToast = () => {
+    Animated.parallel([
+      Animated.timing(successToastAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(successToastSlideAnim, {
+        toValue: -100,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setShowSuccessToast(false);
+    });
+  };
+
+  // NEW FUNCTION: Open Terms and Conditions URL
+  const openTermsAndConditions = () => {
+    const termsUrl = 'https://sites.google.com/view/petcorner-term-and-conditions/accueil';
+    Linking.openURL(termsUrl).catch(err => {
+      console.error('Failed to open Terms and Conditions:', err);
+      Toast.show({
+        type: 'error',
+        text1: 'Erreur',
+        text2: 'Impossible d\'ouvrir les conditions d\'utilisation',
+        visibilityTime: 3000,
+        autoHide: true,
+        topOffset: 60,
       });
-      const [errors, setErrors] = useState({});
-      const [loading, setLoading] = useState(false);
-      const [gettingLocation, setGettingLocation] = useState(false);
-      const [showSuccessToast, setShowSuccessToast] = useState(false);
-      const [keyboardVisible, setKeyboardVisible] = useState(false);
-      const { theme, isDarkMode, toggleTheme, colorTheme, toggleColorTheme } = useTheme();
-      const insets = useSafeAreaInsets();
-      const scrollViewRef = useRef(null);
+    });
+  };
 
-      // Animation refs for smooth transitions
-      const fadeAnim = useRef(new Animated.Value(1)).current;
-      const slideAnim = useRef(new Animated.Value(0)).current;
-      const successToastAnim = useRef(new Animated.Value(0)).current;
-      const successToastSlideAnim = useRef(new Animated.Value(-100)).current;
+  // NEW FUNCTION: Toggle terms acceptance
+  const toggleTermsAcceptance = () => {
+    setTermsAccepted(!termsAccepted);
+    if (errors.terms) {
+      handleError(null, 'terms');
+    }
+  };
 
-      // Initialize entrance animations and keyboard listeners
-      useEffect(() => {
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }).start();
+  const validate = () => {
+    Keyboard.dismiss();
+    let isValid = true;
 
-        // Keyboard event listeners
-        const keyboardDidShowListener = Keyboard.addListener(
-          'keyboardDidShow',
-          () => setKeyboardVisible(true)
+    if (!inputs.email) {
+      handleError('Veuillez saisir votre email', 'email');
+      isValid = false;
+    } else if (!inputs.email.match(/\S+@\S+\.\S+/)) {
+      handleError('Veuillez saisir un email valide', 'email');
+      isValid = false;
+    }
+
+    if (!inputs.fullname) {
+      handleError('Veuillez saisir votre nom complet', 'fullname');
+      isValid = false;
+    }
+
+    if(!inputs.address){
+      handleError('Veuillez saisir votre quartier', 'address');
+      isValid = false;
+    }
+
+    if(!inputs.city){
+      handleError('Veuillez saisir votre ville', 'city');
+      isValid = false;
+    }
+
+    if(!inputs.postalCode){
+      handleError('Veuillez saisir votre code postal', 'postalCode');
+      isValid = false;
+    }
+
+    if (!inputs.phone) {
+      handleError('Veuillez saisir votre numéro de téléphone', 'phone');
+      isValid = false;
+    }
+
+    if (!inputs.password) {
+      handleError('Veuillez saisir votre mot de passe', 'password');
+      isValid = false;
+    } else if (inputs.password.length < 5) {
+      handleError('Le mot de passe doit contenir au moins 5 caractères', 'password');
+      isValid = false;
+    }
+
+    // NEW VALIDATION: Check if terms are accepted
+    if (!termsAccepted) {
+      handleError('Vous devez accepter les conditions d\'utilisation', 'terms');
+      isValid = false;
+      Toast.show({
+        type: 'error',
+        text1: 'Conditions requises',
+        text2: 'Veuillez accepter les conditions d\'utilisation pour continuer',
+        visibilityTime: 3000,
+        autoHide: true,
+        topOffset: 60,
+      });
+    }
+
+    if (isValid) {
+      register();
+    }
+  };
+
+  // Request location permission for Android
+  const requestLocationPermission = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const checkResult = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
         );
-        const keyboardDidHideListener = Keyboard.addListener(
-          'keyboardDidHide',
-          () => setKeyboardVisible(false)
+
+        if (checkResult === true) {
+          return true;
+        }
+
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: 'Permission de localisation',
+            message: 'Cette application a besoin d\'accéder à votre localisation pour obtenir votre adresse automatiquement.',
+            buttonNeutral: 'Plus tard',
+            buttonNegative: 'Refuser',
+            buttonPositive: 'Accepter',
+          }
         );
 
-        return () => {
-          keyboardDidShowListener?.remove();
-          keyboardDidHideListener?.remove();
-        };
-      }, []);
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch (err) {
+        console.warn('Permission error:', err);
+        return false;
+      }
+    }
+    return true;
+  };
 
-      // Success toast animation functions
-      const showSuccessToastWithAnimation = () => {
-        setShowSuccessToast(true);
-        
-        Animated.parallel([
-          Animated.spring(successToastAnim, {
-            toValue: 1,
-            tension: 120,
-            friction: 8,
-            useNativeDriver: true,
-          }),
-          Animated.spring(successToastSlideAnim, {
-            toValue: 0,
-            tension: 140,
-            friction: 8,
-            useNativeDriver: true,
-          }),
-        ]).start();
+  // Multiple geocoding services with fallback
+  const getAddressFromCoordinates = async (latitude, longitude) => {
+    console.log('Starting geocoding for coordinates:', latitude, longitude);
 
-        setTimeout(() => {
-          hideSuccessToast();
-        }, 2000);
-      };
-
-      const hideSuccessToast = () => {
-        Animated.parallel([
-          Animated.timing(successToastAnim, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: true,
-          }),
-          Animated.timing(successToastSlideAnim, {
-            toValue: -100,
-            duration: 200,
-            useNativeDriver: true,
-          }),
-        ]).start(() => {
-          setShowSuccessToast(false);
-        });
-      };
-
-      const validate = () => {
-        Keyboard.dismiss();
-        let isValid = true;
-    
-        if (!inputs.email) {
-          handleError('Veuillez saisir votre email', 'email');
-          isValid = false;
-        } else if (!inputs.email.match(/\S+@\S+\.\S+/)) {
-          handleError('Veuillez saisir un email valide', 'email');
-          isValid = false;
-        }
-    
-        if (!inputs.fullname) {
-          handleError('Veuillez saisir votre nom complet', 'fullname');
-          isValid = false;
-        }
-
-        if(!inputs.address){
-          handleError('Veuillez saisir votre quartier', 'address');
-          isValid = false;
-        }
-
-        if(!inputs.city){
-          handleError('Veuillez saisir votre ville', 'city');
-          isValid = false;
-        }
-
-        if(!inputs.postalCode){
-          handleError('Veuillez saisir votre code postal', 'postalCode');
-          isValid = false;
-        }
-    
-        if (!inputs.phone) {
-          handleError('Veuillez saisir votre numéro de téléphone', 'phone');
-          isValid = false;
-        }
-    
-        if (!inputs.password) {
-          handleError('Veuillez saisir votre mot de passe', 'password');
-          isValid = false;
-        } else if (inputs.password.length < 5) {
-          handleError('Le mot de passe doit contenir au moins 5 caractères', 'password');
-          isValid = false;
-        }
-    
-        if (isValid) {
-          register();
-        }
-      };
-
-      // Request location permission for Android
-      const requestLocationPermission = async () => {
-        if (Platform.OS === 'android') {
-          try {
-            const checkResult = await PermissionsAndroid.check(
-              PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
-            );
-            
-            if (checkResult === true) {
-              return true;
-            }
-
-            const granted = await PermissionsAndroid.request(
-              PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-              {
-                title: 'Permission de localisation',
-                message: 'Cette application a besoin d\'accéder à votre localisation pour obtenir votre adresse automatiquement.',
-                buttonNeutral: 'Plus tard',
-                buttonNegative: 'Refuser',
-                buttonPositive: 'Accepter',
-              }
-            );
-            
-            return granted === PermissionsAndroid.RESULTS.GRANTED;
-          } catch (err) {
-            console.warn('Permission error:', err);
-            return false;
+    // Service 1: OpenStreetMap Nominatim with better headers and rate limiting
+    const tryNominatim = async () => {
+      try {
+        console.log('Trying Nominatim service...');
+        const response = await axios.get(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1&zoom=18&accept-language=fr`,
+          {
+            headers: {
+              'User-Agent': 'PetCornerApp/1.0',
+              'Referer': 'https://your-app-domain.com'
+            },
+            timeout: 10000
           }
-        }
-        return true;
-      };
+        );
 
-      // Multiple geocoding services with fallback
-      const getAddressFromCoordinates = async (latitude, longitude) => {
-        console.log('Starting geocoding for coordinates:', latitude, longitude);
-        
-        // Service 1: OpenStreetMap Nominatim with better headers and rate limiting
-        const tryNominatim = async () => {
-          try {
-            console.log('Trying Nominatim service...');
-            const response = await axios.get(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1&zoom=18&accept-language=fr`,
-              {
-                headers: {
-                  'User-Agent': 'PetCornerApp/1.0',
-                  'Referer': 'https://your-app-domain.com'
-                },
-                timeout: 10000
-              }
-            );
-            
-            if (response.data && response.data.address) {
-              const addressData = response.data.address;
-              console.log('Nominatim response:', addressData);
-              
-              const neighbourhood = addressData.neighbourhood || addressData.suburb || addressData.quarter || addressData.district || '';
-              const city = addressData.city || addressData.town || addressData.village || addressData.municipality || '';
-              const postalCode = addressData.postcode || '';
-              
-              const quartierAddress = neighbourhood || city || 'Quartier non spécifié';
-              const fullAddress = [quartierAddress, city, postalCode].filter(Boolean).join(', ');
-              
-              return {
-                streetAddress: quartierAddress,
-                city: city,
-                postalCode: postalCode,
-                fullAddress: fullAddress,
-                displayName: response.data.display_name,
-                source: 'Nominatim'
-              };
-            }
-            throw new Error('No address data from Nominatim');
-          } catch (error) {
-            console.log('Nominatim failed:', error.message);
-            throw error;
-          }
-        };
+        if (response.data && response.data.address) {
+          const addressData = response.data.address;
+          console.log('Nominatim response:', addressData);
 
-        // Service 4: Simple fallback using coordinates
-        const createFallbackAddress = () => {
-          console.log('Using fallback address generation...');
-          const roundedLat = latitude.toFixed(4);
-          const roundedLon = longitude.toFixed(4);
-          
+          const neighbourhood = addressData.neighbourhood || addressData.suburb || addressData.quarter || addressData.district || '';
+          const city = addressData.city || addressData.town || addressData.village || addressData.municipality || '';
+          const postalCode = addressData.postcode || '';
+
+          const quartierAddress = neighbourhood || city || 'Quartier non spécifié';
+          const fullAddress = [quartierAddress, city, postalCode].filter(Boolean).join(', ');
+
           return {
-            streetAddress: `Localisation GPS (${roundedLat}, ${roundedLon})`,
-            city: 'Ville à préciser',
-            postalCode: '',
-            fullAddress: `Coordonnées: ${roundedLat}, ${roundedLon}`,
-            displayName: `Position GPS: ${roundedLat}, ${roundedLon}`,
-            source: 'GPS Coordinates'
+            streetAddress: quartierAddress,
+            city: city,
+            postalCode: postalCode,
+            fullAddress: fullAddress,
+            displayName: response.data.display_name,
+            source: 'Nominatim'
           };
-        };
-
-        // Try services in order with fallback
-        const services = [tryNominatim];
-        
-        for (const service of services) {
-          try {
-            const result = await service();
-            console.log('Geocoding successful with source:', result.source);
-            return result;
-          } catch (error) {
-            console.log('Service failed, trying next...');
-            continue;
-          }
         }
-        
-        // If all services fail, use fallback
-        console.log('All geocoding services failed, using fallback');
-        return createFallbackAddress();
-      };
+        throw new Error('No address data from Nominatim');
+      } catch (error) {
+        console.log('Nominatim failed:', error.message);
+        throw error;
+      }
+    };
 
-      // Updated function to get current location with better error handling
-      const getCurrentLocationAddress = async () => {
-        console.log('GPS button clicked - starting location process');
-        setGettingLocation(true);
-        
-        try {
-          console.log('Requesting location permission...');
-          const hasPermission = await requestLocationPermission();
-          console.log('Permission granted:', hasPermission);
-          
-          if (!hasPermission) {
-            console.log('Permission denied by user');
+    // Service 4: Simple fallback using coordinates
+    const createFallbackAddress = () => {
+      console.log('Using fallback address generation...');
+      const roundedLat = latitude.toFixed(4);
+      const roundedLon = longitude.toFixed(4);
+
+      return {
+        streetAddress: `Localisation GPS (${roundedLat}, ${roundedLon})`,
+        city: 'Ville à préciser',
+        postalCode: '',
+        fullAddress: `Coordonnées: ${roundedLat}, ${roundedLon}`,
+        displayName: `Position GPS: ${roundedLat}, ${roundedLon}`,
+        source: 'GPS Coordinates'
+      };
+    };
+
+    // Try services in order with fallback
+    const services = [tryNominatim];
+
+    for (const service of services) {
+      try {
+        const result = await service();
+        console.log('Geocoding successful with source:', result.source);
+        return result;
+      } catch (error) {
+        console.log('Service failed, trying next...');
+        continue;
+      }
+    }
+
+    // If all services fail, use fallback
+    console.log('All geocoding services failed, using fallback');
+    return createFallbackAddress();
+  };
+
+  // Updated function to get current location with better error handling
+  const getCurrentLocationAddress = async () => {
+    console.log('GPS button clicked - starting location process');
+    setGettingLocation(true);
+
+    try {
+      console.log('Requesting location permission...');
+      const hasPermission = await requestLocationPermission();
+      console.log('Permission granted:', hasPermission);
+
+      if (!hasPermission) {
+        console.log('Permission denied by user');
+        Toast.show({
+          type: 'error',
+          text1: 'Permission refusée',
+          text2: 'Permission de localisation requise pour obtenir votre adresse',
+          visibilityTime: 3000,
+          autoHide: true,
+          topOffset: 60,
+        });
+        setGettingLocation(false);
+        return;
+      }
+
+      console.log('Getting current position...');
+      Geolocation.getCurrentPosition(
+        async (position) => {
+          try {
+            console.log('Position received:', position.coords);
+            const { latitude, longitude } = position.coords;
+
+            console.log('Getting address from coordinates...');
+            const addressInfo = await getAddressFromCoordinates(latitude, longitude);
+            console.log('Address info received:', addressInfo);
+
+            // Update all address-related inputs
+            setInputs(prevState => ({
+              ...prevState,
+              address: addressInfo.streetAddress || addressInfo.displayName,
+              city: addressInfo.city,
+              postalCode: addressInfo.postalCode
+            }));
+
+            // Clear any previous errors
+            handleError(null, 'address');
+            handleError(null, 'city');
+            handleError(null, 'postalCode');
+
+            const successMessage = addressInfo.source === 'GPS Coordinates'
+              ? 'Position GPS récupérée! Veuillez vérifier les informations.'
+              : `Adresse récupérée via ${addressInfo.source}! 📍`;
+
             Toast.show({
-              type: 'error',
-              text1: 'Permission refusée',
-              text2: 'Permission de localisation requise pour obtenir votre adresse',
-              visibilityTime: 3000,
+              type: 'success',
+              text1: successMessage,
+              text2: `${addressInfo.city || 'Ville'} ${addressInfo.postalCode || 'Code postal'}`,
+              visibilityTime: 4000,
               autoHide: true,
               topOffset: 60,
             });
+
             setGettingLocation(false);
-            return;
+          } catch (error) {
+            console.error('Error getting address:', error);
+
+            // Provide basic GPS coordinates as fallback
+            const { latitude, longitude } = position.coords;
+            const roundedLat = latitude.toFixed(4);
+            const roundedLon = longitude.toFixed(4);
+
+            setInputs(prevState => ({
+              ...prevState,
+              address: `GPS: ${roundedLat}, ${roundedLon}`,
+              city: 'À préciser',
+              postalCode: ''
+            }));
+
+            Toast.show({
+              type: 'info',
+              text1: 'Position GPS obtenue',
+              text2: 'Veuillez vérifier et compléter les informations d\'adresse',
+              visibilityTime: 4000,
+              autoHide: true,
+              topOffset: 60,
+            });
+
+            setGettingLocation(false);
+          }
+        },
+        (error) => {
+          console.error('Geolocation error:', error);
+          let errorMessage = 'Erreur lors de la récupération de la localisation';
+
+          switch (error.code) {
+            case 1:
+              errorMessage = 'Permission de localisation refusée';
+              break;
+            case 2:
+              errorMessage = 'Position non disponible. Vérifiez que le GPS est activé';
+              break;
+            case 3:
+              errorMessage = 'Délai d\'attente dépassé. Réessayez';
+              break;
+            default:
+              errorMessage = 'Erreur de localisation inconnue';
           }
 
-          console.log('Getting current position...');
-          Geolocation.getCurrentPosition(
-            async (position) => {
-              try {
-                console.log('Position received:', position.coords);
-                const { latitude, longitude } = position.coords;
-                
-                console.log('Getting address from coordinates...');
-                const addressInfo = await getAddressFromCoordinates(latitude, longitude);
-                console.log('Address info received:', addressInfo);
-                
-                // Update all address-related inputs
-                setInputs(prevState => ({
-                  ...prevState, 
-                  address: addressInfo.streetAddress || addressInfo.displayName,
-                  city: addressInfo.city,
-                  postalCode: addressInfo.postalCode
-                }));
-                
-                // Clear any previous errors
-                handleError(null, 'address');
-                handleError(null, 'city');
-                handleError(null, 'postalCode');
-                
-                const successMessage = addressInfo.source === 'GPS Coordinates' 
-                  ? 'Position GPS récupérée! Veuillez vérifier les informations.'
-                  : `Adresse récupérée via ${addressInfo.source}! 📍`;
-                
-                Toast.show({
-                  type: 'success',
-                  text1: successMessage,
-                  text2: `${addressInfo.city || 'Ville'} ${addressInfo.postalCode || 'Code postal'}`,
-                  visibilityTime: 4000,
-                  autoHide: true,
-                  topOffset: 60,
-                });
-                
-                setGettingLocation(false);
-              } catch (error) {
-                console.error('Error getting address:', error);
-                
-                // Provide basic GPS coordinates as fallback
-                const { latitude, longitude } = position.coords;
-                const roundedLat = latitude.toFixed(4);
-                const roundedLon = longitude.toFixed(4);
-                
-                setInputs(prevState => ({
-                  ...prevState, 
-                  address: `GPS: ${roundedLat}, ${roundedLon}`,
-                  city: 'À préciser',
-                  postalCode: ''
-                }));
-                
-                Toast.show({
-                  type: 'info',
-                  text1: 'Position GPS obtenue',
-                  text2: 'Veuillez vérifier et compléter les informations d\'adresse',
-                  visibilityTime: 4000,
-                  autoHide: true,
-                  topOffset: 60,
-                });
-                setGettingLocation(false);
-              }
-            },
-            (error) => {
-              console.error('Geolocation error:', error);
-              let errorMessage = 'Erreur lors de la récupération de la localisation';
-              
-              switch (error.code) {
-                case 1:
-                  errorMessage = 'Permission de localisation refusée';
-                  break;
-                case 2:
-                  errorMessage = 'Position non disponible. Vérifiez que le GPS est activé';
-                  break;
-                case 3:
-                  errorMessage = 'Délai d\'attente dépassé. Réessayez';
-                  break;
-                default:
-                  errorMessage = 'Erreur de localisation inconnue';
-              }
-              
-              Toast.show({
-                type: 'error',
-                text1: 'Erreur de localisation',
-                text2: errorMessage,
-                visibilityTime: 4000,
-                autoHide: true,
-                topOffset: 60,
-              });
-              setGettingLocation(false);
-            },
-            {
-              enableHighAccuracy: true,
-              timeout: 20000,
-              maximumAge: 10000,
-              forceRequestLocation: true,
-              showLocationDialog: true,
-            }
-          );
-        } catch (error) {
-          console.error('Permission error:', error);
           Toast.show({
             type: 'error',
-            text1: 'Erreur de permission',
-            text2: 'Impossible d\'accéder à la localisation',
-            visibilityTime: 3000,
+            text1: 'Erreur de localisation',
+            text2: errorMessage,
+            visibilityTime: 4000,
             autoHide: true,
             topOffset: 60,
           });
+
           setGettingLocation(false);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 20000,
+          maximumAge: 10000,
+          forceRequestLocation: true,
+          showLocationDialog: true,
         }
-      };
+      );
+    } catch (error) {
+      console.error('Permission error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Erreur de permission',
+        text2: 'Impossible d\'accéder à la localisation',
+        visibilityTime: 3000,
+        autoHide: true,
+        topOffset: 60,
+      });
+      setGettingLocation(false);
+    }
+  };
 
-      const register = async () => {
-        setLoading(true);
-    
-        const concatenatedAddress = [
-          inputs.address,
-          inputs.city,
-          inputs.postalCode
-        ].filter(Boolean).join(', ');
+  const register = async () => {
+    setLoading(true);
+    const concatenatedAddress = [
+      inputs.address,
+      inputs.city,
+      inputs.postalCode
+    ].filter(Boolean).join(', ');
 
-        const inputData = {
-          module: 'societe',
-          name: inputs.fullname,
-          phone: inputs.phone,
-          address: concatenatedAddress,
-          email: inputs.email,
-          client: 1,
-          code_client: -1,
-          array_options: {
-            mdpmob: inputs.password,
-            ville: inputs.city,
-            code_postal: inputs.postalCode,
-          }
-        };
-
-        try {
-            const res = await axios.post(API_BASE_URL + 'thirdparties', inputData, {
-              headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'DOLAPIKEY': Token
-              }
-            });
-    
-            console.log("User ID:", res.data);
-            setLoading(false);
-            
-            showSuccessToastWithAnimation();
-
-            setTimeout(() => {
-              Animated.parallel([
-                Animated.timing(fadeAnim, {
-                  toValue: 0,
-                  duration: 200,
-                  useNativeDriver: true,
-                }),
-                Animated.timing(slideAnim, {
-                  toValue: -100,
-                  duration: 200,
-                  useNativeDriver: true,
-                }),
-              ]).start(() => {
-                navigation.replace('Login', {
-                  email: inputs.email,
-                  phone: inputs.phone,
-                  fromSignup: true
-                });
-              });
-            }, 2200);
-    
-        } catch (error) {
-            setLoading(false);
-            if (error.response) {
-                console.log("API Error:", error.response.data);
-                
-                Toast.show({
-                  type: 'error',
-                  text1: 'Erreur lors de la création',
-                  text2: error.response.data?.message || 'Une erreur s\'est produite',
-                  visibilityTime: 4000,
-                  autoHide: true,
-                  topOffset: 60,
-                });
-            } else {
-                console.log("Error:", error.message);
-                Toast.show({
-                  type: 'error',
-                  text1: 'Erreur de connexion',
-                  text2: 'Vérifiez votre connexion internet',
-                  visibilityTime: 4000,
-                  autoHide: true,
-                  topOffset: 60,
-                });
-            }
-        }
+    const inputData = {
+      module: 'societe',
+      name: inputs.fullname,
+      phone: inputs.phone,
+      address: concatenatedAddress,
+      email: inputs.email,
+      client: 1,
+      code_client: -1,
+      array_options: {
+        mdpmob: inputs.password,
+        ville: inputs.city,
+        code_postal: inputs.postalCode,
+      }
     };
-    
-      const handleOnchange = (text, input) => {
-        setInputs(prevState => ({...prevState, [input]: text}));
-      };
-      
-      const handleError = (error, input) => {
-        setErrors(prevState => ({...prevState, [input]: error}));
-      };
 
-      // Handle input focus with scrolling
-      const handleInputFocus = (inputName) => {
-        handleError(null, inputName);
-        
-        // Scroll to make sure the input is visible when keyboard appears
-        setTimeout(() => {
-          if (scrollViewRef.current) {
-            let scrollOffset = 0;
-            
-            // Calculate scroll offset based on input position
-            switch (inputName) {
-              case 'phone':
-                scrollOffset = 350;
-                break;
-              case 'password':
-                scrollOffset = 450;
-                break;
-              default:
-                scrollOffset = 200;
-            }
-            
-            scrollViewRef.current.scrollTo({ 
-              y: scrollOffset, 
-              animated: true 
-            });
-          }
-        }, 100);
-      };
+    try {
+      const res = await axios.post(API_BASE_URL + 'thirdparties', inputData, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'DOLAPIKEY': Token
+        }
+      });
 
-      const navigateToLogin = () => {
+      console.log("User ID:", res.data);
+      setLoading(false);
+      showSuccessToastWithAnimation();
+
+      setTimeout(() => {
         Animated.parallel([
           Animated.timing(fadeAnim, {
             toValue: 0,
@@ -539,22 +493,104 @@ export default function Signup({navigation}) {
             useNativeDriver: true,
           }),
         ]).start(() => {
-          navigation.replace('Login');
+          navigation.replace('Login', {
+            email: inputs.email,
+            phone: inputs.phone,
+            fromSignup: true
+          });
         });
-      };
+      }, 2200);
+
+    } catch (error) {
+      setLoading(false);
+      if (error.response) {
+        console.log("API Error:", error.response.data);
+        Toast.show({
+          type: 'error',
+          text1: 'Erreur lors de la création',
+          text2: error.response.data?.message || 'Une erreur s\'est produite',
+          visibilityTime: 4000,
+          autoHide: true,
+          topOffset: 60,
+        });
+      } else {
+        console.log("Error:", error.message);
+        Toast.show({
+          type: 'error',
+          text1: 'Erreur de connexion',
+          text2: 'Vérifiez votre connexion internet',
+          visibilityTime: 4000,
+          autoHide: true,
+          topOffset: 60,
+        });
+      }
+    }
+  };
+
+  const handleOnchange = (text, input) => {
+    setInputs(prevState => ({...prevState, [input]: text}));
+  };
+
+  const handleError = (error, input) => {
+    setErrors(prevState => ({...prevState, [input]: error}));
+  };
+
+  // Handle input focus with scrolling
+  const handleInputFocus = (inputName) => {
+    handleError(null, inputName);
+    // Scroll to make sure the input is visible when keyboard appears
+    setTimeout(() => {
+      if (scrollViewRef.current) {
+        let scrollOffset = 0;
+        // Calculate scroll offset based on input position
+        switch (inputName) {
+          case 'phone':
+            scrollOffset = 350;
+            break;
+          case 'password':
+            scrollOffset = 450;
+            break;
+          default:
+            scrollOffset = 200;
+        }
+
+        scrollViewRef.current.scrollTo({
+          y: scrollOffset,
+          animated: true
+        });
+      }
+    }, 100);
+  };
+
+  const navigateToLogin = () => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: -100,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      navigation.replace('Login');
+    });
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.backgroundColor }]}>
-      <StatusBar 
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'} 
-        backgroundColor={theme.backgroundColor} 
+      <StatusBar
+        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.backgroundColor}
       />
-      
+
       <Loader visible={loading && !showSuccessToast} />
-      
+
       {/* Beautiful Success Toast */}
       {showSuccessToast && (
-        <Animated.View 
+        <Animated.View
           style={[
             styles.successToastContainer,
             {
@@ -567,7 +603,7 @@ export default function Signup({navigation}) {
           <View style={[styles.successToast, { backgroundColor: '#4CAF50' }]}>
             <Animated.View
               style={{
-                transform: [{ 
+                transform: [{
                   scale: successToastAnim.interpolate({
                     inputRange: [0, 1],
                     outputRange: [0.8, 1],
@@ -575,10 +611,10 @@ export default function Signup({navigation}) {
                 }],
               }}
             >
-              <MaterialCommunityIcons 
-                name="account-check" 
-                size={28} 
-                color="#ffffff" 
+              <MaterialCommunityIcons
+                name="account-check"
+                size={28}
+                color="#ffffff"
               />
             </Animated.View>
             <View style={styles.successToastTextContainer}>
@@ -587,7 +623,7 @@ export default function Signup({navigation}) {
             </View>
             <Animated.View
               style={{
-                transform: [{ 
+                transform: [{
                   rotate: successToastAnim.interpolate({
                     inputRange: [0, 1],
                     outputRange: ['0deg', '360deg'],
@@ -595,24 +631,24 @@ export default function Signup({navigation}) {
                 }],
               }}
             >
-              <MaterialCommunityIcons 
-                name="login" 
-                size={24} 
-                color="#ffffff" 
+              <MaterialCommunityIcons
+                name="login"
+                size={24}
+                color="#ffffff"
               />
             </Animated.View>
           </View>
         </Animated.View>
       )}
-      
+
       {/* KeyboardAvoidingView for better keyboard handling */}
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         {/* Animated main content */}
-        <Animated.View 
+        <Animated.View
           style={[
             styles.animatedContainer,
             {
@@ -624,26 +660,26 @@ export default function Signup({navigation}) {
           {/* Theme Controls - Hide when keyboard is visible */}
           {!keyboardVisible && (
             <View style={[styles.themeControls, { paddingTop: insets.top + 15 }]}>
-              <TouchableOpacity 
-                style={[styles.themeButton, { 
+              <TouchableOpacity
+                style={[styles.themeButton, {
                   backgroundColor: theme.cardBackground || (isDarkMode ? '#2a2a2a' : '#f0f0f0'),
                   borderWidth: 1,
                   borderColor: theme.borderColor || (isDarkMode ? '#404040' : '#e0e0e0')
                 }]}
                 onPress={toggleTheme}
               >
-                <MaterialCommunityIcons 
-                  name={isDarkMode ? "weather-sunny" : "weather-night"} 
-                  size={22} 
-                  color={theme.primary} 
+                <MaterialCommunityIcons
+                  name={isDarkMode ? "weather-sunny" : "weather-night"}
+                  size={22}
+                  color={theme.primary}
                 />
                 <Text style={[styles.themeButtonText, { color: theme.textColor }]}>
                   {isDarkMode ? 'Clair' : 'Sombre'}
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
-                style={[styles.themeButton, { 
+              <TouchableOpacity
+                style={[styles.themeButton, {
                   backgroundColor: theme.cardBackground || (isDarkMode ? '#2a2a2a' : '#f0f0f0'),
                   borderWidth: 1,
                   borderColor: theme.borderColor || (isDarkMode ? '#404040' : '#e0e0e0')
@@ -671,12 +707,12 @@ export default function Signup({navigation}) {
           >
             {/* Header - Smaller when keyboard is visible */}
             <View style={[
-              styles.headerContainer, 
+              styles.headerContainer,
               { marginBottom: keyboardVisible ? 15 : 30 }
             ]}>
               <Text style={[
-                styles.title, 
-                { 
+                styles.title,
+                {
                   color: theme.textColor,
                   fontSize: keyboardVisible ? 24 : 32
                 }
@@ -731,9 +767,8 @@ export default function Signup({navigation}) {
                     isDarkMode={isDarkMode}
                   />
                 </View>
-                
                 <TouchableOpacity
-                  style={[styles.locationButton, { 
+                  style={[styles.locationButton, {
                     backgroundColor: theme.primary,
                     opacity: gettingLocation ? 0.7 : 1
                   }]}
@@ -741,17 +776,17 @@ export default function Signup({navigation}) {
                   disabled={gettingLocation}
                 >
                   {gettingLocation ? (
-                    <MaterialCommunityIcons 
-                      name="loading" 
-                      size={20} 
-                      color="white" 
+                    <MaterialCommunityIcons
+                      name="loading"
+                      size={20}
+                      color="white"
                       style={styles.spinIcon}
                     />
                   ) : (
-                    <MaterialCommunityIcons 
-                      name="crosshairs-gps" 
-                      size={20} 
-                      color="white" 
+                    <MaterialCommunityIcons
+                      name="crosshairs-gps"
+                      size={20}
+                      color="white"
                     />
                   )}
                 </TouchableOpacity>
@@ -773,7 +808,6 @@ export default function Signup({navigation}) {
                     isDarkMode={isDarkMode}
                   />
                 </View>
-                
                 <View style={styles.postalContainer}>
                   <Input
                     value={inputs.postalCode}
@@ -824,8 +858,48 @@ export default function Signup({navigation}) {
                 isDarkMode={isDarkMode}
               />
 
-              <Button 
-                title="S'inscrire" 
+              {/* NEW: Terms and Conditions Section */}
+              <View style={styles.termsContainer}>
+                <TouchableOpacity
+                  style={styles.termsCheckboxContainer}
+                  onPress={toggleTermsAcceptance}
+                  activeOpacity={0.7}
+                >
+                  <View style={[
+                    styles.checkbox,
+                    {
+                      backgroundColor: termsAccepted ? theme.primary : 'transparent',
+                      borderColor: errors.terms ? '#FF6B6B' : theme.primary,
+                    }
+                  ]}>
+                    {termsAccepted && (
+                      <MaterialCommunityIcons
+                        name="check"
+                        size={18}
+                        color="white"
+                      />
+                    )}
+                  </View>
+                  <View style={styles.termsTextContainer}>
+                    <Text style={[styles.termsText, { color: theme.textColor }]}>
+                      J'accepte les{' '}
+                      <Text
+                        style={[styles.termsLink, { color: theme.primary }]}
+                        onPress={openTermsAndConditions}
+                      >
+                        Conditions d'utilisation
+                      </Text>
+                      {' '}de PetCorner
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+                {errors.terms && (
+                  <Text style={styles.termsError}>{errors.terms}</Text>
+                )}
+              </View>
+
+              <Button
+                title="S'inscrire"
                 onPress={validate}
                 theme={theme}
                 isDarkMode={isDarkMode}
@@ -835,7 +909,7 @@ export default function Signup({navigation}) {
                 onPress={navigateToLogin}
                 style={[styles.loginText, { color: theme.textColor }]}
               >
-                Vous avez déjà un compte ? 
+                Vous avez déjà un compte ?
                 <Text style={[styles.loginLink, { color: theme.primary }]}>
                   {' '}Connectez-vous
                 </Text>
@@ -844,7 +918,7 @@ export default function Signup({navigation}) {
           </ScrollView>
         </Animated.View>
       </KeyboardAvoidingView>
-      
+
       <Toast />
     </SafeAreaView>
   )
@@ -924,7 +998,7 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     justifyContent: 'center',
-    alignItems: 'center', 
+    alignItems: 'center',
     elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -951,6 +1025,44 @@ const styles = StyleSheet.create({
   },
   spinIcon: {
     animation: 'spin 1s linear infinite',
+  },
+  // NEW STYLES: Terms and Conditions
+  termsContainer: {
+    marginBottom: 20,
+    marginTop: 10,
+  },
+  termsCheckboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 5,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    marginRight: 12,
+    marginTop: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  termsTextContainer: {
+    flex: 1,
+  },
+  termsText: {
+    fontSize: 14,
+    lineHeight: 20,
+    flexWrap: 'wrap',
+  },
+  termsLink: {
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  termsError: {
+    color: '#FF6B6B',
+    fontSize: 12,
+    marginTop: 5,
+    marginLeft: 36,
   },
   loginText: {
     fontWeight: '500',
@@ -997,4 +1109,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.9,
   },
-})
+});
