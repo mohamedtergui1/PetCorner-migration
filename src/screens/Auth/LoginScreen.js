@@ -268,7 +268,7 @@ export default function LoginScreen({ navigation, route }) {
     loadingRotation.start();
 
     try {
-      const response = await axios.get(API_BASE_URL + 'thirdparties/login', {
+      const response = await axios.get(API_BASE_URL + '/thirdparties/login', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
