@@ -21,8 +21,18 @@ try {
   });
 }
 
+// Import cart context
+let useCart;
+try {
+  useCart = require('../src/context/CartContext').useCart;
+} catch (e) {
+  console.log('useCart import error:', e);
+  // Fallback hook
+  useCart = () => ({ cartCount: 0 });
+}
+
 // Import screens with error handling
-let HomeScreen, SearchScreen, OrderScreen, ProfileScreen, CartScreen, CartContext;
+let HomeScreen, SearchScreen, OrderScreen, ProfileScreen, CartScreen;
 
 try {
   HomeScreen = require('../src/screens/HomeScreen').default;
@@ -59,21 +69,57 @@ try {
   CartScreen = () => <View><Text>CartScreen not found</Text></View>;
 }
 
-try {
-  CartContext = require('../src/context/CartContext').CartContext;
-} catch (e) {
-  console.log('CartContext import error:', e);
-  // Create a fallback context
-  CartContext = React.createContext({ cartItems: [] });
-}
-
 const Tab = createBottomTabNavigator();
 
+// Custom cart icon component with badge
+const CartTabIcon = ({ focused, color, size }) => {
+  const { cartCount } = useCart();
+  
+  return (
+    <View style={{ position: 'relative' }}>
+      <MaterialCommunityIcons
+        name="shopping"
+        size={size}
+        color={color}
+      />
+      {cartCount > 0 && (
+        <View style={{
+          position: 'absolute',
+          right: -8,
+          top: -8,
+          backgroundColor: '#ff4444',
+          borderRadius: 10,
+          minWidth: 20,
+          height: 20,
+          justifyContent: 'center',
+          alignItems: 'center',
+          borderWidth: 2,
+          borderColor: '#ffffff',
+        }}>
+          <Text style={{
+            color: 'white',
+            fontSize: 12,
+            fontWeight: 'bold',
+            textAlign: 'center',
+          }}>
+            {cartCount > 99 ? '99+' : cartCount}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+};
+
 const getTabBarIcon = (route, focused, color, size) => {
+  // Handle cart tab specially with badge
+  if (route.name === 'CartTab') {
+    return <CartTabIcon focused={focused} color={color} size={size} />;
+  }
+  
+  // Handle other tabs normally
   const iconMap = {
     'HomeTab': 'home',
     'SearchTab': 'magnify',
-    'CartTab': 'shopping',
     'OrderTab': 'clipboard-list',
     'ProfileTab': 'account'
   };
@@ -110,31 +156,6 @@ const TabNavigator = () => {
   const INACTIVE_COLOR = isDarkMode ? '#888888' : '#666666';
   const TAB_BAR_BACKGROUND = isDarkMode ? '#1a1a1a' : '#ffffff';
   const BORDER_COLOR = isDarkMode ? '#333333' : '#e0e0e0';
-
-  // Get cart items from context with fallback and debugging
-  let cartItemCount = 0;
-  
-  try {
-    const cartContext = useContext(CartContext);
-    console.log('Cart Context:', cartContext); // Debug log
-    
-    if (cartContext && cartContext.cartItems) {
-      cartItemCount = cartContext.cartItems.length;
-      console.log('Cart Items:', cartContext.cartItems); // Debug log
-      console.log('Cart Item Count:', cartItemCount); // Debug log
-    } else {
-      console.log('No cart items found in context');
-      // For testing purposes, set a static count
-      cartItemCount = 3; // Remove this line once your context is working
-    }
-  } catch (e) {
-    console.log('CartContext usage error:', e);
-    // For testing purposes, set a static count
-    cartItemCount = 2; // Remove this line once your context is working
-  }
-
-  // Force show badge for testing (remove this once context is working)
-  const displayBadgeCount = cartItemCount > 0 ? cartItemCount : 1; // This will always show at least 1
 
   return (
     <Tab.Navigator
@@ -187,20 +208,7 @@ const TabNavigator = () => {
         component={CartScreen}
         options={{
           tabBarAccessibilityLabel: 'Panier',
-          // For testing: always show badge
-          tabBarBadge: displayBadgeCount, // This will always show the count
-          tabBarBadgeStyle: {
-            backgroundColor: '#ff4444',
-            color: 'white',
-            fontSize: 12,
-            fontWeight: 'bold',
-            minWidth: 20,
-            height: 20,
-            borderRadius: 10,
-            marginTop: 2,
-            textAlign: 'center',
-            lineHeight: 20,
-          },
+          // No need for tabBarBadge anymore, handled in custom icon
         }}
       />
       
