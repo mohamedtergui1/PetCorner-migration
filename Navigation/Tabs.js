@@ -1,182 +1,210 @@
-import { Dimensions, StyleSheet, View, Platform, Text } from 'react-native';
-import React from 'react';
+import React, { useContext } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import HomeScreen from '../src/screens/HomeScreen';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import OrderScreen from '../src/screens/OrderScreen';
-import SearchScreen from '../src/screens/SearchScreen';
-import ProfileScreen from '../src/screens/ProfileScreen';
-import { useTheme } from '../src/context/ThemeContext';
+import { View, Text } from 'react-native';
 
-const { width } = Dimensions.get('window');
+// Import theme context
+let useTheme;
+try {
+  useTheme = require('../src/context/ThemeContext').useTheme;
+} catch (e) {
+  console.log('ThemeContext import error:', e);
+  // Fallback theme hook
+  useTheme = () => ({
+    theme: {
+      primary: '#fe9400',
+      backgroundColor: '#ffffff',
+      textColor: '#000000',
+    },
+    isDarkMode: false,
+    colorTheme: 'orange'
+  });
+}
 
-export default function TabNavigator() {
-  const { theme, isDarkMode } = useTheme();
-  const Tab = createBottomTabNavigator();
+// Import screens with error handling
+let HomeScreen, SearchScreen, OrderScreen, ProfileScreen, CartScreen, CartContext;
 
-  const getTabBarIcon = (routeName, color, size, focused) => {
-    const iconMap = {
-      'HomeTab': 'home',
-      'SearchTab': 'magnify',
-      'OrderTab': 'clipboard-list',
-      'ProfileTab': 'account'
-    };
+try {
+  HomeScreen = require('../src/screens/HomeScreen').default;
+} catch (e) {
+  console.log('HomeScreen import error:', e);
+  HomeScreen = () => <View><Text>HomeScreen not found</Text></View>;
+}
 
-    const iconName = iconMap[routeName];
-    const iconSize = focused ? 26 : 22;
+try {
+  SearchScreen = require('../src/screens/SearchScreen').default;
+} catch (e) {
+  console.log('SearchScreen import error:', e);
+  SearchScreen = () => <View><Text>SearchScreen not found</Text></View>;
+}
 
-    return (
-      <View style={[
-        styles.iconContainer,
-        focused && [styles.activeIconContainer, { backgroundColor: theme.primaryLight }]
-      ]}>
-        <MaterialCommunityIcons 
-          name={iconName} 
-          color={color} 
-          size={iconSize} 
-        />
-        {focused && <View style={[styles.activeIndicator, { backgroundColor: theme.primary }]} />}
-      </View>
-    );
+try {
+  OrderScreen = require('../src/screens/OrderScreen').default;
+} catch (e) {
+  console.log('OrderScreen import error:', e);
+  OrderScreen = () => <View><Text>OrderScreen not found</Text></View>;
+}
+
+try {
+  ProfileScreen = require('../src/screens/ProfileScreen').default;
+} catch (e) {
+  console.log('ProfileScreen import error:', e);
+  ProfileScreen = () => <View><Text>ProfileScreen not found</Text></View>;
+}
+
+try {
+  CartScreen = require('../src/screens/CartScreen').default;
+} catch (e) {
+  console.log('CartScreen import error:', e);
+  CartScreen = () => <View><Text>CartScreen not found</Text></View>;
+}
+
+try {
+  CartContext = require('../src/context/CartContext').CartContext;
+} catch (e) {
+  console.log('CartContext import error:', e);
+  // Create a fallback context
+  CartContext = React.createContext({ cartItems: [] });
+}
+
+const Tab = createBottomTabNavigator();
+
+const getTabBarIcon = (route, focused, color, size) => {
+  const iconMap = {
+    'HomeTab': 'home',
+    'SearchTab': 'magnify',
+    'CartTab': 'shopping',
+    'OrderTab': 'clipboard-list',
+    'ProfileTab': 'account'
   };
+  
+  const iconName = iconMap[route.name] || 'information';
+  
+  return (
+    <MaterialCommunityIcons
+      name={iconName}
+      size={size}
+      color={color}
+    />
+  );
+};
+
+const tabBarLabel = (route) => {
+  const labels = {
+    'HomeTab': 'Accueil',
+    'SearchTab': 'Recherche',
+    'CartTab': 'Panier',
+    'OrderTab': 'Commandes',
+    'ProfileTab': 'Mon compte'
+  };
+  return labels[route.name] || route.name;
+};
+
+const TabNavigator = () => {
+  // Get theme colors
+  const { theme, isDarkMode, colorTheme } = useTheme();
+  
+  // Define colors based on theme
+  const PRIMARY_COLOR = colorTheme === 'blue' ? '#007afe' : '#fe9400';
+  const SECONDARY_COLOR = colorTheme === 'blue' ? '#fe9400' : '#007afe';
+  const INACTIVE_COLOR = isDarkMode ? '#888888' : '#666666';
+  const TAB_BAR_BACKGROUND = isDarkMode ? '#1a1a1a' : '#ffffff';
+  const BORDER_COLOR = isDarkMode ? '#333333' : '#e0e0e0';
+
+  // Get cart items from context with fallback
+  let cartItemCount = 0;
+  
+  try {
+    const { cartItems } = useContext(CartContext);
+    cartItemCount = cartItems?.length || 0;
+  } catch (e) {
+    console.log('CartContext usage error:', e);
+    cartItemCount = 0;
+  }
 
   return (
     <Tab.Navigator
-      screenOptions={({ route, navigation }) => ({
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ focused, color, size }) => getTabBarIcon(route, focused, color, size),
+        tabBarLabel: tabBarLabel(route),
+        tabBarActiveTintColor: PRIMARY_COLOR,
+        tabBarInactiveTintColor: INACTIVE_COLOR,
+        tabBarStyle: {
+          backgroundColor: TAB_BAR_BACKGROUND,
+          borderTopColor: BORDER_COLOR,
+          borderTopWidth: 1,
+          paddingBottom: 5,
+          paddingTop: 5,
+          height: 60,
+          elevation: 8,
+          shadowColor: isDarkMode ? '#000000' : '#000000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: isDarkMode ? 0.3 : 0.1,
+          shadowRadius: 8,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '500',
+        },
+        tabBarItemStyle: {
+          paddingVertical: 2,
+        },
         headerShown: false,
-        tabBarActiveTintColor: theme.primary,
-        tabBarInactiveTintColor: theme.secondaryTextColor,
-        tabBarShowLabel: true,
-        tabBarHideOnKeyboard: true,
-        tabBarStyle: [
-          styles.tabBar,
-          {
-            backgroundColor: theme.cardBackground,
-            borderTopColor: isDarkMode 
-              ? 'rgba(255,255,255,0.08)' 
-              : 'rgba(0,0,0,0.08)',
-          }
-        ],
-        tabBarLabelStyle: styles.tabBarLabel,
-        tabBarItemStyle: styles.tabBarItem,
-        tabBarIcon: ({ color, size, focused }) => 
-          getTabBarIcon(route.name, color, size, focused),
-        tabBarLabel: ({ focused, color }) => {
-          const labels = {
-            'HomeTab': 'Accueil',
-            'SearchTab': 'Recherche',
-            'OrderTab': 'Commandes',
-            'ProfileTab': 'Mon compte'
-          };
-          
-          return (
-            <Text style={[
-              styles.tabBarLabel,
-              { 
-                color: focused ? theme.primary : theme.secondaryTextColor,
-                fontWeight: focused ? '700' : '500'
-              }
-            ]}>
-              {labels[route.name]}
-            </Text>
-          );
-        },
       })}
-      screenListeners={{
-        tabPress: (e) => {
-          // Add haptic feedback on tab press (iOS)
-          if (Platform.OS === 'ios') {
-            // You can add haptic feedback here if needed
-            // Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          }
-        },
-      }}
     >
-      <Tab.Screen 
-        name="HomeTab" 
-        component={HomeScreen} 
+      <Tab.Screen
+        name="HomeTab"
+        component={HomeScreen}
         options={{
           tabBarAccessibilityLabel: 'Accueil',
-        }} 
+        }}
       />
-      <Tab.Screen 
-        name="SearchTab" 
-        component={SearchScreen} 
+      
+      <Tab.Screen
+        name="SearchTab"
+        component={SearchScreen}
         options={{
           tabBarAccessibilityLabel: 'Recherche',
-        }} 
+        }}
       />
-      <Tab.Screen 
-        name="OrderTab" 
-        component={OrderScreen} 
+      
+      <Tab.Screen
+        name="CartTab"
+        component={CartScreen}
+        options={{
+          tabBarAccessibilityLabel: 'Panier',
+          // Show badge only if there are items in cart
+          tabBarBadge: cartItemCount > 0 ? cartItemCount : undefined,
+          tabBarBadgeStyle: {
+            backgroundColor: '#ff4444',
+            color: 'white',
+            fontSize: 12,
+            fontWeight: 'bold',
+            minWidth: 20,
+            height: 20,
+            borderRadius: 10,
+            marginTop: 2,
+          },
+        }}
+      />
+      
+      <Tab.Screen
+        name="OrderTab"
+        component={OrderScreen}
         options={{
           tabBarAccessibilityLabel: 'Commandes',
-          tabBarBadge: undefined, // You can add badge count here
-        }} 
+        }}
       />
-      <Tab.Screen 
-        name="ProfileTab" 
-        component={ProfileScreen} 
+      
+      <Tab.Screen
+        name="ProfileTab"
+        component={ProfileScreen}
         options={{
           tabBarAccessibilityLabel: 'Mon compte',
-        }} 
+        }}
       />
     </Tab.Navigator>
   );
-}
+};
 
-const styles = StyleSheet.create({
-  tabBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderTopWidth: 0.5,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 8,
-    paddingTop: 8,
-    height: Platform.OS === 'ios' ? 85 : 65,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: {
-          width: 0,
-          height: -4,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
-  },
-  tabBarItem: {
-    paddingVertical: 4,
-  },
-  tabBarLabel: {
-    fontSize: 11,
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  iconContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 40,
-    height: 40,
-    position: 'relative',
-  },
-  activeIconContainer: {
-    borderRadius: 20,
-    padding: 8,
-    transform: [{ scale: 1.1 }],
-  },
-  activeIndicator: {
-    position: 'absolute',
-    bottom: -2,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-  },
-});
+export default TabNavigator;
