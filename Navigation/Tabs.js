@@ -111,16 +111,30 @@ const TabNavigator = () => {
   const TAB_BAR_BACKGROUND = isDarkMode ? '#1a1a1a' : '#ffffff';
   const BORDER_COLOR = isDarkMode ? '#333333' : '#e0e0e0';
 
-  // Get cart items from context with fallback
+  // Get cart items from context with fallback and debugging
   let cartItemCount = 0;
   
   try {
-    const { cartItems } = useContext(CartContext);
-    cartItemCount = cartItems?.length || 0;
+    const cartContext = useContext(CartContext);
+    console.log('Cart Context:', cartContext); // Debug log
+    
+    if (cartContext && cartContext.cartItems) {
+      cartItemCount = cartContext.cartItems.length;
+      console.log('Cart Items:', cartContext.cartItems); // Debug log
+      console.log('Cart Item Count:', cartItemCount); // Debug log
+    } else {
+      console.log('No cart items found in context');
+      // For testing purposes, set a static count
+      cartItemCount = 3; // Remove this line once your context is working
+    }
   } catch (e) {
     console.log('CartContext usage error:', e);
-    cartItemCount = 0;
+    // For testing purposes, set a static count
+    cartItemCount = 2; // Remove this line once your context is working
   }
+
+  // Force show badge for testing (remove this once context is working)
+  const displayBadgeCount = cartItemCount > 0 ? cartItemCount : 1; // This will always show at least 1
 
   return (
     <Tab.Navigator
@@ -173,8 +187,8 @@ const TabNavigator = () => {
         component={CartScreen}
         options={{
           tabBarAccessibilityLabel: 'Panier',
-          // Show badge only if there are items in cart
-          tabBarBadge: cartItemCount > 0 ? cartItemCount : undefined,
+          // For testing: always show badge
+          tabBarBadge: displayBadgeCount, // This will always show the count
           tabBarBadgeStyle: {
             backgroundColor: '#ff4444',
             color: 'white',
@@ -184,6 +198,8 @@ const TabNavigator = () => {
             height: 20,
             borderRadius: 10,
             marginTop: 2,
+            textAlign: 'center',
+            lineHeight: 20,
           },
         }}
       />

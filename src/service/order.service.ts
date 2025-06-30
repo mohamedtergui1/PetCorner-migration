@@ -4,11 +4,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, Platform, ToastAndroid } from 'react-native';
 import apiClient from '../axiosInstance/AxiosInstance'; // Use existing API client
 import Toast from 'react-native-simple-toast';
-import { 
-  Order, 
-  OrderFilterParams, 
-  UpdateOrderStatusRequest, 
-  UpdateOrderStatusResponse 
+import {
+  Order,
+  OrderFilterParams,
+  UpdateOrderStatusRequest,
+  UpdateOrderStatusResponse
 } from '../types/order.types';
 
 // Enhanced types for cart integration
@@ -54,7 +54,7 @@ interface CreateOrderResponse {
 }
 
 class OrderService {
-  
+
   private async getCurrentUser() {
     try {
       const userData = await AsyncStorage.getItem('userData');
@@ -155,7 +155,7 @@ class OrderService {
       // Calculate subtotal and total with proper tax breakdown
       let subtotalHT = 0;
       let subtotalTTC = 0;
-      
+
       // Calculate both HT and TTC totals in one loop
       orderData.products.forEach(product => {
         const quantity = orderData.quantities[product.id] || 1;
@@ -163,11 +163,11 @@ class OrderService {
         // Correct VAT calculation: Price HT = Price TTC / (1 + VAT rate)
         // With 20% VAT: Price HT = Price TTC / 1.20
         const priceHT = priceTTC / 1.20;
-        
+
         subtotalHT += priceHT * quantity;
         subtotalTTC += priceTTC * quantity;
       });
-      
+
       const totalTax = subtotalTTC - subtotalHT; // Total tax amount
       const deliveryCost = orderData.deliveryCost || 0;
       const totalAmountTTC = subtotalTTC + deliveryCost;
@@ -176,13 +176,13 @@ class OrderService {
       const orderLines = orderData.products.map(product => {
         const quantity = orderData.quantities[product.id] || 1;
         const priceTTC = parseFloat(product.price_ttc?.toString() || '0') || 0;
-        
+
         // Correct VAT calculation from TTC price
         // Formula: Price HT = Price TTC / (1 + VAT rate)
         // With 20% VAT: Price HT = Price TTC / 1.20
         const priceHT = Math.round((priceTTC / 1.20) * 100) / 100; // Round to 2 decimal places
         const taxAmount = Math.round((priceTTC - priceHT) * 100) / 100; // Tax amount per unit
-        
+
         return {
           fk_product: product.id,
           qty: quantity,
@@ -193,25 +193,40 @@ class OrderService {
         };
       });
 
-      // Create delivery note for public note (customer-facing)
-      let deliveryNote = `Livraison à: ${orderData.address}, ${orderData.city} ${orderData.zipCode}`;
-      
-      if (orderData.distance !== undefined && orderData.distance !== null) {
-        deliveryNote += `\nDistance: ${orderData.distance.toFixed(1)}km`;
-      }
-      
-      if (deliveryCost > 0) {
-        deliveryNote += `\nFrais de livraison: ${deliveryCost.toFixed(2)} DH`;
-      }
-      
-      if (orderData.paymentMethod === 'credit_card' && orderData.cardDetails) {
-        deliveryNote += `\nPaiement par carte: ****${orderData.cardDetails.number.slice(-4)}`;
-      } else if (orderData.paymentMethod === 'espèces') {
-        deliveryNote += `\nPaiement en espèces à la livraison`;
-      }
+      // Create comprehensive private note with all order information
+      let privateNote = `Commande créée depuis l'application mobile\n`;
+      privateNote += `Client ID: ${clientID}\n`;
+      privateNote += `Date: ${new Date().toLocaleDateString('fr-FR')}\n`;
+      privateNote += `Nombre d'articles: ${orderData.products.length}\n\n`;
 
-      // Create private note (internal use only - no payment or delivery info)
-      const privateNote = `Commande créée depuis l'application mobile\nClient ID: ${clientID}\nNombre d'articles: ${orderData.products.length}\nTotal HT: ${subtotalHT.toFixed(2)} DH\nTotal TTC: ${subtotalTTC.toFixed(2)} DH\nTVA: ${totalTax.toFixed(2)} DH`;
+      // Financial details
+      privateNote += `--- DÉTAILS FINANCIERS ---\n`;
+      privateNote += `Total HT: ${subtotalHT.toFixed(2)} DH\n`;
+      privateNote += `Total TTC: ${subtotalTTC.toFixed(2)} DH\n`;
+      privateNote += `TVA: ${totalTax.toFixed(2)} DH\n`;
+      if (deliveryCost > 0) {
+        privateNote += `Frais de livraison: ${deliveryCost.toFixed(2)} DH\n`;
+      }
+      privateNote += `Total final: ${totalAmountTTC.toFixed(2)} DH\n\n`;
+
+      // Delivery details
+      privateNote += `--- LIVRAISON ---\n`;
+      privateNote += `Adresse: ${orderData.address}\n`;
+      privateNote += `Ville: ${orderData.city}\n`;
+      privateNote += `Code postal: ${orderData.zipCode}\n`;
+      if (orderData.distance !== undefined && orderData.distance !== null) {
+        privateNote += `Distance: ${orderData.distance.toFixed(1)}km\n`;
+      }
+      privateNote += `\n`;
+
+      // Payment details
+      privateNote += `--- PAIEMENT ---\n`;
+      privateNote += `Mode: ${orderData.paymentMethod}\n`;
+      if (orderData.paymentMethod === 'credit_card' && orderData.cardDetails) {
+        privateNote += `Carte: ****${orderData.cardDetails.number.slice(-4)}\n`;
+      } else if (orderData.paymentMethod === 'espèces') {
+        privateNote += `Paiement en espèces à la livraison\n`;
+      }
 
       // Prepare order data for your custom Dolibarr API
       // Based on your backend: { "socid": 2, "date": 1595196000, "type": 0, "lines": [{ "fk_product": 2, "qty": 1 }] }
@@ -227,19 +242,17 @@ class OrderService {
           total_tva: line.total_tva, // Total tax for this line
           tva_tx: line.tva_tx // VAT rate (20%)
         })),
-        // Public note: delivery and payment info (customer-facing)
-        note_public: deliveryNote,
-        // Private note: internal info only (no sensitive payment/delivery details)
+        // Only use private note with all comprehensive information
         note_private: privateNote
       };
 
       // Create the order
       const response = await apiClient.post('/orders', dolibarrOrderData);
-      
+
       // Your backend returns "id :12345" format based on the code
       if (response.data) {
         let orderId;
-        
+
         // Handle different response formats
         if (typeof response.data === 'string' && response.data.includes('id :')) {
           // Extract ID from "id :12345" format
@@ -251,7 +264,7 @@ class OrderService {
           // Direct ID number
           orderId = response.data;
         }
-        
+
         if (orderId) {
           return {
             success: true,
@@ -260,14 +273,14 @@ class OrderService {
           };
         }
       }
-      
+
       throw new Error('Invalid response from server');
 
     } catch (error) {
       console.error('Error creating order:', error);
-      
+
       let errorMessage = 'Erreur lors de la création de la commande';
-      
+
       if (error.response) {
         errorMessage = error.response.data?.message || error.response.data?.error || errorMessage;
       } else if (error.request) {
@@ -302,13 +315,13 @@ class OrderService {
       if (result.success) {
         // Clear the cart
         await clearCart();
-        
+
         // Show success message
         this.showToast('Les articles seront livrés BIENTÔT !', true);
-        
+
         // Navigate to orders screen
         navigation.navigate('OrderScreen');
-        
+
       } else {
         // Show error message
         Alert.alert('Erreur', result.error || 'Une erreur est survenue lors de la commande');
@@ -371,16 +384,16 @@ class OrderService {
    * Update order status - Fixed to use proper Dolibarr field names
    */
   async updateOrderStatus(
-    orderId: number, 
+    orderId: number,
     updateData: UpdateOrderStatusRequest
   ): Promise<UpdateOrderStatusResponse> {
     try {
       // Get current order to preserve existing notes
       const currentOrder = await this.getOrderById(orderId);
-      
+
       // Use proper Dolibarr field names
       const dolibarrUpdateData: any = {};
-      
+
       // Preserve existing notes
       if (currentOrder.note_private) {
         dolibarrUpdateData.note_private = currentOrder.note_private;
@@ -388,16 +401,16 @@ class OrderService {
       if (currentOrder.note_public) {
         dolibarrUpdateData.note_public = currentOrder.note_public;
       }
-      
+
       // Add new data
       if (updateData.status !== undefined) {
         dolibarrUpdateData.statut = updateData.status.toString(); // Convert to string for Dolibarr
       }
-      
+
       if (updateData.note_private) {
         dolibarrUpdateData.note_private = updateData.note_private;
       }
-      
+
       if (updateData.note_public) {
         dolibarrUpdateData.note_public = updateData.note_public;
       }
@@ -425,9 +438,9 @@ class OrderService {
     try {
       // Get current order
       const currentOrder = await this.getOrderById(orderId);
-      
+
       const updateData: any = {};
-      
+
       // Preserve existing notes
       if (currentOrder.note_private) {
         updateData.note_private = currentOrder.note_private;
@@ -435,7 +448,7 @@ class OrderService {
       if (currentOrder.note_public) {
         updateData.note_public = currentOrder.note_public;
       }
-      
+
       // Add new note
       if (isPrivate) {
         updateData.note_private = note;
@@ -576,7 +589,7 @@ class OrderService {
           onPress: async () => {
             try {
               const result = await this.setOrderAsDelivered(orderId);
-              
+
               if (result.success) {
                 Alert.alert('Succès', 'La commande a été marquée comme livrée');
                 if (onSuccess) {
@@ -613,7 +626,7 @@ class OrderService {
   ): Promise<void> {
     try {
       const result = await this.setOrderAsDelivered(orderId, deliveryNote);
-      
+
       if (result.success) {
         Alert.alert('Succès', 'La commande a été marquée comme livrée avec la note de livraison');
         if (onSuccess) {
@@ -647,7 +660,7 @@ class OrderService {
   ): Promise<void> {
     try {
       const result = await this.addOrderNote(orderId, note, isPrivate);
-      
+
       if (result.success) {
         Alert.alert('Succès', 'La note a été ajoutée à la commande');
         if (onSuccess) {
@@ -693,7 +706,7 @@ class OrderService {
           onPress: async () => {
             try {
               const result = await this.updateOrderStatus(orderId, { status: newStatus });
-              
+
               if (result.success) {
                 Alert.alert('Succès', `Le statut de la commande a été changé vers "${statusText}"`);
                 if (onSuccess) {
@@ -742,7 +755,7 @@ class OrderService {
           onPress: async () => {
             try {
               const result = await this.cancelOrder(orderId, cancelReason);
-              
+
               if (result.success) {
                 Alert.alert('Succès', 'La commande a été annulée');
                 if (onSuccess) {
@@ -775,7 +788,7 @@ class OrderService {
     setRefreshing: (refreshing: boolean) => void
   ): Promise<void> {
     setRefreshing(true);
-    await this.fetchAllOrdersWithState(setOrders, () => {}, setRefreshing);
+    await this.fetchAllOrdersWithState(setOrders, () => { }, setRefreshing);
   }
 }
 
