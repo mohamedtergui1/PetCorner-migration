@@ -12,7 +12,11 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
+  Keyboard,
+  PermissionsAndroid,
 } from 'react-native';
+import Geolocation from 'react-native-geolocation-service';
+import Toast from 'react-native-toast-message';
 import FeatherIcon from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -26,11 +30,12 @@ import Token from '../../config/TokenDolibar';
 export default function UserDetailsScreen({ navigation }) {
   const [userDetails, setUserDetails] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [loading, setLoading] = useState(true); // Start with true
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const [showSuccess, setShowSuccess] = useState(false);
-  const [debugInfo, setDebugInfo] = useState('Starting...');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [gettingLocation, setGettingLocation] = useState(false);
   
   // Form inputs for editing
   const [inputs, setInputs] = useState({
@@ -52,6 +57,23 @@ export default function UserDetailsScreen({ navigation }) {
   const TEXT_COLOR = isDarkMode ? '#ffffff' : '#000000';
   const TEXT_COLOR_SECONDARY = isDarkMode ? '#b3b3b3' : '#666666';
   const BORDER_COLOR = isDarkMode ? '#2c2c2c' : '#e0e0e0';
+
+  // Keyboard listeners
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => setKeyboardVisible(true)
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+
+    return () => {
+      keyboardDidShowListener?.remove();
+      keyboardDidHideListener?.remove();
+    };
+  }, []);
 
   // Custom Toast Component
   const showToast = (type, title, message) => {
@@ -108,14 +130,160 @@ export default function UserDetailsScreen({ navigation }) {
     return parts.join(', ') || 'Non renseigné';
   };
 
+  // Request location permission
+  const requestLocationPermission = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const checkResult = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+        );
+        
+        if (checkResult === true) return true;
+
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: 'Permission de localisation',
+            message: 'Cette application a besoin d\'accéder à votre localisation pour obtenir votre adresse automatiquement.',
+            buttonNeutral: 'Plus tard',
+            buttonNegative: 'Refuser',
+            buttonPositive: 'Accepter',
+          }
+        );
+        
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch (err) {
+        console.warn('Permission error:', err);
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // Get address from coordinates
+  const getAddressFromCoordinates = async (latitude, longitude) => {
+    try {
+      const response = await axios.get(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1&zoom=18&accept-language=fr`,
+        {
+          headers: {
+            'User-Agent': 'PetCornerApp/1.0',
+            'Referer': 'https://your-app-domain.com'
+          },
+          timeout: 10000
+        }
+      );
+      
+      if (response.data && response.data.address) {
+        const addressData = response.data.address;
+        const neighbourhood = addressData.neighbourhood || addressData.suburb || addressData.quarter || addressData.district || '';
+        const city = addressData.city || addressData.town || addressData.village || addressData.municipality || '';
+        const postalCode = addressData.postcode || '';
+        
+        const quartierAddress = neighbourhood || city || 'Quartier non spécifié';
+        
+        return {
+          streetAddress: quartierAddress,
+          city: city,
+          postalCode: postalCode,
+          fullAddress: [quartierAddress, city, postalCode].filter(Boolean).join(', '),
+          displayName: response.data.display_name,
+          source: 'Nominatim'
+        };
+      }
+      throw new Error('No address data');
+    } catch (error) {
+      console.log('Geocoding failed:', error.message);
+      const roundedLat = latitude.toFixed(4);
+      const roundedLon = longitude.toFixed(4);
+      
+      return {
+        streetAddress: `Localisation GPS (${roundedLat}, ${roundedLon})`,
+        city: 'Ville à préciser',
+        postalCode: '',
+        fullAddress: `Coordonnées: ${roundedLat}, ${roundedLon}`,
+        displayName: `Position GPS: ${roundedLat}, ${roundedLon}`,
+        source: 'GPS Coordinates'
+      };
+    }
+  };
+
+  // Get current location
+  const getCurrentLocationAddress = async () => {
+    setGettingLocation(true);
+    
+    try {
+      const hasPermission = await requestLocationPermission();
+      
+      if (!hasPermission) {
+        Toast.show({
+          type: 'error',
+          text1: 'Permission refusée',
+          text2: 'Permission de localisation requise',
+          visibilityTime: 3000,
+          topOffset: 60,
+        });
+        setGettingLocation(false);
+        return;
+      }
+
+      Geolocation.getCurrentPosition(
+        async (position) => {
+          try {
+            const { latitude, longitude } = position.coords;
+            const addressInfo = await getAddressFromCoordinates(latitude, longitude);
+            
+            setInputs(prevState => ({
+              ...prevState, 
+              address: addressInfo.streetAddress || addressInfo.displayName,
+              city: addressInfo.city,
+              postalCode: addressInfo.postalCode
+            }));
+            
+            handleError(null, 'address');
+            handleError(null, 'city');
+            handleError(null, 'postalCode');
+            
+            Toast.show({
+              type: 'success',
+              text1: 'Adresse récupérée! 📍',
+              text2: `${addressInfo.city || 'Ville'} ${addressInfo.postalCode || 'Code postal'}`,
+              visibilityTime: 3000,
+              topOffset: 60,
+            });
+            
+            setGettingLocation(false);
+          } catch (error) {
+            console.error('Error getting address:', error);
+            setGettingLocation(false);
+          }
+        },
+        (error) => {
+          console.error('Geolocation error:', error);
+          Toast.show({
+            type: 'error',
+            text1: 'Erreur de localisation',
+            text2: 'Impossible d\'obtenir votre position',
+            visibilityTime: 4000,
+            topOffset: 60,
+          });
+          setGettingLocation(false);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 20000,
+          maximumAge: 10000,
+        }
+      );
+    } catch (error) {
+      console.error('Permission error:', error);
+      setGettingLocation(false);
+    }
+  };
+
   // Initialize inputs with user data
   const initializeInputs = (userData) => {
-    setDebugInfo('Initializing inputs...');
-    
-    if (!userData) {
-      setDebugInfo('No userData provided to initializeInputs');
-      return;
-    }
+    if (!userData) return;
     
     // Parse the address if it exists
     const addressParts = parseAddress(userData.address);
@@ -129,40 +297,29 @@ export default function UserDetailsScreen({ navigation }) {
       postalCode: addressParts.postalCode || userData.zip || '',
     };
     
-    console.log('Raw user data:', userData);
-    console.log('Parsed address parts:', addressParts);
-    console.log('Initialized inputs:', newInputs);
     setInputs(newInputs);
-    setDebugInfo(`Inputs initialized: ${Object.keys(newInputs).length} fields`);
   };
 
   // Get current user data
   const getUserData = async () => {
     try {
-      setDebugInfo('Starting getUserData...');
       setLoading(true);
       
-      // Check AsyncStorage
-      setDebugInfo('Checking AsyncStorage...');
       const userDataString = await AsyncStorage.getItem('userData');
       
       if (!userDataString) {
-        setDebugInfo('No userData in AsyncStorage - navigating back');
         navigation.goBack();
         return;
       }
       
       const userData = JSON.parse(userDataString);
-      setDebugInfo(`Found userData in AsyncStorage: ID=${userData.id}`);
       
       if (!userData.id) {
-        setDebugInfo('No ID in userData - navigating back');
         navigation.goBack();
         return;
       }
       
       const clientID = userData.id;
-      setDebugInfo(`Making API call for client ID: ${clientID}`);
       
       const headers = {
         'Content-Type': 'application/json',
@@ -170,23 +327,15 @@ export default function UserDetailsScreen({ navigation }) {
       };
       
       const url = API_BASE_URL + '/thirdparties/' + clientID;
-      setDebugInfo(`API URL: ${url}`);
       
       const res = await axios.get(url, { headers });
       const fetchedUserData = res.data;
       
-      setDebugInfo(`API call successful - got user: ${fetchedUserData.name}`);
-      console.log('Fetched user data from API:', fetchedUserData);
-      
       setUserDetails(fetchedUserData);
       initializeInputs(fetchedUserData);
       
-      setDebugInfo('Data loaded successfully!');
-      
     } catch (error) {
       console.log('Error fetching user data:', error);
-      console.log('Error details:', error.response?.data);
-      setDebugInfo(`Error: ${error.message}`);
       showToast('error', 'Erreur', 'Impossible de charger les données utilisateur');
     } finally {
       setLoading(false);
@@ -196,7 +345,6 @@ export default function UserDetailsScreen({ navigation }) {
   // Load data on screen focus
   useFocusEffect(
     useCallback(() => {
-      console.log('Screen focused, calling getUserData...');
       getUserData();
       setIsEditing(false);
       setErrors({});
@@ -262,8 +410,6 @@ export default function UserDetailsScreen({ navigation }) {
         town: inputs.city.trim(),
         zip: inputs.postalCode.trim(),
       };
-
-      console.log('Sending update data:', updateData);
 
       const headers = {
         'Content-Type': 'application/json',
@@ -333,14 +479,12 @@ export default function UserDetailsScreen({ navigation }) {
       handleCancelPress();
     } else {
       if (userDetails) {
-        console.log('Starting edit mode, initializing inputs...');
         initializeInputs(userDetails);
       }
       setIsEditing(true);
     }
   };
 
-  // Always show content, even during loading
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: BACKGROUND_COLOR }]}>
       <StatusBar 
@@ -402,36 +546,26 @@ export default function UserDetailsScreen({ navigation }) {
       >
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: keyboardVisible ? 10 : 20 }
+          ]}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          {/* Debug Info Section */}
-          <View style={[styles.section, { backgroundColor: '#ffebcd', marginBottom: 10 }]}>
-            <Text style={[styles.debugText, { color: '#8b4513' }]}>
-              Debug: {debugInfo}
-            </Text>
-            {loading && (
-              <View style={styles.debugLoader}>
-                <ActivityIndicator size="small" color={PRIMARY_COLOR} />
-                <Text style={[styles.debugText, { color: '#8b4513', marginLeft: 10 }]}>
-                  Loading...
+          <View style={[styles.section, { backgroundColor: CARD_BACKGROUND }]}>
+            {!keyboardVisible && (
+              <View style={styles.sectionHeader}>
+                <MaterialCommunityIcons 
+                  name="account-circle" 
+                  size={24} 
+                  color={PRIMARY_COLOR} 
+                />
+                <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>
+                  Informations personnelles
                 </Text>
               </View>
             )}
-          </View>
-
-          {/* Show content regardless of loading state */}
-          <View style={[styles.section, { backgroundColor: CARD_BACKGROUND }]}>
-            <View style={styles.sectionHeader}>
-              <MaterialCommunityIcons 
-                name="account-circle" 
-                size={24} 
-                color={PRIMARY_COLOR} 
-              />
-              <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>
-                Informations personnelles
-              </Text>
-            </View>
 
             <View style={styles.fieldsContainer}>
               {loading && !userDetails ? (
@@ -523,8 +657,8 @@ export default function UserDetailsScreen({ navigation }) {
                         {errors.phone && <Text style={styles.errorText}>{errors.phone}</Text>}
                       </View>
 
-                      {/* Address Input */}
-                      <View style={styles.inputContainer}>
+                      {/* Address Input with GPS Button */}
+                      <View style={styles.addressContainer}>
                         <Text style={[styles.inputLabel, { color: TEXT_COLOR }]}>Adresse</Text>
                         <View style={[styles.inputWrapper, { 
                           backgroundColor: BACKGROUND_COLOR,
@@ -537,16 +671,43 @@ export default function UserDetailsScreen({ navigation }) {
                             style={styles.inputIcon}
                           />
                           <TextInput
-                            style={[styles.textInput, { color: TEXT_COLOR }]}
+                            style={[styles.textInput, { color: TEXT_COLOR, paddingRight: 50 }]}
                             value={inputs.address}
                             onChangeText={text => handleOnchange(text, 'address')}
                             onFocus={() => handleError(null, 'address')}
-                            placeholder="Entrez votre adresse"
+                            placeholder="Entrez votre adresse ou utilisez GPS"
                             placeholderTextColor={TEXT_COLOR_SECONDARY}
                           />
+                          <TouchableOpacity
+                            style={[styles.gpsButton, { 
+                              backgroundColor: PRIMARY_COLOR,
+                              opacity: gettingLocation ? 0.7 : 1
+                            }]}
+                            onPress={getCurrentLocationAddress}
+                            disabled={gettingLocation}
+                          >
+                            {gettingLocation ? (
+                              <ActivityIndicator size="small" color="white" />
+                            ) : (
+                              <MaterialCommunityIcons 
+                                name="crosshairs-gps" 
+                                size={16} 
+                                color="white" 
+                              />
+                            )}
+                          </TouchableOpacity>
                         </View>
                         {errors.address && <Text style={styles.errorText}>{errors.address}</Text>}
                       </View>
+
+                      {!keyboardVisible && (
+                        <View style={styles.helperContainer}>
+                          <MaterialCommunityIcons name="information" size={16} color={PRIMARY_COLOR} />
+                          <Text style={[styles.helperText, { color: TEXT_COLOR_SECONDARY }]}>
+                            Appuyez sur le bouton GPS pour obtenir automatiquement votre adresse
+                          </Text>
+                        </View>
+                      )}
 
                       {/* City and Postal Code Row */}
                       <View style={styles.cityPostalRow}>
@@ -715,6 +876,8 @@ export default function UserDetailsScreen({ navigation }) {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+      
+      <Toast />
     </SafeAreaView>
   );
 }
@@ -722,16 +885,6 @@ export default function UserDetailsScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  debugText: {
-    fontSize: 12,
-    fontWeight: '500',
-    padding: 10,
-  },
-  debugLoader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
   },
   loadingContent: {
     alignItems: 'center',
@@ -875,6 +1028,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 15,
     height: 50,
+    position: 'relative',
   },
   inputIcon: {
     marginRight: 10,
@@ -889,6 +1043,37 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 5,
   },
+  // Address Container with GPS Button
+  addressContainer: {
+    marginBottom: 20,
+  },
+  gpsButton: {
+    position: 'absolute',
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  helperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    marginTop: -8,
+    paddingHorizontal: 4,
+  },
+  helperText: {
+    fontSize: 13,
+    marginLeft: 8,
+    fontStyle: 'italic',
+    flex: 1,
+  },
   // City and Postal Code Row
   cityPostalRow: {
     flexDirection: 'row',
@@ -896,11 +1081,11 @@ const styles = StyleSheet.create({
     gap: 15,
   },
   cityContainer: {
-    flex: 2, // Takes more space for city
+    flex: 2,
   },
   postalContainer: {
-    flex: 1, // Takes less space for postal code
-    minWidth: 100, // Ensures minimum width for postal code
+    flex: 1,
+    minWidth: 100,
   },
   // Info Row Styles
   infoRow: {
