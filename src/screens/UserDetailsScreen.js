@@ -417,7 +417,7 @@ export default function UserDetailsScreen({ navigation }) {
       };
 
       const res = await axios.put(
-        API_BASE_URL + 'thirdparties/' + clientID,
+        API_BASE_URL + '/thirdparties/' + clientID,
         updateData,
         { headers }
       );
