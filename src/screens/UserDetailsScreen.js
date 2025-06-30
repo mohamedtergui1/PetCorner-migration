@@ -39,6 +39,7 @@ export default function UserDetailsScreen({ navigation }) {
   const [showSuccess, setShowSuccess] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [gettingLocation, setGettingLocation] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
   
   // Form inputs for editing
   const [inputs, setInputs] = useState({
@@ -160,6 +161,25 @@ export default function UserDetailsScreen({ navigation }) {
       .filter(part => part && typeof part === 'string' && part.trim())
       .map(part => part.trim());
     return parts.join(', ');
+  };
+
+  // Initialize inputs with user data
+  const initializeInputs = (userData) => {
+    if (!userData) return;
+    
+    const addressParts = parseAddress(userData.address);
+    
+    const newInputs = {
+      fullname: userData.name || '',
+      email: userData.email || '',
+      phone: userData.phone || '',
+      address: addressParts.address,
+      city: addressParts.city,
+      postalCode: addressParts.postalCode,
+    };
+    
+    setInputs(newInputs);
+    setDataLoaded(true);
   };
 
   // Request location permission
@@ -314,9 +334,11 @@ export default function UserDetailsScreen({ navigation }) {
     }
   };
 
-  // Get user data
+  // Get user data - FIXED
   const getUserData = async () => {
     setLoading(true);
+    setDataLoaded(false);
+    
     try {
       const userData = JSON.parse(await AsyncStorage.getItem('userData'));
       if (!userData) {
@@ -331,18 +353,12 @@ export default function UserDetailsScreen({ navigation }) {
       };
       
       const res = await axios.get(API_BASE_URL + 'thirdparties/' + clientID, { headers });
-      setUserDetails(res.data);
+      const fetchedUserData = res.data;
       
-      const addressParts = parseAddress(res.data.address);
+      setUserDetails(fetchedUserData);
       
-      setInputs({
-        fullname: res.data.name || '',
-        email: res.data.email || '',
-        phone: res.data.phone || '',
-        address: addressParts.address,
-        city: addressParts.city,
-        postalCode: addressParts.postalCode,
-      });
+      // Initialize inputs with fetched data
+      initializeInputs(fetchedUserData);
       
     } catch (error) {
       console.log('Error fetching user data:', error);
@@ -358,9 +374,13 @@ export default function UserDetailsScreen({ navigation }) {
     }
   };
 
+  // FIXED: Use useFocusEffect correctly
   useFocusEffect(
     useCallback(() => {
       getUserData();
+      // Reset editing state when screen focuses
+      setIsEditing(false);
+      setErrors({});
     }, [])
   );
 
@@ -468,7 +488,12 @@ export default function UserDetailsScreen({ navigation }) {
         { headers }
       );
 
-      setUserDetails({ ...userDetails, ...updateData });
+      const updatedUserDetails = { ...userDetails, ...updateData };
+      setUserDetails(updatedUserDetails);
+      
+      // Re-initialize inputs with updated data
+      initializeInputs(updatedUserDetails);
+      
       setIsEditing(false);
       showSuccessAnimation();
 
@@ -486,18 +511,11 @@ export default function UserDetailsScreen({ navigation }) {
     }
   };
 
-  // Cancel editing
+  // Cancel editing - FIXED
   const cancelEditing = () => {
     if (userDetails) {
-      const addressParts = parseAddress(userDetails.address);
-      setInputs({
-        fullname: userDetails.name || '',
-        email: userDetails.email || '',
-        phone: userDetails.phone || '',
-        address: addressParts.address,
-        city: addressParts.city,
-        postalCode: addressParts.postalCode,
-      });
+      // Reset inputs to original user data
+      initializeInputs(userDetails);
     }
     setErrors({});
     setIsEditing(false);
@@ -528,6 +546,19 @@ export default function UserDetailsScreen({ navigation }) {
     }
   };
 
+  // Handle edit button press - FIXED
+  const handleEditPress = () => {
+    if (isEditing) {
+      handleCancelPress();
+    } else {
+      // When starting to edit, ensure inputs are properly initialized
+      if (userDetails && dataLoaded) {
+        initializeInputs(userDetails);
+      }
+      setIsEditing(true);
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: BACKGROUND_COLOR }]}>
@@ -536,6 +567,22 @@ export default function UserDetailsScreen({ navigation }) {
             <ActivityIndicator size="large" color={PRIMARY_COLOR} />
             <Text style={[styles.loadingText, { color: TEXT_COLOR }]}>
               Chargement de votre profil...
+            </Text>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Don't render the form until data is loaded
+  if (!dataLoaded || !userDetails) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: BACKGROUND_COLOR }]}>
+        <View style={styles.loaderContainer}>
+          <View style={[styles.loadingCard, { backgroundColor: CARD_BACKGROUND }]}>
+            <ActivityIndicator size="large" color={PRIMARY_COLOR} />
+            <Text style={[styles.loadingText, { color: TEXT_COLOR }]}>
+              Initialisation des données...
             </Text>
           </View>
         </View>
@@ -594,7 +641,7 @@ export default function UserDetailsScreen({ navigation }) {
         </Animated.View>
       )}
 
-      {/* Header - keeping original */}
+      {/* Header */}
       <View style={[styles.header, { backgroundColor: PRIMARY_COLOR }]}>
         <TouchableOpacity 
           style={styles.headerButton}
@@ -609,13 +656,7 @@ export default function UserDetailsScreen({ navigation }) {
         
         <TouchableOpacity 
           style={styles.headerButton}
-          onPress={() => {
-            if (isEditing) {
-              handleCancelPress();
-            } else {
-              setIsEditing(true);
-            }
-          }}
+          onPress={handleEditPress}
         >
           <MaterialCommunityIcons 
             name={isEditing ? "close" : "pencil"} 
@@ -724,7 +765,7 @@ export default function UserDetailsScreen({ navigation }) {
                           onChangeText={text => handleOnchange(text, 'address')}
                           onFocus={() => handleError(null, 'address')}
                           iconName="map-marker-outline"
-                          label="Adresse (Quartier)"
+                          label="Adresse "
                           placeholder="Entrez votre quartier ou utilisez la localisation"
                           error={errors.address}
                           labelColor={TEXT_COLOR}

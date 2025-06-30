@@ -30,12 +30,13 @@ import Modal from "react-native-modal";
 import { useTheme } from '../../context/ThemeContext';
 import { useCart } from '../../context/CartContext';
 import Geolocation from 'react-native-geolocation-service';
-import OrderService from '../../service/order.service'; // Import the enhanced order service
+import OrderService from '../../service/order.service';
+import ProductService from '../../service/CustomProductApiService';
 
 export default function Cart({ navigation }) {
   const { theme, isDarkMode, toggleTheme, colorTheme, toggleColorTheme } = useTheme();
 
-  // Use cart context instead of local state
+  // Use cart context
   const {
     cartItems,
     cartCount,
@@ -50,11 +51,11 @@ export default function Cart({ navigation }) {
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isEmpty, setIsEmpty] = useState(false);
-  const [modePaiement, setModePaiement] = useState('espèces'); // Default to cash payment
+  const [modePaiement, setModePaiement] = useState('espèces');
   const [errorModePaiement, setErrorModePaiement] = useState('');
   const [modalAdresseVisible, setModalAdresseVisible] = useState(false);
   
-  // Enhanced address fields - split like user details screen
+  // Address fields
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [zipCode, setZipCode] = useState('');
@@ -73,19 +74,19 @@ export default function Cart({ navigation }) {
   // Loading states for quantity updates
   const [loadingQuantityUpdates, setLoadingQuantityUpdates] = useState({});
 
-  // Animation refs - only for cash payment now
+  // Animation refs
   const paymentAnimations = useRef({
-    cash: new Animated.Value(1), // Start with cash selected
+    cash: new Animated.Value(1),
   }).current;
 
-  // Store location (set this to your actual store coordinates)
+  // Store location
   const STORE_LOCATION = {
     latitude: 33.951371146759776,
     longitude: -6.88501751937855,
     address: "Immeuble 102, Prestigia, Prestigia - Riyad Al Andalous, N° 13 sis, GH4, Rabat 10100"
   };
 
-  // Enhanced theme colors
+  // Theme colors
   const PRIMARY_COLOR = theme.primary;
   const SECONDARY_COLOR = colorTheme === 'blue' ? '#4A90E2' : '#FF8A50';
   const BACKGROUND_COLOR = theme.backgroundColor;
@@ -95,11 +96,21 @@ export default function Cart({ navigation }) {
   const BORDER_COLOR = isDarkMode ? '#2c2c2c' : '#f0f0f0';
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', getDataFromDB);
+    const unsubscribe = navigation.addListener('focus', () => {
+      console.log('🎯 Screen focused, loading cart data...');
+      getDataFromDB();
+    });
     return unsubscribe;
   }, [navigation]);
 
-  // Add effect to recalculate total when products or quantities change
+  // Initialize data when component mounts
+  useEffect(() => {
+    console.log('🚀 Component mounted, loading initial data...');
+    getDataFromDB();
+    getUserData();
+  }, []);
+
+  // Recalculate total when products or quantities change
   useEffect(() => {
     if (products.length > 0) {
       const quantities = getQuantities();
@@ -107,7 +118,7 @@ export default function Cart({ navigation }) {
     }
   }, [products, cartItems]);
 
-  // Safe address parsing function - same as user details screen
+  // Safe address parsing function
   const parseAddress = (addressString) => {
     if (!addressString || typeof addressString !== 'string') {
       return {
@@ -118,7 +129,6 @@ export default function Cart({ navigation }) {
     }
 
     try {
-      // Split by comma and clean up
       const parts = addressString.split(',').map(part => part.trim()).filter(Boolean);
       
       if (parts.length === 0) {
@@ -128,7 +138,6 @@ export default function Cart({ navigation }) {
       } else if (parts.length === 2) {
         return { address: parts[0], city: parts[1], postalCode: '' };
       } else {
-        // 3 or more parts
         return {
           address: parts[0],
           city: parts[1],
@@ -136,9 +145,9 @@ export default function Cart({ navigation }) {
         };
       }
     } catch (error) {
-      console.log('Error parsing address:', error);
+      console.log('❌ Error parsing address:', error);
       return {
-        address: addressString, // Fallback to original string
+        address: addressString,
         city: '',
         postalCode: ''
       };
@@ -178,14 +187,14 @@ export default function Cart({ navigation }) {
         
         return granted === PermissionsAndroid.RESULTS.GRANTED;
       } catch (err) {
-        console.warn('Permission error:', err);
+        console.warn('⚠️ Permission error:', err);
         return false;
       }
     }
     return true;
   };
 
-  // Enhanced geocoding function - same as user details screen
+  // Geocoding function
   const getAddressFromCoordinates = async (latitude, longitude) => {
     try {
       const response = await axios.get(
@@ -219,7 +228,7 @@ export default function Cart({ navigation }) {
       }
       throw new Error('No address data');
     } catch (error) {
-      console.log('Geocoding failed:', error.message);
+      console.log('❌ Geocoding failed:', error.message);
       const roundedLat = latitude.toFixed(4);
       const roundedLon = longitude.toFixed(4);
       
@@ -234,18 +243,18 @@ export default function Cart({ navigation }) {
     }
   };
 
-  // Enhanced GPS location function - same as user details screen
+  // GPS location function
   const getCurrentLocationAddress = async () => {
-    console.log('GPS button clicked - starting location process');
+    console.log('📍 GPS button clicked - starting location process');
     setGettingLocation(true);
     
     try {
-      console.log('Requesting location permission...');
+      console.log('🔐 Requesting location permission...');
       const hasPermission = await requestLocationPermission();
-      console.log('Permission granted:', hasPermission);
+      console.log('✅ Permission granted:', hasPermission);
       
       if (!hasPermission) {
-        console.log('Permission denied by user');
+        console.log('❌ Permission denied by user');
         if (Platform.OS === 'android') {
           ToastAndroid.show('Permission de localisation requise', ToastAndroid.SHORT);
         } else {
@@ -255,28 +264,25 @@ export default function Cart({ navigation }) {
         return;
       }
 
-      console.log('Getting current position...');
+      console.log('🎯 Getting current position...');
       Geolocation.getCurrentPosition(
         async (position) => {
           try {
-            console.log('Position received:', position.coords);
+            console.log('📍 Position received:', position.coords);
             const { latitude, longitude } = position.coords;
             
-            console.log('Getting address from coordinates...');
+            console.log('🗺️ Getting address from coordinates...');
             const addressInfo = await getAddressFromCoordinates(latitude, longitude);
-            console.log('Address info received:', addressInfo);
+            console.log('✅ Address info received:', addressInfo);
             
-            // Update all address-related inputs
             setAddress(addressInfo.streetAddress || addressInfo.displayName);
             setCity(addressInfo.city);
             setZipCode(addressInfo.postalCode);
             
-            // Clear any previous errors
             setErrorAdresse('');
             setErrorCity('');
             setErrorZipCode('');
             
-            // Calculate distance and delivery cost
             const dist = calculateDistance(
               latitude,
               longitude,
@@ -297,12 +303,12 @@ export default function Cart({ navigation }) {
             
             setGettingLocation(false);
           } catch (error) {
-            console.error('Error getting address:', error);
+            console.error('❌ Error getting address:', error);
             setGettingLocation(false);
           }
         },
         (error) => {
-          console.error('Geolocation error:', error);
+          console.error('❌ Geolocation error:', error);
           let errorMessage = 'Erreur lors de la récupération de la localisation';
           
           switch (error.code) {
@@ -335,7 +341,7 @@ export default function Cart({ navigation }) {
         }
       );
     } catch (error) {
-      console.error('Permission error:', error);
+      console.error('❌ Permission error:', error);
       if (Platform.OS === 'android') {
         ToastAndroid.show('Erreur de permission', ToastAndroid.SHORT);
       } else {
@@ -347,7 +353,7 @@ export default function Cart({ navigation }) {
 
   // Calculate distance between two coordinates using Haversine formula
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371; // Radius of the Earth in kilometers
+    const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a =
@@ -361,20 +367,18 @@ export default function Cart({ navigation }) {
 
   // Calculate delivery cost based on distance
   const calculateDeliveryCost = (distanceKm) => {
-    if (distanceKm <= 5) return 0; // Free delivery within 5km
-    if (distanceKm <= 10) return 15; // 15 DH for 5-10km
-    if (distanceKm <= 20) return 25; // 25 DH for 10-20km
-    return 35; // 35 DH for >20km
+    if (distanceKm <= 5) return 0;
+    if (distanceKm <= 10) return 15;
+    if (distanceKm <= 20) return 25;
+    return 35;
   };
 
-  // Simplified payment method selection - only cash payment
+  // Payment method selection
   const handlePaymentMethodSelect = (method) => {
-    // Only allow cash payment
     if (method === 'espèces') {
       setModePaiement(method);
       setErrorModePaiement('');
 
-      // Animate selection
       Animated.timing(paymentAnimations.cash, {
         toValue: 1,
         duration: 200,
@@ -383,51 +387,115 @@ export default function Cart({ navigation }) {
     }
   };
 
-  // Updated to use cart context
+  // 🎯 MAIN FUNCTION: Load cart data and fetch products
   const getDataFromDB = useCallback(async () => {
+    console.log('🚀 Starting getDataFromDB...');
+    setIsLoading(true);
     setIsEmpty(false);
+    
     try {
+      // 1. Load cart items (array of IDs like [123, 456, 123, 789, 123])
+      console.log('📦 Loading cart items from storage...');
       const items = await loadCartItems();
+      console.log('📋 Cart items loaded:', items);
 
-      if (items.length === 0) {
+      if (!items || items.length === 0) {
+        console.log('🛒 Cart is empty');
         setIsEmpty(true);
+        setProducts([]);
+        setTotal(0);
         setIsLoading(false);
         return;
       }
 
-      const itemIds = items.join(',');
+      // 2. Get unique product IDs (remove duplicates)
+      const uniqueProductIds = [...new Set(items)];
+      console.log('🔢 Unique product IDs:', uniqueProductIds);
 
-      const response = await axios.get(API_BASE_URL + "categories/byid", {
-        headers: {
-          'Content-Type': 'application/json',
-          'DOLAPIKEY': Token
-        },
-        params: {
-          sqlfilters: itemIds
+      try {
+        console.log('🌐 Fetching products using getEnhancedProduct...');
+        
+        // 3. Fetch each unique product using getEnhancedProduct
+        const productPromises = uniqueProductIds.map(async (id) => {
+          try {
+            console.log(`📡 Fetching product ${id}...`);
+            const product = await ProductService.getEnhancedProduct(id, {
+              includestockdata: 1,
+              includesubproducts: false,
+              includeparentid: false,
+              includetrans: false,
+              includeextendedoptions: true
+            });
+            console.log(`✅ Product ${id} fetched successfully:`, product?.label || 'No label');
+            return product;
+          } catch (error) {
+            console.error(`❌ Error fetching enhanced product ${id}:`, error);
+            return null;
+          }
+        });
+
+        // 4. Wait for all products to be fetched
+        const productsResults = await Promise.all(productPromises);
+        const validProducts = productsResults.filter(product => product !== null);
+        
+        console.log(`✅ Products loaded successfully: ${validProducts.length}/${uniqueProductIds.length}`);
+        console.log('📋 Valid products:', validProducts.map(p => ({ id: p.id, label: p.label })));
+        
+        setProducts(validProducts);
+        
+        // 5. Calculate total with quantities
+        if (validProducts.length > 0) {
+          const quantities = getQuantities();
+          console.log('📊 Current quantities:', quantities);
+          calculateTotal(validProducts, quantities);
+        } else {
+          console.log('❌ No valid products found');
+          setTotal(0);
         }
-      });
-      const products = response.data.products;
-      setProducts(products);
-      setIsLoading(false);
 
-      const quantities = getQuantities();
-      calculateTotal(products, quantities);
+      } catch (apiError) {
+        console.error('❌ Product fetching failed:', apiError);
+        
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Erreur lors du chargement des produits', ToastAndroid.SHORT);
+        } else {
+          Toast.show('Erreur lors du chargement des produits', Toast.SHORT);
+        }
+        
+        setProducts([]);
+        setTotal(0);
+      }
+
     } catch (error) {
-      console.error('Failed to load cart items:', error);
+      console.error('❌ Failed to load cart items:', error);
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Erreur lors du chargement du panier', ToastAndroid.SHORT);
+      } else {
+        Toast.show('Erreur lors du chargement du panier', Toast.SHORT);
+      }
+      setIsEmpty(true);
+      setProducts([]);
+      setTotal(0);
+    } finally {
+      console.log('🏁 Setting loading to false');
+      setIsLoading(false);
     }
   }, [loadCartItems, getQuantities]);
 
-  // Fixed calculateTotal function
+  // Calculate total function
   const calculateTotal = (products, quantities) => {
+    console.log('💰 Calculating total for products:', products.length);
     const newTotal = products.reduce((acc, item) => {
       const quantity = quantities[item.id] || 1;
       const itemTotal = (parseFloat(item.price_ttc) || 0) * quantity;
+      console.log(`💵 Item ${item.id}: price=${item.price_ttc}, quantity=${quantity}, total=${itemTotal}`);
       return acc + itemTotal;
     }, 0);
+    console.log('💰 New total calculated:', newTotal);
     setTotal(newTotal);
   };
 
-  // Updated to use cart context and recalculate total
+  // Update quantity handler
   const handleUpdateQuantity = async (id, change) => {
     setLoadingQuantityUpdates(prev => ({ ...prev, [id]: true }));
 
@@ -436,15 +504,21 @@ export default function Cart({ navigation }) {
       if (result.success) {
         const updatedQuantities = getQuantities();
         calculateTotal(products, updatedQuantities);
+      } else if (result.error) {
+        if (Platform.OS === 'android') {
+          ToastAndroid.show(result.error, ToastAndroid.SHORT);
+        } else {
+          Toast.show(result.error, Toast.SHORT);
+        }
       }
     } catch (error) {
-      console.error('Error updating quantity:', error);
+      console.error('❌ Error updating quantity:', error);
     } finally {
       setLoadingQuantityUpdates(prev => ({ ...prev, [id]: false }));
     }
   };
 
-  // Updated to use cart context
+  // Remove item handler
   const handleRemoveItem = async (id) => {
     const result = await removeFromCart(id);
     if (result.success) {
@@ -452,7 +526,7 @@ export default function Cart({ navigation }) {
     }
   };
 
-  // Enhanced checkout function using OrderService - simplified for cash only
+  // Checkout function
   const checkOut = async () => {
     let isValid = true;
 
@@ -474,28 +548,25 @@ export default function Cart({ navigation }) {
       return;
     }
 
-    // Payment method is automatically set to cash, no need to validate
-
     if (!isValid) return;
 
     try {
+      setIsLoading(true);
       const quantities = getQuantities();
 
-      // Prepare order data for the service - only cash payment
       const orderData = {
         products: products,
         quantities: quantities,
         address: address,
         city: city,
         zipCode: zipCode,
-        paymentMethod: 'espèces', // Always cash payment
-        cardDetails: null, // No card details needed
+        paymentMethod: 'espèces',
+        cardDetails: null,
         userLocation: userLocation,
         distance: distance,
         deliveryCost: deliveryCost
       };
 
-      // Use the OrderService to create the order
       await OrderService.createOrderWithUI(
         orderData,
         clearCart,
@@ -504,13 +575,13 @@ export default function Cart({ navigation }) {
       );
 
     } catch (error) {
-      console.log("Error:", error);
+      console.log("❌ Checkout error:", error);
       Alert.alert('Erreur', 'Une erreur inattendue est survenue');
       setIsLoading(false);
     }
   };
 
-  // Enhanced address save function
+  // Save address function
   const handleSaveAdresse = () => {
     let isValid = true;
     if (!address) {
@@ -535,28 +606,21 @@ export default function Cart({ navigation }) {
     updateClient();
   }
 
-  // Updated to use cart context quantities
-  const renderProducts = ({ id, label, price_ttc, photo_link, description, stock }) => {
+  // Render product function
+  const renderProducts = ({ id, label, price_ttc, image_link, description, stock_reel }) => {
     const quantities = getQuantities();
     const quantity = quantities[id] || 1;
     const isUpdatingQuantity = loadingQuantityUpdates[id] || false;
-    const data = {
-      id,
-      label,
-      price_ttc,
-      photo_link,
-      description,
-      stock
-    };
+    const availableStock = parseInt(stock_reel) || 0;
 
     return (
       <View key={id} style={[styles.productCard, { backgroundColor: CARD_BACKGROUND }]}>
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => navigation.push('ProductDetails', { productId: data.id })}
+          onPress={() => navigation.push('ProductDetails', { productId: id })}
           style={styles.productImageContainer}>
           <Image
-            source={{ uri: photo_link }}
+            source={{ uri: image_link }}
             style={styles.productImage}
             resizeMode="cover"
           />
@@ -582,16 +646,15 @@ export default function Cart({ navigation }) {
           </View>
 
           <View style={styles.productActions}>
-            {/* Updated quantity controls with proper disable logic */}
             <View style={styles.quantityControls}>
               <TouchableOpacity
                 onPress={() => handleUpdateQuantity(id, -1)}
-                disabled={isUpdatingQuantity || quantity <= 1} // Disable when quantity is 1 or less
+                disabled={isUpdatingQuantity || quantity <= 1}
                 style={[
                   styles.quantityButton,
                   {
                     borderColor: (isUpdatingQuantity || quantity <= 1) ? TEXT_COLOR_SECONDARY : PRIMARY_COLOR,
-                    backgroundColor: (isUpdatingQuantity || quantity <= 1) ? 'transparent' : 'transparent',
+                    backgroundColor: 'transparent',
                     opacity: (isUpdatingQuantity || quantity <= 1) ? 0.4 : 1
                   }
                 ]}>
@@ -609,13 +672,13 @@ export default function Cart({ navigation }) {
 
               <TouchableOpacity
                 onPress={() => handleUpdateQuantity(id, 1)}
-                disabled={isUpdatingQuantity || quantity >= stock} // Disable when quantity reaches stock limit
+                disabled={isUpdatingQuantity || quantity >= availableStock}
                 style={[
                   styles.quantityButton,
                   {
-                    borderColor: (isUpdatingQuantity || quantity >= stock) ? TEXT_COLOR_SECONDARY : PRIMARY_COLOR,
-                    backgroundColor: (isUpdatingQuantity || quantity >= stock) ? 'transparent' : 'transparent',
-                    opacity: (isUpdatingQuantity || quantity >= stock) ? 0.4 : 1
+                    borderColor: (isUpdatingQuantity || quantity >= availableStock) ? TEXT_COLOR_SECONDARY : PRIMARY_COLOR,
+                    backgroundColor: 'transparent',
+                    opacity: (isUpdatingQuantity || quantity >= availableStock) ? 0.4 : 1
                   }
                 ]}>
                 {isUpdatingQuantity ? (
@@ -623,14 +686,13 @@ export default function Cart({ navigation }) {
                 ) : (
                   <Text style={[
                     styles.quantityButtonText, 
-                    { color: (quantity >= stock) ? TEXT_COLOR_SECONDARY : PRIMARY_COLOR }
+                    { color: (quantity >= availableStock) ? TEXT_COLOR_SECONDARY : PRIMARY_COLOR }
                   ]}>+</Text>
                 )}
               </TouchableOpacity>
             </View>
 
-            {/* Add stock indicator below quantity controls */}
-            {quantity >= stock && (
+            {quantity >= availableStock && (
               <Text style={[styles.stockWarning, { color: '#ff6b6b' }]}>
                 Stock maximum atteint
               </Text>
@@ -651,7 +713,7 @@ export default function Cart({ navigation }) {
     );
   };
 
-  // Simplified payment method selection component - only cash payment
+  // Payment methods component
   const renderPaymentMethods = () => (
     <View style={[styles.paymentContainer, { backgroundColor: BACKGROUND_COLOR }]}>
       <Text style={[styles.textTitlePay, { color: TEXT_COLOR }]}>
@@ -659,15 +721,14 @@ export default function Cart({ navigation }) {
       </Text>
 
       <View style={styles.paymentMethodsContainer}>
-        {/* Cash Payment Option - Always Selected */}
         <Animated.View style={[
           styles.paymentMethodCard,
           {
             backgroundColor: CARD_BACKGROUND,
-            borderColor: PRIMARY_COLOR, // Always highlighted
-            borderWidth: 2, // Always highlighted
+            borderColor: PRIMARY_COLOR,
+            borderWidth: 2,
             transform: [{
-              scale: 1.02, // Always slightly scaled
+              scale: 1.02,
             }],
           }
         ]}>
@@ -699,7 +760,6 @@ export default function Cart({ navigation }) {
           </View>
         </Animated.View>
 
-        {/* Credit Card Payment Option - Disabled */}
         <View style={[
           styles.paymentMethodCard,
           styles.disabledPaymentCard,
@@ -738,7 +798,6 @@ export default function Cart({ navigation }) {
         </View>
       </View>
 
-      {/* Payment notice */}
       <View style={[styles.paymentNotice, { backgroundColor: PRIMARY_COLOR + '10' }]}>
         <MaterialCommunityIcons
           name="information"
@@ -752,58 +811,74 @@ export default function Cart({ navigation }) {
     </View>
   );
 
-  // Enhanced update client function
+  // Update client function
   const updateClient = async () => {
-    const userData = JSON.parse(await AsyncStorage.getItem('userData'));
-    const clientID = userData.id;
-    
-    // Concatenate address safely
-    const concatenatedAddress = concatenateAddress(address, city, zipCode);
-    
-    const inputData = {
-      address: concatenatedAddress,
-      town: city,
-      zip: zipCode,
-    }
     try {
+      const userData = JSON.parse(await AsyncStorage.getItem('userData'));
+      const clientID = userData.id;
+      
+      const concatenatedAddress = concatenateAddress(address, city, zipCode);
+      
+      const inputData = {
+        address: concatenatedAddress,
+        town: city,
+        zip: zipCode,
+      }
+      
       const res = await axios.put(API_BASE_URL + 'thirdparties/' + clientID, inputData, {
         headers: {
           'Content-Type': 'application/json',
           'DOLAPIKEY': Token
         }
       });
-      getUserData();
+      
+      await getUserData();
       setModalAdresseVisible(false);
+      
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Adresse mise à jour', ToastAndroid.SHORT);
+      } else {
+        Toast.show('Adresse mise à jour', Toast.SHORT);
+      }
     } catch (error) {
-      console.log(error);
+      console.log('❌ Error updating client:', error);
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Erreur lors de la mise à jour', ToastAndroid.SHORT);
+      } else {
+        Toast.show('Erreur lors de la mise à jour', Toast.SHORT);
+      }
     }
   };
 
-  useEffect(() => {
-    getUserData();
-  }, []);
-
-  // Enhanced get user data function with safe address parsing
+  // Get user data function
   const getUserData = async () => {
-    const userData = JSON.parse(await AsyncStorage.getItem('userData'));
-    const clientID = userData.id;
-
-    const headers = {
-      'Content-Type': 'application/json',
-      'DOLAPIKEY': Token
-    };
-
     try {
-      const res = await axios.get(API_BASE_URL + 'thirdparties/' + clientID, { headers });
+      const userData = JSON.parse(await AsyncStorage.getItem('userData'));
+      if (!userData || !userData.id) {
+        console.log('❌ No user data found');
+        return;
+      }
+      
+      const clientID = userData.id;
+
+      const headers = {
+        'Content-Type': 'application/json',
+        'DOLAPIKEY': Token
+      };
+
+      const res = await axios.get(API_BASE_URL + 'thirdparties/' + clientID, { 
+        headers,
+        timeout: 10000 
+      });
+      
       setUserDetails(res.data);
       
-      // Parse address safely
       const addressParts = parseAddress(res.data.address);
       setAddress(addressParts.address);
       setCity(addressParts.city || res.data.town || '');
       setZipCode(addressParts.postalCode || res.data.zip || '');
     } catch (error) {
-      console.log(error);
+      console.log('❌ Error getting user data:', error);
     }
   };
 
@@ -815,7 +890,6 @@ export default function Cart({ navigation }) {
       <View style={[styles.headerContainer, { backgroundColor: PRIMARY_COLOR }]}>
         <TouchableOpacity
           onPress={() => {
-            setIsLoading(true);
             navigation.goBack();
           }}
           style={styles.backButton}
@@ -859,13 +933,23 @@ export default function Cart({ navigation }) {
         isLoading ? (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: BACKGROUND_COLOR }}>
             <ActivityIndicator size="large" color={PRIMARY_COLOR} />
+            <Text style={{ marginTop: 10, color: TEXT_COLOR, fontSize: 16 }}>
+              Chargement du panier...
+            </Text>
           </View>
         ) : (
           <>
             <ScrollView showsVerticalScrollIndicator={false} style={{ backgroundColor: BACKGROUND_COLOR }}>
               <Text style={[styles.textHeader2, { color: TEXT_COLOR }]}>Produits</Text>
               <View style={styles.productContainer}>
-                {products ? products.map(renderProducts) : null}
+                {products && products.length > 0 ? 
+                  products.map(renderProducts) : 
+                  <View style={{ padding: 20, alignItems: 'center' }}>
+                    <Text style={{ color: TEXT_COLOR_SECONDARY }}>
+                      Aucun produit trouvé
+                    </Text>
+                  </View>
+                }
               </View>
 
               {/* Enhanced Address Section */}
@@ -972,7 +1056,15 @@ export default function Cart({ navigation }) {
             <View style={styles.containerCheckout}>
               <TouchableOpacity
                 onPress={() => (total != 0 ? checkOut() : null)}
-                style={[styles.shopButton, { backgroundColor: PRIMARY_COLOR }]}>
+                style={[
+                  styles.shopButton, 
+                  { 
+                    backgroundColor: total > 0 ? PRIMARY_COLOR : TEXT_COLOR_SECONDARY,
+                    opacity: total > 0 ? 1 : 0.6
+                  }
+                ]}
+                disabled={total <= 0}
+              >
                 <Ionicons
                   name="bag-outline"
                   size={18}
