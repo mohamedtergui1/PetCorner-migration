@@ -1,0 +1,693 @@
+{
+  "name": "Marchés Publics with AI Summarization",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "/scrape-marches",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract scraping parameters\nconst searchParams = {\n  searchTerm: $input.all()[0].json.searchTerm || '',\n  category: $input.all()[0].json.category || '',\n  region: $input.all()[0].json.region || '',\n  maxPages: $input.all()[0].json.maxPages || 5,\n  dateFrom: $input.all()[0].json.dateFrom || '',\n  dateTo: $input.all()[0].json.dateTo || '',\n  generateSummary: $input.all()[0].json.generateSummary !== false, // Default true\n  summaryLanguage: $input.all()[0].json.summaryLanguage || 'french' // french, arabic, english\n};\n\nreturn {\n  ...searchParams,\n  baseUrl: 'https://www.marchespublics.gov.ma',\n  startTime: new Date().toISOString()\n};"
+      },
+      "id": "extract-params",
+      "name": "Extract Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+            },
+            {
+              "name": "Accept-Language",
+              "value": "fr-FR,fr;q=0.9,en;q=0.8,ar;q=0.7"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-homepage",
+      "name": "Get Homepage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse homepage and get session data\nconst cheerio = require('cheerio');\nconst html = $input.all()[0].json;\nconst $ = cheerio.load(html);\n\nconst formData = {};\n$('input[type=\"hidden\"]').each((i, elem) => {\n  const name = $(elem).attr('name');\n  const value = $(elem).attr('value');\n  if (name && value) {\n    formData[name] = value;\n  }\n});\n\nconst csrfToken = $('meta[name=\"csrf-token\"]').attr('content') || \n                 $('input[name=\"_token\"]').val();\n\nconst cookies = $input.all()[0].headers['set-cookie'] || [];\nconst cookieString = cookies.map(cookie => cookie.split(';')[0]).join('; ');\n\nreturn {\n  formData: formData,\n  csrfToken: csrfToken,\n  cookies: cookieString,\n  searchUrl: 'https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseAvancee'\n};"
+      },
+      "id": "parse-homepage",
+      "name": "Parse Homepage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.searchUrl }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "motscle",
+              "value": "={{ $('Extract Parameters').item.json.searchTerm }}"
+            },
+            {
+              "name": "region",
+              "value": "={{ $('Extract Parameters').item.json.region }}"
+            },
+            {
+              "name": "categorie",
+              "value": "={{ $('Extract Parameters').item.json.category }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $json.cookies }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "search-projects",
+      "name": "Search Projects",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse search results\nconst cheerio = require('cheerio');\nconst html = $input.all()[0].json;\nconst $ = cheerio.load(html);\nconst baseUrl = 'https://www.marchespublics.gov.ma';\n\nconst projects = [];\n\n// Multiple selector strategies for different page layouts\nconst selectors = [\n  '.projet, .annonce, .item-projet',\n  'tr[class*=\"ligne\"]',\n  'table tr',\n  '.list-item, .tender-item'\n];\n\nfor (const selector of selectors) {\n  if (projects.length > 0) break;\n  \n  $(selector).each((i, elem) => {\n    if (i === 0 && selector.includes('tr')) return; // Skip header row\n    \n    const $elem = $(elem);\n    \n    // Try different patterns for title and link extraction\n    let title = $elem.find('a[href*=\"detail\"], .titre, .title').first().text().trim();\n    let link = $elem.find('a[href*=\"detail\"], a[href*=\"projet\"]').first().attr('href');\n    \n    // Fallback for table-based layouts\n    if (!title || !link) {\n      const cells = $elem.find('td');\n      if (cells.length >= 2) {\n        title = $(cells[1]).find('a').text().trim() || $(cells[1]).text().trim();\n        link = $(cells[1]).find('a').attr('href');\n      }\n    }\n    \n    if (title && link) {\n      const fullLink = link.startsWith('http') ? link : baseUrl + '/' + link.replace(/^\\//, '');\n      \n      projects.push({\n        title: title,\n        link: fullLink,\n        description: $elem.find('.description, .resume, td:nth-child(3)').text().trim(),\n        organisme: $elem.find('.organisme, .institution, td:nth-child(4)').text().trim(),\n        datePublication: $elem.find('.date, td:nth-child(5)').text().trim(),\n        montant: $elem.find('.montant, .budget, td:nth-child(6)').text().trim()\n      });\n    }\n  });\n}\n\nconst maxProjects = $('Extract Parameters').item.json.maxPages * 10;\nreturn projects.slice(0, maxProjects).map(project => ({ json: project }));"
+      },
+      "id": "parse-project-list",
+      "name": "Parse Project List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-projects",
+      "name": "Split Projects",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "amount": 3,
+        "unit": "seconds"
+      },
+      "id": "delay-requests",
+      "name": "Delay Requests",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.link }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $('Parse Homepage').item.json.cookies }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-project-detail",
+      "name": "Get Project Detail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse detailed project information\nconst cheerio = require('cheerio');\nconst html = $input.all()[0].json;\nconst $ = cheerio.load(html);\nconst baseUrl = 'https://www.marchespublics.gov.ma';\nconst originalProject = $input.all()[1].json;\n\nconst projectDetail = {\n  ...originalProject,\n  fullDescription: '',\n  specifications: '',\n  deadline: '',\n  attachments: [],\n  criteria: '',\n  contact: '',\n  additionalInfo: {}\n};\n\n// Extract comprehensive project details\nprojectDetail.fullDescription = $('.description-complete, .detail-description, .contenu-projet, .content').text().trim();\nprojectDetail.specifications = $('.specifications, .cahier-charges, .conditions, .spec-tech').text().trim();\nprojectDetail.deadline = $('.date-limite, .echeance, .deadline, .date-cloture').text().trim();\nprojectDetail.criteria = $('.criteres, .conditions-participation, .criteria, .evaluation').text().trim();\nprojectDetail.contact = $('.contact, .coordonnees, .responsable, .info-contact').text().trim();\n\n// Extract additional structured information\nconst additionalInfo = {};\n$('.info-item, .field-item, .detail-item').each((i, elem) => {\n  const $elem = $(elem);\n  const label = $elem.find('.label, .field-label, dt').text().trim();\n  const value = $elem.find('.value, .field-value, dd').text().trim();\n  if (label && value) {\n    additionalInfo[label] = value;\n  }\n});\nprojectDetail.additionalInfo = additionalInfo;\n\n// Extract all document attachments\nconst attachments = [];\nconst fileExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'zip', 'rar'];\nconst filePattern = new RegExp(`\\\\.(${fileExtensions.join('|')})$`, 'i');\n\n$('a').each((i, elem) => {\n  const $elem = $(elem);\n  const href = $elem.attr('href');\n  const text = $elem.text().trim();\n  \n  if (href && (filePattern.test(href) || href.includes('telecharger') || href.includes('download'))) {\n    const fullUrl = href.startsWith('http') ? href : baseUrl + '/' + href.replace(/^\\//, '');\n    const fileType = href.match(filePattern) ? href.split('.').pop().toLowerCase() : 'unknown';\n    \n    attachments.push({\n      name: text || `Document ${attachments.length + 1}`,\n      url: fullUrl,\n      type: fileType,\n      size: null\n    });\n  }\n});\n\nprojectDetail.attachments = attachments;\n\nreturn projectDetail;"
+      },
+      "id": "parse-project-detail",
+      "name": "Parse Project Detail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-attachments",
+              "leftValue": "={{ $json.attachments.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-attachments",
+      "name": "Check Attachments",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [2440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process attachments - download and extract content\nconst project = $input.all()[0].json;\nconst attachments = project.attachments.slice(0, 5); // Limit to 5 attachments per project\n\nreturn attachments.map(attachment => ({\n  json: {\n    ...project,\n    currentAttachment: attachment\n  }\n}));"
+      },
+      "id": "split-attachments",
+      "name": "Split Attachments",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2660, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.currentAttachment.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $('Parse Homepage').item.json.cookies }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "download-attachment",
+      "name": "Download Attachment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2880, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-pdf",
+              "leftValue": "={{ $json.currentAttachment.type }}",
+              "rightValue": "pdf",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "is-docx",
+              "leftValue": "={{ $json.currentAttachment.type }}",
+              "rightValue": "docx",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "is-doc",
+              "leftValue": "={{ $json.currentAttachment.type }}",
+              "rightValue": "doc",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "is-xlsx",
+              "leftValue": "={{ $json.currentAttachment.type }}",
+              "rightValue": "xlsx",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "is-txt",
+              "leftValue": "={{ $json.currentAttachment.type }}",
+              "rightValue": "txt",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "file-type-router",
+      "name": "File Type Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [3100, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract text from various file types\nconst fileType = $input.all()[0].json.currentAttachment.type;\nconst fileBuffer = $input.all()[0].binary.data;\nconst projectData = $input.all()[0].json;\n\nlet extractedText = '';\nlet error = null;\n\ntry {\n  switch (fileType) {\n    case 'pdf':\n      const pdfParse = require('pdf-parse');\n      const pdfData = await pdfParse(fileBuffer);\n      extractedText = pdfData.text;\n      break;\n      \n    case 'docx':\n    case 'doc':\n      const mammoth = require('mammoth');\n      const docResult = await mammoth.extractRawText({ buffer: fileBuffer });\n      extractedText = docResult.value;\n      break;\n      \n    case 'xlsx':\n    case 'xls':\n      const XLSX = require('xlsx');\n      const workbook = XLSX.read(fileBuffer, { type: 'buffer' });\n      let excelText = '';\n      \n      workbook.SheetNames.forEach(sheetName => {\n        const sheet = workbook.Sheets[sheetName];\n        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });\n        excelText += `\\n=== Sheet: ${sheetName} ===\\n`;\n        jsonData.forEach(row => {\n          if (row.length > 0) {\n            excelText += row.join(' | ') + '\\n';\n          }\n        });\n      });\n      extractedText = excelText;\n      break;\n      \n    case 'txt':\n      extractedText = fileBuffer.toString('utf-8');\n      break;\n      \n    default:\n      extractedText = 'Unsupported file type';\n  }\n} catch (err) {\n  error = err.message;\n  extractedText = '';\n}\n\nreturn {\n  ...projectData,\n  extractedContent: {\n    fileName: projectData.currentAttachment.name,\n    fileType: fileType,\n    text: extractedText,\n    error: error,\n    extractedAt: new Date().toISOString()\n  }\n};"
+      },
+      "id": "extract-file-content",
+      "name": "Extract File Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3320, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all project data and extracted content\nconst allData = $input.all();\nconst projectsMap = new Map();\n\n// Group by project\nallData.forEach(item => {\n  const data = item.json;\n  const projectKey = data.title + '_' + data.link;\n  \n  if (!projectsMap.has(projectKey)) {\n    projectsMap.set(projectKey, {\n      title: data.title,\n      link: data.link,\n      description: data.description,\n      fullDescription: data.fullDescription,\n      organisme: data.organisme,\n      datePublication: data.datePublication,\n      montant: data.montant,\n      specifications: data.specifications,\n      deadline: data.deadline,\n      criteria: data.criteria,\n      contact: data.contact,\n      additionalInfo: data.additionalInfo || {},\n      attachments: data.attachments || [],\n      extractedContents: []\n    });\n  }\n  \n  // Add extracted content\n  if (data.extractedContent) {\n    projectsMap.get(projectKey).extractedContents.push(data.extractedContent);\n  }\n});\n\n// Convert to array and prepare for summarization\nconst projects = Array.from(projectsMap.values()).map(project => {\n  // Combine all text content\n  const allTexts = [\n    project.description,\n    project.fullDescription,\n    project.specifications,\n    project.criteria,\n    ...project.extractedContents.map(content => \n      `=== ${content.fileName} ===\\n${content.text}`\n    )\n  ].filter(text => text && text.trim()).join('\\n\\n');\n  \n  return {\n    ...project,\n    combinedText: allTexts,\n    totalAttachments: project.attachments.length,\n    processedAttachments: project.extractedContents.length,\n    readyForSummary: true\n  };\n});\n\nreturn projects.map(project => ({ json: project }));"
+      },
+      "id": "aggregate-project-data",
+      "name": "Aggregate Project Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3540, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "should-generate-summary",
+              "leftValue": "={{ $('Extract Parameters').item.json.generateSummary }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-summary-needed",
+      "name": "Check Summary Needed",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [3760, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "gpt-4"
+            },
+            {
+              "name": "messages",
+              "value": "=[\n  {\n    \"role\": \"system\",\n    \"content\": \"Tu es un expert en marchés publics marocains. Analyse les projets fournis et crée un résumé détaillé en français incluant: 1) Vue d'ensemble des projets 2) Analyse des secteurs 3) Opportunités clés 4) Montants et budgets 5) Échéances importantes 6) Recommandations stratégiques. Sois précis et professionnel.\"\n  },\n  {\n    \"role\": \"user\",\n    \"content\": \"Voici les projets de marchés publics à analyser:\\n\\n{{ $json.combinedText }}\"\n  }\n]"
+            },
+            {
+              "name": "max_tokens",
+              "value": 2000
+            },
+            {
+              "name": "temperature",
+              "value": 0.3
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "generate-project-summary",
+      "name": "Generate Project Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [3980, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Create final comprehensive response with summary\nconst allProjects = $input.all();\nconst summaryData = allProjects.find(item => item.json.choices);\nconst projectsData = allProjects.filter(item => !item.json.choices);\n\n// Extract AI summary if available\nconst aiSummary = summaryData?.json.choices?.[0]?.message?.content || '';\n\n// Calculate statistics\nconst totalProjects = projectsData.length;\nconst totalBudget = projectsData.reduce((sum, item) => {\n  const montant = item.json.montant || '';\n  const numericValue = parseFloat(montant.replace(/[^0-9.,]/g, '').replace(',', '.'));\n  return sum + (isNaN(numericValue) ? 0 : numericValue);\n}, 0);\n\nconst organizationStats = {};\nconst sectorStats = {};\n\nprojectsData.forEach(item => {\n  const project = item.json;\n  \n  // Count by organization\n  const org = project.organisme || 'Non spécifié';\n  organizationStats[org] = (organizationStats[org] || 0) + 1;\n  \n  // Analyze sectors based on title keywords\n  const title = project.title.toLowerCase();\n  let sector = 'Autres';\n  \n  if (title.includes('informatique') || title.includes('système') || title.includes('logiciel')) {\n    sector = 'Informatique';\n  } else if (title.includes('construction') || title.includes('bâtiment') || title.includes('travaux')) {\n    sector = 'Construction';\n  } else if (title.includes('fourniture') || title.includes('équipement') || title.includes('matériel')) {\n    sector = 'Fournitures';\n  } else if (title.includes('service') || title.includes('prestation') || title.includes('conseil')) {\n    sector = 'Services';\n  } else if (title.includes('santé') || title.includes('médical') || title.includes('hospitalier')) {\n    sector = 'Santé';\n  } else if (title.includes('éducation') || title.includes('formation') || title.includes('enseignement')) {\n    sector = 'Éducation';\n  }\n  \n  sectorStats[sector] = (sectorStats[sector] || 0) + 1;\n});\n\n// Create executive summary\nconst executiveSummary = {\n  totalProjects: totalProjects,\n  totalEstimatedBudget: totalBudget,\n  topOrganizations: Object.entries(organizationStats)\n    .sort(([,a], [,b]) => b - a)\n    .slice(0, 5)\n    .map(([org, count]) => ({ organization: org, projectCount: count })),\n  sectorDistribution: Object.entries(sectorStats)\n    .sort(([,a], [,b]) => b - a)\n    .map(([sector, count]) => ({ sector, count, percentage: Math.round((count / totalProjects) * 100) })),\n  upcomingDeadlines: projectsData\n    .filter(item => item.json.deadline)\n    .map(item => ({\n      title: item.json.title,\n      deadline: item.json.deadline,\n      organisme: item.json.organisme\n    }))\n    .slice(0, 10)\n};\n\n// Prepare final response\nconst response = {\n  success: true,\n  searchSummary: {\n    searchTerm: $('Extract Parameters').item.json.searchTerm,\n    category: $('Extract Parameters').item.json.category,\n    region: $('Extract Parameters').item.json.region,\n    searchDate: new Date().toISOString()\n  },\n  executiveSummary: executiveSummary,\n  aiAnalysis: aiSummary,\n  projects: projectsData.map(item => ({\n    ...item.json,\n    // Remove combined text from individual projects to reduce response size\n    combinedText: undefined\n  })),\n  metadata: {\n    totalProjects: totalProjects,\n    processedAt: new Date().toISOString(),\n    processingTime: 'Calculated by workflow'\n  }\n};\n\nreturn response;"
+      },
+      "id": "create-final-response",
+      "name": "Create Final Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4200, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [4420, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle projects without attachments\nconst project = $input.all()[0].json;\n\nreturn {\n  ...project,\n  extractedContents: [],\n  combinedText: [project.description, project.fullDescription, project.specifications].filter(Boolean).join('\\n\\n'),\n  totalAttachments: 0,\n  processedAttachments: 0,\n  readyForSummary: true\n};"
+      },
+      "id": "handle-no-attachments",
+      "name": "Handle No Attachments",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2660, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Create response without AI summary\nconst projectsData = $input.all();\n\nconst totalProjects = projectsData.length;\nconst organizationStats = {};\nconst sectorStats = {};\n\nprojectsData.forEach(item => {\n  const project = item.json;\n  \n  const org = project.organisme || 'Non spécifié';\n  organizationStats[org] = (organizationStats[org] || 0) + 1;\n  \n  const title = project.title.toLowerCase();\n  let sector = 'Autres';\n  \n  if (title.includes('informatique') || title.includes('système')) {\n    sector = 'Informatique';\n  } else if (title.includes('construction') || title.includes('travaux')) {\n    sector = 'Construction';\n  } else if (title.includes('fourniture') || title.includes('équipement')) {\n    sector = 'Fournitures';\n  } else if (title.includes('service') || title.includes('prestation')) {\n    sector = 'Services';\n  }\n  \n  sectorStats[sector] = (sectorStats[sector] || 0) + 1;\n});\n\nconst executiveSummary = {\n  totalProjects: totalProjects,\n  topOrganizations: Object.entries(organizationStats)\n    .sort(([,a], [,b]) => b - a)\n    .slice(0, 5)\n    .map(([org, count]) => ({ organization: org, projectCount: count })),\n  sectorDistribution: Object.entries(sectorStats)\n    .map(([sector, count]) => ({ sector, count, percentage: Math.round((count / totalProjects) * 100) }))\n};\n\nreturn {\n  success: true,\n  searchSummary: {\n    searchTerm: $('Extract Parameters').item.json.searchTerm,\n    category: $('Extract Parameters').item.json.category,\n    region: $('Extract Parameters').item.json.region\n  },\n  executiveSummary: executiveSummary,\n  projects: projectsData.map(item => item.json),\n  metadata: {\n    totalProjects: totalProjects,\n    processedAt: new Date().toISOString()\n  }\n};"
+      },
+      "id": "create-basic-response",
+      "name": "Create Basic Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3980, 400]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Parameters": {
+      "main": [
+        [
+          {
+            "node": "Get Homepage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Homepage": {
+      "main": [
+        [
+          {
+            "node": "Parse Homepage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Homepage": {
+      "main": [
+        [
+          {
+            "node": "Search Projects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Projects": {
+      "main": [
+        [
+          {
+            "node": "Parse Project List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Project List": {
+      "main": [
+        [
+          {
+            "node": "Split Projects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Projects": {
+      "main": [
+        [
+          {
+            "node": "Delay Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delay Requests": {
+      "main": [
+        [
+          {
+            "node": "Get Project Detail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Project Detail": {
+      "main": [
+        [
+          {
+            "node": "Parse Project Detail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Project Detail": {
+      "main": [
+        [
+          {
+            "node": "Check Attachments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Attachments": {
+      "main": [
+        [
+          {
+            "node": "Split Attachments",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle No Attachments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Attachments": {
+      "main": [
+        [
+          {
+            "node": "Download Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Attachment": {
+      "main": [
+        [
+          {
+            "node": "File Type Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File Type Router": {
+      "main": [
+        [
+          {
+            "node": "Extract File Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract File Content": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Project Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle No Attachments": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Project Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Project Data": {
+      "main": [
+        [
+          {
+            "node": "Check Summary Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Summary Needed": {
+      "main": [
+        [
+          {
+            "node": "Generate Project Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Basic Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Project Summary": {
+      "main": [
+        [
+          {
+            "node": "Create Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Final Response": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Basic Response": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

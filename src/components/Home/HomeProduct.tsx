@@ -24,6 +24,11 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import ProductCard2 from '../Product/ProductCard2';
 import { filterData } from '../../database/Database';
 
+// Fixed image imports - corrected file extensions
+import image1 from "../../assets/silder_images/image1.jpeg"
+import image2 from "../../assets/silder_images/image2.jpeg"
+import image3 from "../../assets/silder_images/image3.jpeg"
+
 // Import ProductService
 import ProductService, { 
   Product, 
@@ -58,7 +63,7 @@ interface UserDetails {
 interface CarouselSlide {
   id: string;
   title: string;
-  imageUri: string;
+  imageSource: any; // Changed from imageUri to imageSource for local images
 }
 
 // =====================================
@@ -78,28 +83,30 @@ const CATEGORY_MAPPING: { [key: string]: number } = {
   "20": 20,   // Oiseau -> API category 20
 };
 
+// Fixed carousel slides configuration
 const CAROUSEL_SLIDES: CarouselSlide[] = [
   {
     id: '1',
-    title: 'Offres Spéciales',
-    imageUri: 'https://d1csarkz8obe9u.cloudfront.net/posterpreviews/clothing-store-banner-design-template-e7332aaf6402c88cb4623bf8eb6f97e2_screen.jpg?ts=1620867237'
+    title: 'Vente et livraison des aliments et accessoires',
+    imageSource: image1 // Using local image
   },
   {
     id: '2',
-    title: 'Nourriture Premium',
-    imageUri: 'https://t4.ftcdn.net/jpg/03/06/69/49/360_F_306694930_S3Z8H9Qk1MN79ZUe7bEWqTFuonRZdemw.jpg'
+    title: '100% dédiée aux animaux de compagnie',
+    imageSource: image2 // Using local image
   },
   {
     id: '3',
-    title: 'Essentiels Chat',
-    imageUri: 'https://t4.ftcdn.net/jpg/03/20/46/13/360_F_320461388_5Snqf6f2tRIqiWlaIzNWrCUm1Ocaqhfm.jpg'
-  },
-  {
-    id: '4',
-    title: 'Jouets Amusants',
-    imageUri: 'https://t4.ftcdn.net/jpg/03/65/85/47/360_F_365854716_ZHB0YN3i3s0H7NjI9hiezH53D5nvoF0E.jpg'
-  },
+    title: 'Découvrez notre vaste catalogue pour chats',
+    imageSource: image3 // Using local image
+  }
 ];
+
+// Helper function to get category image
+const getCategoryImage = (categoryId: string) => {
+  const category = filterData.find(cat => cat.id === categoryId);
+  return category ? category.image : null;
+};
 
 // =====================================
 // MAIN COMPONENT
@@ -277,7 +284,7 @@ export default function HomeProduct({ navigation }: HomeProductProps) {
             console.log(`🔍 Products exist in general, but none for category ${apiCategoryId}`);
             
             // Try with a different category to test if the issue is category-specific
-            const alternativeCategories = [2, 3, 21, 20,184,31]; // Your actual category IDs
+            const alternativeCategories = [2, 3, 21, 20, 184, 31]; // Your actual category IDs
             for (const altCat of alternativeCategories) {
               if (altCat !== apiCategoryId) {
                 try {
@@ -447,11 +454,11 @@ export default function HomeProduct({ navigation }: HomeProductProps) {
   // RENDER FUNCTIONS
   // =====================================
 
-  // Render carousel slide
+  // Fixed carousel slide render function
   const renderCarouselSlide = (slide: CarouselSlide) => (
     <View key={slide.id} style={styles.slide}>
       <Image
-        source={{ uri: slide.imageUri }}
+        source={slide.imageSource} // Changed from imageUri to imageSource for local images
         style={styles.slideImage}
       />
       <View style={[styles.slideGradient, { 
@@ -493,8 +500,6 @@ export default function HomeProduct({ navigation }: HomeProductProps) {
           >
             {item.name}
           </Text>
-          
-        
           
           {/* Error indicator */}
           {item.error && !item.loading && (
@@ -705,8 +710,6 @@ export default function HomeProduct({ navigation }: HomeProductProps) {
                   >
                     {item.name}
                   </Text>
-                  
-                 
                   
                   {/* Error indicator */}
                   {item.error && !item.loading && (
@@ -960,8 +963,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
-
-  // Debug Styles (removed)
 
   // Empty States
   emptyContainer: {

@@ -19,7 +19,7 @@ export default function Signup({navigation}) {
         address: '',
         city: '',
         postalCode: '',
-        phone: '',
+        phone: '0',
         password: '',
       });
       const [errors, setErrors] = useState({});
@@ -60,6 +60,43 @@ export default function Signup({navigation}) {
           keyboardDidHideListener?.remove();
         };
       }, []);
+
+      // Phone number formatting function - Updated for 0 mask
+      const formatPhoneNumber = (text) => {
+        // Remove all non-digit characters
+        let cleaned = text.replace(/[^\d]/g, '');
+        
+        // Always ensure it starts with 0
+        if (!cleaned.startsWith('0')) {
+          cleaned = '0';
+        }
+        
+        // Limit to 10 digits total (0 + 9 digits)
+        if (cleaned.length > 10) {
+          cleaned = cleaned.substring(0, 10);
+        }
+        
+        return cleaned;
+      };
+
+      // Validate Moroccan phone number - Updated for 0 format
+      const isValidMoroccanPhone = (phone) => {
+        // Remove all non-digit characters
+        const cleaned = phone.replace(/[^\d]/g, '');
+        
+        // Should be 10 digits starting with 0, followed by 6 or 7
+        const regex = /^0[67]\d{8}$/;
+        return regex.test(cleaned);
+      };
+
+      // Convert phone number from 0 format to +212 format for API
+      const convertPhoneToInternational = (phone) => {
+        const cleaned = phone.replace(/[^\d]/g, '');
+        if (cleaned.startsWith('0') && cleaned.length === 10) {
+          return '+212' + cleaned.substring(1);
+        }
+        return phone;
+      };
 
       // Success toast animation functions
       const showSuccessToastWithAnimation = () => {
@@ -134,8 +171,11 @@ export default function Signup({navigation}) {
           isValid = false;
         }
     
-        if (!inputs.phone) {
+        if (!inputs.phone || inputs.phone.trim() === '0') {
           handleError('Veuillez saisir votre numéro de téléphone', 'phone');
+          isValid = false;
+        } else if (!isValidMoroccanPhone(inputs.phone)) {
+          handleError('Numéro de téléphone marocain invalide (ex: 0612345678)', 'phone');
           isValid = false;
         }
     
@@ -412,10 +452,13 @@ export default function Signup({navigation}) {
           inputs.postalCode
         ].filter(Boolean).join(', ');
 
+        // Convert phone number to international format for API
+        const internationalPhone = convertPhoneToInternational(inputs.phone);
+
         const inputData = {
           module: 'societe',
           name: inputs.fullname,
-          phone: inputs.phone,
+          phone: internationalPhone,
           address: concatenatedAddress,
           email: inputs.email,
           client: 1,
@@ -456,7 +499,7 @@ export default function Signup({navigation}) {
               ]).start(() => {
                 navigation.replace('Login', {
                   email: inputs.email,
-                  phone: inputs.phone,
+                  phone: internationalPhone,
                   fromSignup: true
                 });
               });
@@ -490,7 +533,13 @@ export default function Signup({navigation}) {
     };
     
       const handleOnchange = (text, input) => {
-        setInputs(prevState => ({...prevState, [input]: text}));
+        if (input === 'phone') {
+          // Apply phone number formatting
+          const formattedPhone = formatPhoneNumber(text);
+          setInputs(prevState => ({...prevState, [input]: formattedPhone}));
+        } else {
+          setInputs(prevState => ({...prevState, [input]: text}));
+        }
       };
       
       const handleError = (error, input) => {
@@ -798,18 +847,28 @@ export default function Signup({navigation}) {
                 </Text>
               )}
 
+              {/* Phone Input with 0 mask */}
               <Input
+                value={inputs.phone}
                 keyboardType="phone-pad"
                 onChangeText={text => handleOnchange(text, 'phone')}
                 onFocus={() => handleInputFocus('phone')}
                 iconName="phone-outline"
                 label="Numéro de téléphone"
-                placeholder="Entrez votre numéro de téléphone"
+                placeholder="0612345678"
                 error={errors.phone}
                 labelColor={theme.textColor}
                 theme={theme}
                 isDarkMode={isDarkMode}
+                maxLength={10} // 10 digits total
               />
+
+              {/* Phone format helper text */}
+              {!keyboardVisible && (
+                <Text style={[styles.phoneHelperText, { color: theme.secondaryTextColor }]}>
+                  📱 Format: 0 suivi de 9 chiffres (mobile: 06/07)
+                </Text>
+              )}
 
               <Input
                 onChangeText={text => handleOnchange(text, 'password')}
@@ -946,6 +1005,13 @@ const styles = StyleSheet.create({
   helperText: {
     fontSize: 12,
     marginBottom: 15,
+    marginLeft: 5,
+    fontStyle: 'italic',
+  },
+  phoneHelperText: {
+    fontSize: 12,
+    marginBottom: 15,
+    marginTop: -5,
     marginLeft: 5,
     fontStyle: 'italic',
   },

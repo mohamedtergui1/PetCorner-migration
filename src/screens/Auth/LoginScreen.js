@@ -2,7 +2,6 @@ import { Alert, BackHandler, Image, Keyboard, SafeAreaView, StyleSheet, Text, To
 import React, { useEffect, useState, useRef } from 'react'
 import Input from './Input'
 import Botton from './Botton'
-import { COLOURS } from '../../database/Database'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import Loader from '../Loader'
 import axios from 'axios'
@@ -18,7 +17,7 @@ export default function LoginScreen({ navigation, route }) {
   const { email: signupEmail, phone: signupPhone, fromSignup } = signupData;
 
   const [inputs, setInputs] = useState({
-    phone: signupPhone || '',
+    phone: signupPhone ? convertInternationalToLocal(signupPhone) : '0',
     password: ''
   });
   const [errors, setErrors] = useState({});
@@ -43,6 +42,56 @@ export default function LoginScreen({ navigation, route }) {
 
   const successToastAnim = useRef(new Animated.Value(0)).current;
   const successToastSlideAnim = useRef(new Animated.Value(-100)).current;
+
+  // Convert international format (+212612345678) to local format (0612345678)
+  function convertInternationalToLocal(phone) {
+    if (phone && phone.startsWith('+212')) {
+      return '0' + phone.substring(4);
+    }
+    return phone;
+  }
+
+  // Convert local format (0612345678) to international format (+212612345678)
+  function convertLocalToInternational(phone) {
+    const cleaned = phone.replace(/[^\d]/g, '');
+    if (cleaned.startsWith('0') && cleaned.length === 10) {
+      return '+212' + cleaned.substring(1);
+    }
+    return phone;
+  }
+
+  // Phone number formatting function - Updated for 0 mask
+  const formatPhoneNumber = (text) => {
+    // Remove all non-digit characters
+    let cleaned = text.replace(/[^\d]/g, '');
+    
+    // Always ensure it starts with 0
+    if (!cleaned.startsWith('0')) {
+      cleaned = '0';
+    }
+    
+    // Limit to 10 digits total (0 + 9 digits)
+    if (cleaned.length > 10) {
+      cleaned = cleaned.substring(0, 10);
+    }
+    
+    return cleaned;
+  };
+
+  // Validate Moroccan phone number - Updated for 0 format
+  const isValidMoroccanPhone = (phone) => {
+    // Remove all non-digit characters
+    const cleaned = phone.replace(/[^\d]/g, '');
+    
+    // Should be 10 digits starting with 0, followed by 6 or 7
+    const regex = /^0[67]\d{8}$/;
+    return regex.test(cleaned);
+  };
+
+  // Get clean phone number (remove all non-digits)
+  const getCleanPhoneNumber = (phone) => {
+    return phone.replace(/[^\d]/g, '');
+  };
 
   useEffect(() => {
     if (fromSignup) {
@@ -242,14 +291,21 @@ export default function LoginScreen({ navigation, route }) {
     ]).start();
 
     let isValid = true;
-    if (!inputs.phone) {
-      handleError('Veuillez saisir le numéro de téléphone', 'phone');
+
+    // Check if phone is empty or just '0'
+    if (!inputs.phone || inputs.phone.trim() === '0') {
+      handleError('Veuillez saisir votre numéro de téléphone complet', 'phone');
+      isValid = false;
+    } else if (!isValidMoroccanPhone(inputs.phone)) {
+      handleError('Numéro de téléphone marocain invalide (ex: 0612345678)', 'phone');
       isValid = false;
     }
+
     if (!inputs.password) {
       handleError('Veuillez saisir le mot de passe', 'password');
       isValid = false;
     }
+
     if (isValid) {
       login();
     }
@@ -267,6 +323,9 @@ export default function LoginScreen({ navigation, route }) {
     );
     loadingRotation.start();
 
+    // Convert phone number to international format for API
+    const internationalPhone = convertLocalToInternational(inputs.phone);
+
     try {
       const response = await axios.get(API_BASE_URL + '/thirdparties/login', {
         method: 'GET',
@@ -275,7 +334,7 @@ export default function LoginScreen({ navigation, route }) {
           'DOLAPIKEY': Token
         },
         params: {
-          phone: inputs.phone,
+          phone: internationalPhone,
           pwd: inputs.password
         }
       });
@@ -296,7 +355,7 @@ export default function LoginScreen({ navigation, route }) {
 
           const userDataToSave = {
             id: userId,
-            phone: inputs.phone,
+            phone: internationalPhone,
             loggedIn: true,
             ...(signupEmail && { email: signupEmail })
           };
@@ -348,7 +407,18 @@ export default function LoginScreen({ navigation, route }) {
   };
 
   const handleOnchange = (text, input) => {
-    setInputs(prevState => ({ ...prevState, [input]: text }));
+    if (input === 'phone') {
+      // Apply phone number formatting
+      const formattedPhone = formatPhoneNumber(text);
+      setInputs(prevState => ({ ...prevState, [input]: formattedPhone }));
+      
+      // Clear error when user starts typing
+      if (errors.phone) {
+        handleError(null, 'phone');
+      }
+    } else {
+      setInputs(prevState => ({ ...prevState, [input]: text }));
+    }
   };
 
   const handleError = (error, input) => {
@@ -556,6 +626,7 @@ export default function LoginScreen({ navigation, route }) {
               <View style={styles.inputWrapper}>
                 <Input
                   value={inputs.phone}
+                  keyboardType="phone-pad"
                   onChangeText={text => handleOnchange(text, 'phone')}
                   onFocus={() => {
                     handleError(null, 'phone');
@@ -563,13 +634,21 @@ export default function LoginScreen({ navigation, route }) {
                   }}
                   iconName="phone-outline"
                   label="Téléphone"
-                  placeholder="Entrez votre téléphone"
+                  placeholder="0612345678"
                   error={errors.phone}
                   labelColor={theme.textColor}
                   theme={theme}
                   isDarkMode={isDarkMode}
+                  maxLength={10} // 10 digits total
                 />
               </View>
+
+              {/* Phone format helper text */}
+              {!keyboardVisible && (
+                <Text style={[styles.phoneHelperText, { color: theme.secondaryTextColor }]}>
+                  📱 Format: 0 suivi de 9 chiffres (mobile: 06/07)
+                </Text>
+              )}
 
               <View style={styles.inputWrapper}>
                 <Input
@@ -692,6 +771,13 @@ const styles = StyleSheet.create({
   },
   inputWrapper: {
     marginBottom: 15,
+  },
+  phoneHelperText: {
+    fontSize: 12,
+    marginBottom: 15,
+    marginTop: -10,
+    marginLeft: 5,
+    fontStyle: 'italic',
   },
   signupText: {
     fontWeight: '500',
