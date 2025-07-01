@@ -112,6 +112,37 @@ class OrderService {
   }
 
   /**
+   * Show input dialog for cancellation comment
+   */
+  private showCancelCommentDialog(
+    orderRef: string,
+    onConfirm: (comment: string) => void,
+    onCancel: () => void
+  ): void {
+    Alert.prompt(
+      'Raison de l\'annulation',
+      `Pourquoi voulez-vous annuler la commande ${orderRef} ? (Optionnel)`,
+      [
+        {
+          text: 'Annuler',
+          style: 'cancel',
+          onPress: onCancel,
+        },
+        {
+          text: 'Confirmer l\'annulation',
+          style: 'destructive',
+          onPress: (comment) => {
+            onConfirm(comment || '');
+          },
+        },
+      ],
+      'plain-text',
+      '',
+      'default'
+    );
+  }
+
+  /**
    * Create a new order from cart data
    */
   async createOrder(orderData: CreateOrderRequest): Promise<CreateOrderResponse> {
@@ -495,15 +526,59 @@ class OrderService {
   }
 
   /**
-   * Cancel order
+   * Cancel order with comment stored in public note
    */
   async cancelOrder(orderId: number, cancelReason?: string): Promise<UpdateOrderStatusResponse> {
-    const updateData: UpdateOrderStatusRequest = {
-      status: -1, // Status -1 = Cancelled
-      note_private: cancelReason ? `Cancellation Reason: ${cancelReason}` : undefined,
-    };
+    try {
+      // Get current order to preserve existing notes
+      const currentOrder = await this.getOrderById(orderId);
 
-    return this.updateOrderStatus(orderId, updateData);
+      const updateData: any = {
+        statut: '-1', // Status -1 = Cancelled
+      };
+
+      // Preserve existing private note
+      if (currentOrder.note_private) {
+        updateData.note_private = currentOrder.note_private;
+      }
+
+      // Create or update public note with cancellation reason
+      let publicNote = '';
+      
+      // Preserve existing public note
+      if (currentOrder.note_public) {
+        publicNote = currentOrder.note_public + '\n\n';
+      }
+
+      // Add cancellation information to public note
+      publicNote += `=== COMMANDE ANNULÉE ===\n`;
+      publicNote += `Date d'annulation: ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}\n`;
+      
+      if (cancelReason && cancelReason.trim()) {
+        publicNote += `Raison: ${cancelReason.trim()}\n`;
+      } else {
+        publicNote += `Raison: Non spécifiée\n`;
+      }
+      
+      publicNote += `Statut: Commande annulée par le client`;
+
+      updateData.note_public = publicNote;
+
+      // Update the order
+      await apiClient.put(`/orders/${orderId}`, updateData);
+
+      return {
+        success: true,
+        message: 'Commande annulée avec succès'
+      };
+
+    } catch (error) {
+      console.error(`Failed to cancel order ${orderId}:`, error);
+      return {
+        success: false,
+        error: error.message || 'Erreur lors de l\'annulation'
+      };
+    }
   }
 
   /**
@@ -732,7 +807,7 @@ class OrderService {
   }
 
   /**
-   * Cancel order with confirmation and reason
+   * Enhanced cancel order with comment input dialog - stores in PUBLIC note
    */
   async cancelOrderWithConfirmation(
     orderId: number,
@@ -741,42 +816,39 @@ class OrderService {
     onSuccess?: () => void,
     onError?: (error: string) => void
   ): Promise<void> {
-    Alert.alert(
-      'Confirmer l\'annulation',
-      `Êtes-vous sûr de vouloir annuler la commande ${orderRef} ?`,
-      [
-        {
-          text: 'Non',
-          style: 'cancel',
-        },
-        {
-          text: 'Oui, annuler',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const result = await this.cancelOrder(orderId, cancelReason);
+    
+    // Show input dialog for cancellation comment
+    this.showCancelCommentDialog(
+      orderRef,
+      async (comment: string) => {
+        // User confirmed cancellation with comment
+        try {
+          console.log('🚫 Cancelling order with comment:', comment);
+          const result = await this.cancelOrder(orderId, comment);
 
-              if (result.success) {
-                Alert.alert('Succès', 'La commande a été annulée');
-                if (onSuccess) {
-                  onSuccess();
-                }
-              } else {
-                Alert.alert('Erreur', result.error || 'Une erreur est survenue');
-                if (onError) {
-                  onError(result.error || 'Erreur');
-                }
-              }
-            } catch (error) {
-              const errorMessage = error instanceof Error ? error.message : 'Une erreur inattendue est survenue';
-              Alert.alert('Erreur', errorMessage);
-              if (onError) {
-                onError(errorMessage);
-              }
+          if (result.success) {
+            Alert.alert('Succès', 'La commande a été annulée avec succès');
+            if (onSuccess) {
+              onSuccess();
             }
-          },
-        },
-      ]
+          } else {
+            Alert.alert('Erreur', result.error || 'Une erreur est survenue');
+            if (onError) {
+              onError(result.error || 'Erreur');
+            }
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Une erreur inattendue est survenue';
+          Alert.alert('Erreur', errorMessage);
+          if (onError) {
+            onError(errorMessage);
+          }
+        }
+      },
+      () => {
+        // User cancelled the dialog - do nothing
+        console.log('📝 Cancellation dialog cancelled by user');
+      }
     );
   }
 

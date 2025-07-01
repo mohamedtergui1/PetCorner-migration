@@ -106,26 +106,6 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
     }
   };
 
-  // Handle delivery without note
-  const handleSetAsDelivered = () => {
-    if (order.status === 3) {
-      Alert.alert('Information', 'Cette commande est déjà marquée comme livrée.');
-      return;
-    }
-
-    OrderService.setOrderAsDeliveredWithConfirmation(
-      order.id,
-      order.ref,
-      () => {
-        // Refresh order data
-        refreshOrderData();
-      },
-      (error) => {
-        console.error('Error setting order as delivered:', error);
-      }
-    );
-  };
-
   // Refresh order data
   const refreshOrderData = () => {
     OrderService.fetchOrderDetailsWithState(
@@ -139,35 +119,127 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
     );
   };
 
-  // Handle cancel order (simple cancellation without reason)
+  // Handle cancel order - Only available for draft orders
   const handleCancelOrder = () => {
-    Alert.alert(
-      'Confirmer l\'annulation',
-      `Êtes-vous sûr de vouloir annuler la commande ${order.ref} ?`,
+    console.log('🚫 Cancel order button pressed for order:', order.ref);
+    
+    OrderService.cancelOrderWithConfirmation(
+      order.id,
+      order.ref,
+      undefined, // No predefined cancellation reason
+      () => {
+        console.log('✅ Order cancelled successfully, refreshing data...');
+        refreshOrderData(); // Refresh order data on success
+      },
+      (error) => {
+        console.error('❌ Error cancelling order:', error);
+      }
+    );
+  };
+
+  // Handle adding feedback to delivered order
+  const handleAddDeliveryFeedback = () => {
+    console.log('💬 Add delivery feedback button pressed for order:', order.ref);
+    
+    Alert.prompt(
+      'Ajouter un commentaire',
+      `Comment s'est passée la livraison de votre commande ${order.ref} ?`,
       [
         {
-          text: 'Non',
+          text: 'Annuler',
           style: 'cancel',
         },
         {
-          text: 'Oui, annuler',
-          style: 'destructive',
-          onPress: () => {
-            OrderService.cancelOrderWithConfirmation(
-              order.id,
-              order.ref,
-              undefined, // No cancellation reason
-              () => {
-                refreshOrderData();
-              },
-              (error) => {
-                console.error('Error cancelling order:', error);
+          text: 'Ajouter le commentaire',
+          style: 'default',
+          onPress: async (feedback) => {
+            if (feedback && feedback.trim()) {
+              try {
+                const result = await OrderService.addOrderNote(
+                  order.id, 
+                  `Commentaire de livraison ajouté le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}:\n${feedback.trim()}`, 
+                  false // false = public note
+                );
+                
+                if (result.success) {
+                  Alert.alert('Succès', 'Votre commentaire a été ajouté avec succès');
+                  refreshOrderData(); // Refresh to show updated notes
+                } else {
+                  Alert.alert('Erreur', result.error || 'Erreur lors de l\'ajout du commentaire');
+                }
+              } catch (error) {
+                console.error('❌ Error adding delivery feedback:', error);
+                Alert.alert('Erreur', 'Une erreur inattendue est survenue');
               }
-            );
+            }
           },
         },
-      ]
+      ],
+      'plain-text',
+      '',
+      'default'
     );
+  };
+
+  // Render status action buttons - FIXED: Only cancel in draft, only feedback in delivered
+  const renderStatusActions = () => {
+    const actions = [];
+    
+    // Get numeric status for comparison
+    const currentStatus = typeof order.statut === 'string' ? parseInt(order.statut, 10) : (order.statut || order.status);
+
+    console.log('🎯 Rendering actions for order status:', currentStatus);
+
+    switch (currentStatus) {
+      case 0: // Draft - User can ONLY cancel
+        console.log('📝 Draft order - showing cancel button');
+        actions.push(
+          <TouchableOpacity
+            key="cancel"
+            style={[styles.actionButton, styles.cancelActionButton, { backgroundColor: '#f44336' }]}
+            onPress={handleCancelOrder}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons name="cancel" size={20} color="#fff" />
+            <Text style={styles.actionButtonText}>Annuler la commande</Text>
+          </TouchableOpacity>
+        );
+        break;
+
+      case 1: // Validated - No actions for users
+        console.log('✅ Validated order - no user actions available');
+        break;
+
+      case 2: // Processing - No actions for users
+        console.log('⚙️ Processing order - no user actions available');
+        break;
+
+      case 3: // Delivered - Can ONLY add feedback
+        console.log('📦 Delivered order - showing feedback button');
+        actions.push(
+          <TouchableOpacity
+            key="feedback"
+            style={[styles.actionButton, { backgroundColor: '#4caf50' }]}
+            onPress={handleAddDeliveryFeedback}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons name="comment-plus" size={20} color="#fff" />
+            <Text style={styles.actionButtonText}>Ajouter un commentaire</Text>
+          </TouchableOpacity>
+        );
+        break;
+
+      case -1: // Cancelled - No actions available
+        console.log('❌ Cancelled order - no actions available');
+        break;
+
+      default: // Unknown status - No actions available
+        console.log('❓ Unknown order status - no actions available');
+        break;
+    }
+
+    console.log('🎬 Total actions rendered:', actions.length);
+    return actions;
   };
 
   // Render product item
@@ -225,60 +297,6 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
       </View>
     </View>
   );
-
-  // Render status action buttons based on current status
-  const renderStatusActions = () => {
-    const actions = [];
-    
-    // Get numeric status for comparison
-    const currentStatus = typeof order.statut === 'string' ? parseInt(order.statut, 10) : (order.statut || order.status);
-
-    switch (currentStatus) {
-      case 0: // Draft - User can cancel
-        actions.push(
-          <TouchableOpacity
-            key="cancel"
-            style={[styles.actionButton, styles.cancelActionButton, { backgroundColor: '#f44336' }]}
-            onPress={handleCancelOrder}
-            activeOpacity={0.8}
-          >
-            <MaterialCommunityIcons name="cancel" size={20} color="#fff" />
-            <Text style={styles.actionButtonText}>Annuler la commande</Text>
-          </TouchableOpacity>
-        );
-        break;
-
-      case 1: // Validated - User can mark as delivered
-        actions.push(
-          <TouchableOpacity
-            key="deliver"
-            style={[styles.actionButton, { backgroundColor: '#009688' }]}
-            onPress={handleSetAsDelivered}
-            activeOpacity={0.8}
-          >
-            <MaterialCommunityIcons name="truck-delivery" size={20} color="#fff" />
-            <Text style={styles.actionButtonText}>Marquer comme livrée</Text>
-          </TouchableOpacity>
-        );
-        break;
-
-      case 2: // Processing - User can mark as delivered
-        actions.push(
-          <TouchableOpacity
-            key="deliver"
-            style={[styles.actionButton, { backgroundColor: '#009688' }]}
-            onPress={handleSetAsDelivered}
-            activeOpacity={0.8}
-          >
-            <MaterialCommunityIcons name="truck-delivery" size={20} color="#fff" />
-            <Text style={styles.actionButtonText}>Marquer comme livrée</Text>
-          </TouchableOpacity>
-        );
-        break;
-    }
-
-    return actions;
-  };
 
   const statusInfo = getStatusInfo(order.statut || order.status);
 
@@ -472,7 +490,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 100, // Increased padding to avoid tab menu overlap
+    paddingBottom: 100,
   },
   card: {
     borderRadius: 16,
