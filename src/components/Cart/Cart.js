@@ -99,6 +99,7 @@ export default function Cart({ navigation }) {
     const unsubscribe = navigation.addListener('focus', () => {
       console.log('🎯 Screen focused, loading cart data...');
       getDataFromDB();
+      loadUserAddress(); // Load user data when screen focuses
     });
     return unsubscribe;
   }, [navigation]);
@@ -107,8 +108,18 @@ export default function Cart({ navigation }) {
   useEffect(() => {
     console.log('🚀 Component mounted, loading initial data...');
     getDataFromDB();
-    getUserData();
+    loadUserAddress();
   }, []);
+
+  // Separate function to load user address with better error handling
+  const loadUserAddress = async () => {
+    try {
+      console.log('📍 Starting to load user address...');
+      await getUserData();
+    } catch (error) {
+      console.log('❌ Failed to load user address:', error);
+    }
+  };
 
   // Recalculate total when products or quantities change
   useEffect(() => {
@@ -118,9 +129,12 @@ export default function Cart({ navigation }) {
     }
   }, [products, cartItems]);
 
-  // Safe address parsing function
+  // Parse address string into components with enhanced debugging
   const parseAddress = (addressString) => {
+    console.log('🔍 Parsing address string:', addressString);
+    
     if (!addressString || typeof addressString !== 'string') {
+      console.log('⚠️ Address string is empty or not a string');
       return {
         address: '',
         city: '',
@@ -130,20 +144,25 @@ export default function Cart({ navigation }) {
 
     try {
       const parts = addressString.split(',').map(part => part.trim()).filter(Boolean);
+      console.log('📝 Address parts after split:', parts);
       
+      let result;
       if (parts.length === 0) {
-        return { address: '', city: '', postalCode: '' };
+        result = { address: '', city: '', postalCode: '' };
       } else if (parts.length === 1) {
-        return { address: parts[0], city: '', postalCode: '' };
+        result = { address: parts[0], city: '', postalCode: '' };
       } else if (parts.length === 2) {
-        return { address: parts[0], city: parts[1], postalCode: '' };
+        result = { address: parts[0], city: parts[1], postalCode: '' };
       } else {
-        return {
+        result = {
           address: parts[0],
           city: parts[1],
           postalCode: parts[2]
         };
       }
+      
+      console.log('📍 Parsed result:', result);
+      return result;
     } catch (error) {
       console.log('❌ Error parsing address:', error);
       return {
@@ -160,6 +179,125 @@ export default function Cart({ navigation }) {
       .filter(part => part && typeof part === 'string' && part.trim())
       .map(part => part.trim());
     return parts.join(', ');
+  };
+
+  // Get user data function with enhanced debugging
+  const getUserData = async () => {
+    try {
+      console.log('📋 Starting getUserData function...');
+      
+      // Step 1: Get user data from AsyncStorage
+      console.log('🔍 Getting user data from AsyncStorage...');
+      const userDataString = await AsyncStorage.getItem('userData');
+      
+      if (!userDataString) {
+        console.log('❌ No user data found in AsyncStorage');
+        return;
+      }
+      
+      console.log('✅ User data found in storage:', userDataString.substring(0, 100) + '...');
+      
+      const userData = JSON.parse(userDataString);
+      if (!userData || !userData.id) {
+        console.log('❌ No user ID found in parsed data:', userData);
+        return;
+      }
+      
+      const clientID = userData.id;
+      console.log('🆔 Client ID found:', clientID);
+
+      // Step 2: Make API call to get full user details
+      const headers = {
+        'Content-Type': 'application/json',
+        'DOLAPIKEY': Token
+      };
+
+      console.log('🌐 Making API call to:', API_BASE_URL + '/thirdparties/' + clientID);
+      const res = await axios.get(API_BASE_URL + '/thirdparties/' + clientID, { 
+        headers,
+        timeout: 10000 
+      });
+      
+      console.log('✅ API response received');
+      console.log('📄 Full user data:', JSON.stringify(res.data, null, 2));
+      
+      const fetchedUserData = res.data;
+      setUserDetails(fetchedUserData);
+      
+      // Step 3: Parse and set address components
+      console.log('🏠 Raw address from API:', fetchedUserData.address);
+      console.log('🏙️ Raw city from API:', fetchedUserData.town);
+      console.log('📮 Raw zip from API:', fetchedUserData.zip);
+      
+      // Check if we have a combined address that needs parsing
+      if (fetchedUserData.address && fetchedUserData.address.includes(',')) {
+        console.log('📍 Found comma-separated address, parsing...');
+        const addressParts = parseAddress(fetchedUserData.address);
+        console.log('📍 Parsed address parts:', addressParts);
+        
+        // Use parsed parts
+        const finalAddress = addressParts.address || '';
+        const finalCity = addressParts.city || fetchedUserData.town || '';
+        const finalZipCode = addressParts.postalCode || fetchedUserData.zip || '';
+        
+        console.log('🎯 Using parsed address values:');
+        console.log('   - Address:', finalAddress);
+        console.log('   - City:', finalCity);
+        console.log('   - Postal Code:', finalZipCode);
+        
+        setAddress(finalAddress);
+        setCity(finalCity);
+        setZipCode(finalZipCode);
+      } else {
+        console.log('📍 Using direct field values (no comma found)');
+        // Use direct fields if no comma separation
+        const finalAddress = fetchedUserData.address || '';
+        const finalCity = fetchedUserData.town || '';
+        const finalZipCode = fetchedUserData.zip || '';
+        
+        console.log('🎯 Using direct field values:');
+        console.log('   - Address:', finalAddress);
+        console.log('   - City:', finalCity);
+        console.log('   - Postal Code:', finalZipCode);
+        
+        setAddress(finalAddress);
+        setCity(finalCity);
+        setZipCode(finalZipCode);
+      }
+      
+      console.log('✅ Address state updated successfully');
+      
+      // Add a small delay and then log the current state
+      setTimeout(() => {
+        console.log('🔍 Current state after update:');
+        console.log('   - address state:', address);
+        console.log('   - city state:', city);
+        console.log('   - zipCode state:', zipCode);
+      }, 100);
+      
+      // Show success message if we have any address data
+      if (finalAddress || finalCity || finalZipCode) {
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Adresse chargée depuis votre profil', ToastAndroid.SHORT);
+        } else {
+          Toast.show('Adresse chargée depuis votre profil', Toast.SHORT);
+        }
+      }
+      
+    } catch (error) {
+      console.log('❌ Error in getUserData:', error);
+      console.log('❌ Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Erreur lors du chargement de l\'adresse', ToastAndroid.SHORT);
+      } else {
+        Toast.show('Erreur lors du chargement de l\'adresse', Toast.SHORT);
+      }
+    }
   };
 
   // Location permission request
@@ -606,6 +744,45 @@ export default function Cart({ navigation }) {
     updateClient();
   }
 
+  // Update client function
+  const updateClient = async () => {
+    try {
+      const userData = JSON.parse(await AsyncStorage.getItem('userData'));
+      const clientID = userData.id;
+      
+      const concatenatedAddress = concatenateAddress(address, city, zipCode);
+      
+      const inputData = {
+        address: concatenatedAddress,
+        town: city,
+        zip: zipCode,
+      }
+      
+      const res = await axios.put(API_BASE_URL + '/thirdparties/' + clientID, inputData, {
+        headers: {
+          'Content-Type': 'application/json',
+          'DOLAPIKEY': Token
+        }
+      });
+      
+      await getUserData();
+      setModalAdresseVisible(false);
+      
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Adresse mise à jour', ToastAndroid.SHORT);
+      } else {
+        Toast.show('Adresse mise à jour', Toast.SHORT);
+      }
+    } catch (error) {
+      console.log('❌ Error updating client:', error);
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Erreur lors de la mise à jour', ToastAndroid.SHORT);
+      } else {
+        Toast.show('Erreur lors de la mise à jour', Toast.SHORT);
+      }
+    }
+  };
+
   // Render product function
   const renderProducts = ({ id, label, price_ttc, image_link, description, stock_reel }) => {
     const quantities = getQuantities();
@@ -810,77 +987,6 @@ export default function Cart({ navigation }) {
       </View>
     </View>
   );
-
-  // Update client function
-  const updateClient = async () => {
-    try {
-      const userData = JSON.parse(await AsyncStorage.getItem('userData'));
-      const clientID = userData.id;
-      
-      const concatenatedAddress = concatenateAddress(address, city, zipCode);
-      
-      const inputData = {
-        address: concatenatedAddress,
-        town: city,
-        zip: zipCode,
-      }
-      
-      const res = await axios.put(API_BASE_URL + 'thirdparties/' + clientID, inputData, {
-        headers: {
-          'Content-Type': 'application/json',
-          'DOLAPIKEY': Token
-        }
-      });
-      
-      await getUserData();
-      setModalAdresseVisible(false);
-      
-      if (Platform.OS === 'android') {
-        ToastAndroid.show('Adresse mise à jour', ToastAndroid.SHORT);
-      } else {
-        Toast.show('Adresse mise à jour', Toast.SHORT);
-      }
-    } catch (error) {
-      console.log('❌ Error updating client:', error);
-      if (Platform.OS === 'android') {
-        ToastAndroid.show('Erreur lors de la mise à jour', ToastAndroid.SHORT);
-      } else {
-        Toast.show('Erreur lors de la mise à jour', Toast.SHORT);
-      }
-    }
-  };
-
-  // Get user data function
-  const getUserData = async () => {
-    try {
-      const userData = JSON.parse(await AsyncStorage.getItem('userData'));
-      if (!userData || !userData.id) {
-        console.log('❌ No user data found');
-        return;
-      }
-      
-      const clientID = userData.id;
-
-      const headers = {
-        'Content-Type': 'application/json',
-        'DOLAPIKEY': Token
-      };
-
-      const res = await axios.get(API_BASE_URL + 'thirdparties/' + clientID, { 
-        headers,
-        timeout: 10000 
-      });
-      
-      setUserDetails(res.data);
-      
-      const addressParts = parseAddress(res.data.address);
-      setAddress(addressParts.address);
-      setCity(addressParts.city || res.data.town || '');
-      setZipCode(addressParts.postalCode || res.data.zip || '');
-    } catch (error) {
-      console.log('❌ Error getting user data:', error);
-    }
-  };
 
   return (
     <View style={[styles.container, { backgroundColor: BACKGROUND_COLOR }]}>
@@ -1151,7 +1257,10 @@ export default function Cart({ navigation }) {
                 placeholder="Adresse (Quartier)"
                 placeholderTextColor={errorAdresse ? 'red' : TEXT_COLOR_SECONDARY}
                 value={address}
-                onChangeText={setAddress}
+                onChangeText={(text) => {
+                  console.log('📝 Address input changed to:', text);
+                  setAddress(text);
+                }}
                 onFocus={() => setErrorAdresse('')}
               />
             </View>
@@ -1171,7 +1280,10 @@ export default function Cart({ navigation }) {
                   placeholder="Ville"
                   placeholderTextColor={errorCity ? 'red' : TEXT_COLOR_SECONDARY}
                   value={city}
-                  onChangeText={setCity}
+                  onChangeText={(text) => {
+                    console.log('📝 City input changed to:', text);
+                    setCity(text);
+                  }}
                   onFocus={() => setErrorCity('')}
                 />
               </View>
@@ -1189,7 +1301,10 @@ export default function Cart({ navigation }) {
                   placeholder="Code"
                   placeholderTextColor={errorZipCode ? 'red' : TEXT_COLOR_SECONDARY}
                   value={zipCode}
-                  onChangeText={setZipCode}
+                  onChangeText={(text) => {
+                    console.log('📝 ZipCode input changed to:', text);
+                    setZipCode(text);
+                  }}
                   onFocus={() => setErrorZipCode('')}
                   keyboardType="numeric"
                 />
