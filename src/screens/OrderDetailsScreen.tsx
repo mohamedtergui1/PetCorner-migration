@@ -1,6 +1,7 @@
-// screens/OrderDetailsScreen.tsx
+"use client"
 
-import React, { useState, useEffect } from 'react';
+import type React from "react"
+import { useState } from "react"
 import {
   StyleSheet,
   Text,
@@ -11,100 +12,128 @@ import {
   StatusBar,
   Alert,
   ActivityIndicator,
-} from 'react-native';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import Ionicons from 'react-native-vector-icons/Ionicons';
-import { useTheme } from '../context/ThemeContext';
-import { Order, OrderLine, OrderStatusInfo } from '../types/order.types';
-import OrderService from '../service/order.service';
+  Modal,
+  TextInput,
+  Dimensions,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native"
+import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons"
+import Ionicons from "react-native-vector-icons/Ionicons"
+import { useTheme } from "../context/ThemeContext"
+import type { Order, OrderLine, OrderStatusInfo } from "../types/order.types"
+import OrderService from "../service/order.service"
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window")
+
+// Responsive breakpoints
+const isSmallScreen = SCREEN_WIDTH < 360
+const isMediumScreen = SCREEN_WIDTH >= 360 && SCREEN_WIDTH < 414
+const isLargeScreen = SCREEN_WIDTH >= 414
+
+// Responsive dimensions
+const getResponsiveDimension = (small: number, medium: number, large: number) => {
+  if (isSmallScreen) return small
+  if (isMediumScreen) return medium
+  return large
+}
 
 interface OrderDetailsScreenProps {
-  navigation: any;
+  navigation: any
   route: {
     params: {
-      order: Order;
-    };
-  };
+      order: Order
+    }
+  }
 }
 
 const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, route }) => {
-  const { theme, isDarkMode, colorTheme } = useTheme();
-  const [order, setOrder] = useState<Order>(route.params.order);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const { theme, isDarkMode, colorTheme } = useTheme()
+  const [order, setOrder] = useState<Order>(route.params.order)
+  const [isLoading, setIsLoading] = useState<boolean>(false)
+
+  // Modal states
+  const [showCancelModal, setShowCancelModal] = useState<boolean>(false)
+  const [showFeedbackModal, setShowFeedbackModal] = useState<boolean>(false)
+  const [cancellationReason, setCancellationReason] = useState<string>("")
+  const [deliveryFeedback, setDeliveryFeedback] = useState<string>("")
+  const [productFeedback, setProductFeedback] = useState<string>("")
+  const [deliveryRating, setDeliveryRating] = useState<number>(0)
+  const [productRating, setProductRating] = useState<number>(0)
+  const [isSubmittingCancel, setIsSubmittingCancel] = useState<boolean>(false)
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<boolean>(false)
 
   // Define theme colors
-  const PRIMARY_COLOR = colorTheme === 'blue' ? '#007afe' : '#fe9400';
-  const SECONDARY_COLOR = colorTheme === 'blue' ? '#fe9400' : '#007afe';
-  
+  const PRIMARY_COLOR = colorTheme === "blue" ? "#007afe" : "#fe9400"
+  const SECONDARY_COLOR = colorTheme === "blue" ? "#fe9400" : "#007afe"
+
   // Dark mode colors
-  const BACKGROUND_COLOR = isDarkMode ? '#121212' : '#f8f8f8';
-  const CARD_BACKGROUND = isDarkMode ? '#1e1e1e' : '#ffffff';
-  const TEXT_COLOR = isDarkMode ? '#ffffff' : '#000000';
-  const TEXT_COLOR_SECONDARY = isDarkMode ? '#b3b3b3' : '#666666';
-  const BORDER_COLOR = isDarkMode ? '#2c2c2c' : '#e0e0e0';
+  const BACKGROUND_COLOR = isDarkMode ? "#121212" : "#f8f8f8"
+  const CARD_BACKGROUND = isDarkMode ? "#1e1e1e" : "#ffffff"
+  const TEXT_COLOR = isDarkMode ? "#ffffff" : "#000000"
+  const TEXT_COLOR_SECONDARY = isDarkMode ? "#b3b3b3" : "#666666"
+  const BORDER_COLOR = isDarkMode ? "#2c2c2c" : "#e0e0e0"
+  const MODAL_BACKGROUND = isDarkMode ? "#1e1e1e" : "#ffffff"
+  const OVERLAY_COLOR = isDarkMode ? "rgba(0,0,0,0.8)" : "rgba(0,0,0,0.5)"
 
   // Format price to show 2 decimal places
   const formatPrice = (price: number): string => {
-    return parseFloat(price.toString()).toFixed(2);
-  };
+    return Number.parseFloat(price.toString()).toFixed(2)
+  }
 
   // Format timestamp to readable date only (without time)
   const formatDate = (timestamp: number): string => {
-    // Add 12 hours (43200 seconds) to server timestamp for timezone adjustment
-    const adjustedTimestamp = (timestamp + 43200) * 1000;
-    const date = new Date(adjustedTimestamp);
-    
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    
-    return `${day}/${month}/${year}`;
-  };
+    const adjustedTimestamp = (timestamp + 43200) * 1000
+    const date = new Date(adjustedTimestamp)
+    const day = String(date.getDate()).padStart(2, "0")
+    const month = String(date.getMonth() + 1).padStart(2, "0")
+    const year = date.getFullYear()
+    return `${day}/${month}/${year}`
+  }
 
   // Get status text and color based on order status
   const getStatusInfo = (status: string | number): OrderStatusInfo => {
-    // Convert string status to number for consistent handling
-    const numericStatus = typeof status === 'string' ? parseInt(status, 10) : status;
-    
-    switch(numericStatus) {
+    const numericStatus = typeof status === "string" ? Number.parseInt(status, 10) : status
+
+    switch (numericStatus) {
       case 0:
-        return { 
-          text: 'Brouillon', 
-          color: '#ff9800', 
-          bgColor: isDarkMode ? 'rgba(255,152,0,0.2)' : 'rgba(255,152,0,0.1)' 
-        };
+        return {
+          text: "Brouillon",
+          color: "#ff9800",
+          bgColor: isDarkMode ? "rgba(255,152,0,0.2)" : "rgba(255,152,0,0.1)",
+        }
       case 1:
-        return { 
-          text: 'Validée', 
-          color: '#4caf50', 
-          bgColor: isDarkMode ? 'rgba(76,175,80,0.2)' : 'rgba(76,175,80,0.1)' 
-        };
+        return {
+          text: "Validée",
+          color: "#4caf50",
+          bgColor: isDarkMode ? "rgba(76,175,80,0.2)" : "rgba(76,175,80,0.1)",
+        }
       case 2:
-        return { 
-          text: 'En traitement', 
-          color: '#2196f3', 
-          bgColor: isDarkMode ? 'rgba(33,150,243,0.2)' : 'rgba(33,150,243,0.1)' 
-        };
+        return {
+          text: "En traitement",
+          color: "#2196f3",
+          bgColor: isDarkMode ? "rgba(33,150,243,0.2)" : "rgba(33,150,243,0.1)",
+        }
       case 3:
-        return { 
-          text: 'Livrée', 
-          color: '#009688', 
-          bgColor: isDarkMode ? 'rgba(0,150,136,0.2)' : 'rgba(0,150,136,0.1)' 
-        };
+        return {
+          text: "Livrée",
+          color: "#009688",
+          bgColor: isDarkMode ? "rgba(0,150,136,0.2)" : "rgba(0,150,136,0.1)",
+        }
       case -1:
-        return { 
-          text: 'Annulée', 
-          color: '#f44336', 
-          bgColor: isDarkMode ? 'rgba(244,67,54,0.2)' : 'rgba(244,67,54,0.1)' 
-        };
+        return {
+          text: "Annulée",
+          color: "#f44336",
+          bgColor: isDarkMode ? "rgba(244,67,54,0.2)" : "rgba(244,67,54,0.1)",
+        }
       default:
-        return { 
-          text: 'Inconnu', 
-          color: '#9e9e9e', 
-          bgColor: isDarkMode ? 'rgba(158,158,158,0.2)' : 'rgba(158,158,158,0.1)' 
-        };
+        return {
+          text: "Inconnu",
+          color: "#9e9e9e",
+          bgColor: isDarkMode ? "rgba(158,158,158,0.2)" : "rgba(158,158,158,0.1)",
+        }
     }
-  };
+  }
 
   // Refresh order data
   const refreshOrderData = () => {
@@ -112,179 +141,458 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
       order.id,
       (updatedOrder) => {
         if (updatedOrder) {
-          setOrder(updatedOrder);
+          setOrder(updatedOrder)
         }
       },
-      setIsLoading
-    );
-  };
+      setIsLoading,
+    )
+  }
 
-  // Handle cancel order - Only available for draft orders
+  // Handle cancel order confirmation
   const handleCancelOrder = () => {
-    console.log('🚫 Cancel order button pressed for order:', order.ref);
-    
-    OrderService.cancelOrderWithConfirmation(
-      order.id,
-      order.ref,
-      undefined, // No predefined cancellation reason
-      () => {
-        console.log('✅ Order cancelled successfully, refreshing data...');
-        refreshOrderData(); // Refresh order data on success
-      },
-      (error) => {
-        console.error('❌ Error cancelling order:', error);
+    setShowCancelModal(true)
+  }
+
+  // Submit cancellation
+  const submitCancellation = async () => {
+    if (!cancellationReason.trim()) {
+      Alert.alert("Erreur", "Veuillez indiquer la raison de l'annulation")
+      return
+    }
+
+    setIsSubmittingCancel(true)
+    try {
+      // Call the order service with the cancellation reason
+      await OrderService.cancelOrderWithReason(
+        order.id,
+        order.ref,
+        cancellationReason.trim(),
+        () => {
+          console.log("✅ Order cancelled successfully")
+          setShowCancelModal(false)
+          setCancellationReason("")
+          refreshOrderData()
+          Alert.alert("Succès", "Votre commande a été annulée avec succès")
+        },
+        (error) => {
+          console.error("❌ Error cancelling order:", error)
+          Alert.alert("Erreur", "Erreur lors de l'annulation de la commande")
+        },
+      )
+    } catch (error) {
+      console.error("❌ Unexpected error:", error)
+      Alert.alert("Erreur", "Une erreur inattendue est survenue")
+    } finally {
+      setIsSubmittingCancel(false)
+    }
+  }
+
+  // Handle adding comprehensive feedback
+  const handleAddComprehensiveFeedback = () => {
+    setShowFeedbackModal(true)
+  }
+
+  // Submit comprehensive feedback
+  const submitComprehensiveFeedback = async () => {
+    if (!deliveryFeedback.trim() && !productFeedback.trim() && deliveryRating === 0 && productRating === 0) {
+      Alert.alert("Erreur", "Veuillez ajouter au moins un commentaire ou une note")
+      return
+    }
+
+    setIsSubmittingFeedback(true)
+    try {
+      const feedbackText = `Évaluation de la commande ${order.ref} - ${new Date().toLocaleDateString("fr-FR")} à ${new Date().toLocaleTimeString("fr-FR")}:
+
+📦 LIVRAISON:
+Note: ${deliveryRating}/5 étoiles
+Commentaire: ${deliveryFeedback.trim() || "Aucun commentaire"}
+
+🛍️ PRODUITS:
+Note: ${productRating}/5 étoiles
+Commentaire: ${productFeedback.trim() || "Aucun commentaire"}`
+
+      const result = await OrderService.addOrderNote(
+        order.id,
+        feedbackText,
+        false, // false = public note
+      )
+
+      if (result.success) {
+        setShowFeedbackModal(false)
+        setDeliveryFeedback("")
+        setProductFeedback("")
+        setDeliveryRating(0)
+        setProductRating(0)
+        refreshOrderData()
+        Alert.alert("Succès", "Votre évaluation a été ajoutée avec succès")
+      } else {
+        Alert.alert("Erreur", result.error || "Erreur lors de l'ajout de l'évaluation")
       }
-    );
-  };
+    } catch (error) {
+      console.error("❌ Error adding comprehensive feedback:", error)
+      Alert.alert("Erreur", "Une erreur inattendue est survenue")
+    } finally {
+      setIsSubmittingFeedback(false)
+    }
+  }
 
-  // Handle adding feedback to delivered order
-  const handleAddDeliveryFeedback = () => {
-    console.log('💬 Add delivery feedback button pressed for order:', order.ref);
-    
-    Alert.prompt(
-      'Ajouter un commentaire',
-      `Comment s'est passée la livraison de votre commande ${order.ref} ?`,
-      [
-        {
-          text: 'Annuler',
-          style: 'cancel',
-        },
-        {
-          text: 'Ajouter le commentaire',
-          style: 'default',
-          onPress: async (feedback) => {
-            if (feedback && feedback.trim()) {
-              try {
-                const result = await OrderService.addOrderNote(
-                  order.id, 
-                  `Commentaire de livraison ajouté le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}:\n${feedback.trim()}`, 
-                  false // false = public note
-                );
-                
-                if (result.success) {
-                  Alert.alert('Succès', 'Votre commentaire a été ajouté avec succès');
-                  refreshOrderData(); // Refresh to show updated notes
-                } else {
-                  Alert.alert('Erreur', result.error || 'Erreur lors de l\'ajout du commentaire');
-                }
-              } catch (error) {
-                console.error('❌ Error adding delivery feedback:', error);
-                Alert.alert('Erreur', 'Une erreur inattendue est survenue');
-              }
-            }
-          },
-        },
-      ],
-      'plain-text',
-      '',
-      'default'
-    );
-  };
+  // Render star rating component with improved responsiveness
+  const renderStarRating = (rating: number, setRating: (rating: number) => void, label: string) => (
+    <View style={styles.ratingContainer}>
+      <Text style={[styles.ratingLabel, { color: TEXT_COLOR }]}>{label}</Text>
+      <View style={styles.starsContainer}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          <TouchableOpacity 
+            key={star} 
+            onPress={() => setRating(star)} 
+            style={styles.starButton}
+            hitSlop={{ top: 10, bottom: 10, left: 5, right: 5 }}
+          >
+            <Ionicons
+              name={star <= rating ? "star" : "star-outline"}
+              size={getResponsiveDimension(24, 28, 32)}
+              color={star <= rating ? "#FFD700" : TEXT_COLOR_SECONDARY}
+            />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  )
 
-  // Render status action buttons - FIXED: Only cancel in draft, only feedback in delivered
+  // Enhanced cancellation modal with better responsiveness
+  const renderCancellationModal = () => (
+    <Modal
+      visible={showCancelModal}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowCancelModal(false)}
+    >
+      <View style={[styles.modalOverlay, { backgroundColor: OVERLAY_COLOR }]}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === "ios" ? "padding" : "height"} 
+          style={styles.modalKeyboardView}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        >
+          <View style={[styles.modalContainer, styles.cancelModalContainer, { backgroundColor: MODAL_BACKGROUND }]}>
+            <ScrollView 
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.modalHeader}>
+                <View style={[styles.modalIconContainer, { backgroundColor: "rgba(244,67,54,0.1)" }]}>
+                  <MaterialCommunityIcons 
+                    name="cancel" 
+                    size={getResponsiveDimension(28, 32, 36)} 
+                    color="#f44336" 
+                  />
+                </View>
+                <Text style={[styles.modalTitle, { color: TEXT_COLOR }]}>Annuler la commande</Text>
+                <Text style={[styles.modalSubtitle, { color: TEXT_COLOR_SECONDARY }]}>
+                  Commande {order.ref}
+                </Text>
+              </View>
+
+              <View style={styles.modalContent}>
+                <Text style={[styles.inputLabel, { color: TEXT_COLOR }]}>
+                  Raison de l'annulation *
+                </Text>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    styles.multilineInput,
+                    {
+                      backgroundColor: isDarkMode ? "#252525" : "#f5f5f5",
+                      color: TEXT_COLOR,
+                      borderColor: BORDER_COLOR,
+                      minHeight: getResponsiveDimension(80, 100, 120),
+                    },
+                  ]}
+                  placeholder="Expliquez pourquoi vous souhaitez annuler cette commande..."
+                  placeholderTextColor={TEXT_COLOR_SECONDARY}
+                  value={cancellationReason}
+                  onChangeText={setCancellationReason}
+                  multiline={true}
+                  numberOfLines={isSmallScreen ? 3 : 4}
+                  textAlignVertical="top"
+                  maxLength={500}
+                />
+                <Text style={[styles.characterCount, { color: TEXT_COLOR_SECONDARY }]}>
+                  {cancellationReason.length}/500
+                </Text>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton, 
+                  styles.modalButtonSecondary, 
+                  { borderColor: BORDER_COLOR }
+                ]}
+                onPress={() => {
+                  setShowCancelModal(false)
+                  setCancellationReason("")
+                }}
+                disabled={isSubmittingCancel}
+              >
+                <Text style={[styles.modalButtonText, { color: TEXT_COLOR_SECONDARY }]}>
+                  Annuler
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton, 
+                  styles.modalButtonPrimary, 
+                  { backgroundColor: "#f44336" }
+                ]}
+                onPress={submitCancellation}
+                disabled={isSubmittingCancel}
+              >
+                {isSubmittingCancel ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalButtonTextPrimary}>Confirmer</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
+  )
+
+  // Enhanced feedback modal with better responsiveness
+  const renderFeedbackModal = () => (
+    <Modal
+      visible={showFeedbackModal}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowFeedbackModal(false)}
+    >
+      <View style={[styles.modalOverlay, { backgroundColor: OVERLAY_COLOR }]}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === "ios" ? "padding" : "height"} 
+          style={styles.modalKeyboardView}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        >
+          <View style={[styles.modalContainer, styles.feedbackModalContainer, { backgroundColor: MODAL_BACKGROUND }]}>
+            <ScrollView 
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.feedbackModalScrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.modalHeader}>
+                <View style={[styles.modalIconContainer, { backgroundColor: "rgba(76,175,80,0.1)" }]}>
+                  <MaterialCommunityIcons 
+                    name="star-outline" 
+                    size={getResponsiveDimension(28, 32, 36)} 
+                    color="#4caf50" 
+                  />
+                </View>
+                <Text style={[styles.modalTitle, { color: TEXT_COLOR }]}>Évaluer votre commande</Text>
+                <Text style={[styles.modalSubtitle, { color: TEXT_COLOR_SECONDARY }]}>
+                  Commande {order.ref}
+                </Text>
+              </View>
+
+              <View style={styles.modalContent}>
+                {/* Delivery Rating */}
+                <View style={styles.feedbackSection}>
+                  <View style={styles.sectionHeader}>
+                    <MaterialCommunityIcons 
+                      name="truck-delivery" 
+                      size={getResponsiveDimension(18, 20, 22)} 
+                      color={PRIMARY_COLOR} 
+                    />
+                    <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>Livraison</Text>
+                  </View>
+                  {renderStarRating(deliveryRating, setDeliveryRating, "Comment s'est passée la livraison ?")}
+                  <TextInput
+                    style={[
+                      styles.textInput,
+                      styles.feedbackTextInput,
+                      {
+                        backgroundColor: isDarkMode ? "#252525" : "#f5f5f5",
+                        color: TEXT_COLOR,
+                        borderColor: BORDER_COLOR,
+                        minHeight: getResponsiveDimension(60, 80, 90),
+                      },
+                    ]}
+                    placeholder="Commentaire sur la livraison (optionnel)..."
+                    placeholderTextColor={TEXT_COLOR_SECONDARY}
+                    value={deliveryFeedback}
+                    onChangeText={setDeliveryFeedback}
+                    multiline={true}
+                    numberOfLines={isSmallScreen ? 2 : 3}
+                    textAlignVertical="top"
+                    maxLength={300}
+                  />
+                  <Text style={[styles.characterCount, { color: TEXT_COLOR_SECONDARY }]}>
+                    {deliveryFeedback.length}/300
+                  </Text>
+                </View>
+
+                {/* Product Rating */}
+                <View style={styles.feedbackSection}>
+                  <View style={styles.sectionHeader}>
+                    <MaterialCommunityIcons 
+                      name="package-variant" 
+                      size={getResponsiveDimension(18, 20, 22)} 
+                      color={PRIMARY_COLOR} 
+                    />
+                    <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>Produits</Text>
+                  </View>
+                  {renderStarRating(productRating, setProductRating, "Êtes-vous satisfait des produits ?")}
+                  <TextInput
+                    style={[
+                      styles.textInput,
+                      styles.feedbackTextInput,
+                      {
+                        backgroundColor: isDarkMode ? "#252525" : "#f5f5f5",
+                        color: TEXT_COLOR,
+                        borderColor: BORDER_COLOR,
+                        minHeight: getResponsiveDimension(60, 80, 90),
+                      },
+                    ]}
+                    placeholder="Commentaire sur les produits (optionnel)..."
+                    placeholderTextColor={TEXT_COLOR_SECONDARY}
+                    value={productFeedback}
+                    onChangeText={setProductFeedback}
+                    multiline={true}
+                    numberOfLines={isSmallScreen ? 2 : 3}
+                    textAlignVertical="top"
+                    maxLength={300}
+                  />
+                  <Text style={[styles.characterCount, { color: TEXT_COLOR_SECONDARY }]}>
+                    {productFeedback.length}/300
+                  </Text>
+                </View>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton, 
+                  styles.modalButtonSecondary, 
+                  { borderColor: BORDER_COLOR }
+                ]}
+                onPress={() => {
+                  setShowFeedbackModal(false)
+                  setDeliveryFeedback("")
+                  setProductFeedback("")
+                  setDeliveryRating(0)
+                  setProductRating(0)
+                }}
+                disabled={isSubmittingFeedback}
+              >
+                <Text style={[styles.modalButtonText, { color: TEXT_COLOR_SECONDARY }]}>
+                  Annuler
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton, 
+                  styles.modalButtonPrimary, 
+                  { backgroundColor: "#4caf50" }
+                ]}
+                onPress={submitComprehensiveFeedback}
+                disabled={isSubmittingFeedback}
+              >
+                {isSubmittingFeedback ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalButtonTextPrimary}>Envoyer</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
+  )
+
+  // Render status action buttons
   const renderStatusActions = () => {
-    const actions = [];
-    
-    // Get numeric status for comparison
-    const currentStatus = typeof order.statut === 'string' ? parseInt(order.statut, 10) : (order.statut || order.status);
-
-    console.log('🎯 Rendering actions for order status:', currentStatus);
+    const actions = []
+    const currentStatus =
+      typeof order.statut === "string" ? Number.parseInt(order.statut, 10) : order.statut || order.status
 
     switch (currentStatus) {
       case 0: // Draft - User can ONLY cancel
-        console.log('📝 Draft order - showing cancel button');
         actions.push(
           <TouchableOpacity
             key="cancel"
-            style={[styles.actionButton, styles.cancelActionButton, { backgroundColor: '#f44336' }]}
+            style={[styles.actionButton, styles.cancelActionButton, { backgroundColor: "#f44336" }]}
             onPress={handleCancelOrder}
             activeOpacity={0.8}
           >
             <MaterialCommunityIcons name="cancel" size={20} color="#fff" />
             <Text style={styles.actionButtonText}>Annuler la commande</Text>
-          </TouchableOpacity>
-        );
-        break;
+          </TouchableOpacity>,
+        )
+        break
 
-      case 1: // Validated - No actions for users
-        console.log('✅ Validated order - no user actions available');
-        break;
-
-      case 2: // Processing - No actions for users
-        console.log('⚙️ Processing order - no user actions available');
-        break;
-
-      case 3: // Delivered - Can ONLY add feedback
-        console.log('📦 Delivered order - showing feedback button');
+      case 3: // Delivered - Can add comprehensive feedback
         actions.push(
           <TouchableOpacity
             key="feedback"
-            style={[styles.actionButton, { backgroundColor: '#4caf50' }]}
-            onPress={handleAddDeliveryFeedback}
+            style={[styles.actionButton, { backgroundColor: "#4caf50" }]}
+            onPress={handleAddComprehensiveFeedback}
             activeOpacity={0.8}
           >
-            <MaterialCommunityIcons name="comment-plus" size={20} color="#fff" />
-            <Text style={styles.actionButtonText}>Ajouter un commentaire</Text>
-          </TouchableOpacity>
-        );
-        break;
-
-      case -1: // Cancelled - No actions available
-        console.log('❌ Cancelled order - no actions available');
-        break;
-
-      default: // Unknown status - No actions available
-        console.log('❓ Unknown order status - no actions available');
-        break;
+            <MaterialCommunityIcons name="star-outline" size={20} color="#fff" />
+            <Text style={styles.actionButtonText}>Évaluer la commande</Text>
+          </TouchableOpacity>,
+        )
+        break
     }
 
-    console.log('🎬 Total actions rendered:', actions.length);
-    return actions;
-  };
+    return actions
+  }
 
   // Render product item
   const renderProductItem = (line: OrderLine, index: number) => (
-    <View key={`${order.id}-${line.id}-${index}`} style={[
-      styles.productItem,
-      { 
-        backgroundColor: CARD_BACKGROUND,
-        borderColor: BORDER_COLOR,
-      }
-    ]}>
-      <View style={[styles.imageContainer, { 
-        borderColor: BORDER_COLOR, 
-        backgroundColor: isDarkMode ? '#252525' : '#f5f5f5' 
-      }]}>
+    <View
+      key={`${order.id}-${line.id}-${index}`}
+      style={[
+        styles.productItem,
+        {
+          backgroundColor: CARD_BACKGROUND,
+          borderColor: BORDER_COLOR,
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.imageContainer,
+          {
+            borderColor: BORDER_COLOR,
+            backgroundColor: isDarkMode ? "#252525" : "#f5f5f5",
+          },
+        ]}
+      >
         {line.photo_link ? (
-          <Image 
-            source={{ uri: line.photo_link }} 
-            style={styles.productImage}
-            resizeMode="contain"
-          />
+          <Image source={{ uri: line.photo_link }} style={styles.productImage} resizeMode="contain" />
         ) : (
           <View style={styles.noImageContainer}>
             <Ionicons name="image-outline" size={32} color={TEXT_COLOR_SECONDARY} />
           </View>
         )}
       </View>
-      
+
       <View style={styles.productDetails}>
-        <Text style={[styles.productName, { color: TEXT_COLOR }]}>
-          {line.libelle}
-        </Text>
-        
+        <Text style={[styles.productName, { color: TEXT_COLOR }]}>{line.libelle}</Text>
         {line.desc && (
           <Text style={[styles.productDescription, { color: TEXT_COLOR_SECONDARY }]} numberOfLines={2}>
             {line.desc}
           </Text>
         )}
-        
         <View style={styles.productMeta}>
           <View style={styles.quantityPriceContainer}>
-            <View style={[styles.quantityBadge, { backgroundColor: isDarkMode ? '#252525' : '#f0f0f0' }]}>
-              <Text style={[styles.quantity, { color: TEXT_COLOR_SECONDARY }]}>
-                Qté: {line.qty}
-              </Text>
+            <View style={[styles.quantityBadge, { backgroundColor: isDarkMode ? "#252525" : "#f0f0f0" }]}>
+              <Text style={[styles.quantity, { color: TEXT_COLOR_SECONDARY }]}>Qté: {line.qty}</Text>
             </View>
             <Text style={[styles.unitPrice, { color: TEXT_COLOR_SECONDARY }]}>
               {formatPrice(line.subprice)} dhs/unité
@@ -296,48 +604,33 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
         </View>
       </View>
     </View>
-  );
+  )
 
-  const statusInfo = getStatusInfo(order.statut || order.status);
+  const statusInfo = getStatusInfo(order.statut || order.status)
 
   return (
     <View style={[styles.container, { backgroundColor: BACKGROUND_COLOR }]}>
-      <StatusBar 
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'} 
-        backgroundColor={isDarkMode ? '#000000' : '#ffffff'} 
+      <StatusBar
+        barStyle={isDarkMode ? "light-content" : "dark-content"}
+        backgroundColor={isDarkMode ? "#000000" : "#ffffff"}
       />
-      
+
       {/* Header */}
       <View style={[styles.headerContainer, { backgroundColor: PRIMARY_COLOR }]}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons 
-            name="arrow-back" 
-            size={24} 
-            color="#fff" 
-          />
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Détails de la commande</Text>
-        <TouchableOpacity 
-          style={styles.refreshButton}
-          onPress={refreshOrderData}
-          disabled={isLoading}
-        >
+        <TouchableOpacity style={styles.refreshButton} onPress={refreshOrderData} disabled={isLoading}>
           {isLoading ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <Ionicons 
-              name="refresh" 
-              size={24} 
-              color="#fff" 
-            />
+            <Ionicons name="refresh" size={24} color="#fff" />
           )}
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
+      <ScrollView
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -346,32 +639,24 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
         <View style={[styles.card, { backgroundColor: CARD_BACKGROUND, borderColor: BORDER_COLOR }]}>
           <View style={styles.orderHeaderSection}>
             <View style={styles.orderRefContainer}>
-              <MaterialCommunityIcons 
-                name="shopping-outline" 
-                size={24} 
-                color={PRIMARY_COLOR}
-              />
-              <Text style={[styles.orderRef, { color: TEXT_COLOR }]}>
-                Commande {order.ref}
-              </Text>
+              <MaterialCommunityIcons name="shopping-outline" size={24} color={PRIMARY_COLOR} />
+              <Text style={[styles.orderRef, { color: TEXT_COLOR }]}>Commande {order.ref}</Text>
             </View>
-            
-            <View style={[styles.statusBadge, { 
-              backgroundColor: statusInfo.bgColor,
-              borderColor: statusInfo.color,
-            }]}>
-              <Text style={[styles.statusText, { color: statusInfo.color }]}>
-                {statusInfo.text}
-              </Text>
+            <View
+              style={[
+                styles.statusBadge,
+                {
+                  backgroundColor: statusInfo.bgColor,
+                  borderColor: statusInfo.color,
+                },
+              ]}
+            >
+              <Text style={[styles.statusText, { color: statusInfo.color }]}>{statusInfo.text}</Text>
             </View>
           </View>
 
           <View style={styles.orderInfoRow}>
-            <MaterialCommunityIcons 
-              name="calendar" 
-              size={18} 
-              color={TEXT_COLOR_SECONDARY}
-            />
+            <MaterialCommunityIcons name="calendar" size={18} color={TEXT_COLOR_SECONDARY} />
             <Text style={[styles.orderDate, { color: TEXT_COLOR_SECONDARY }]}>
               Commandé le {formatDate(order.date_commande)}
             </Text>
@@ -383,71 +668,53 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
           <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>
             Articles commandés ({order.lines.length})
           </Text>
-          
           {order.lines.map((line, index) => renderProductItem(line, index))}
         </View>
 
         {/* Order Summary */}
         <View style={[styles.card, { backgroundColor: CARD_BACKGROUND, borderColor: BORDER_COLOR }]}>
-          <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>
-            Résumé de la commande
-          </Text>
-          
+          <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>Résumé de la commande</Text>
           <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: TEXT_COLOR_SECONDARY }]}>
-              Sous-total HT:
-            </Text>
-            <Text style={[styles.summaryValue, { color: TEXT_COLOR }]}>
-              {formatPrice(order.total_ht)} dhs
-            </Text>
+            <Text style={[styles.summaryLabel, { color: TEXT_COLOR_SECONDARY }]}>Sous-total HT:</Text>
+            <Text style={[styles.summaryValue, { color: TEXT_COLOR }]}>{formatPrice(order.total_ht)} dhs</Text>
           </View>
-          
           <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: TEXT_COLOR_SECONDARY }]}>
-              TVA:
-            </Text>
-            <Text style={[styles.summaryValue, { color: TEXT_COLOR }]}>
-              {formatPrice(order.total_tva)} dhs
-            </Text>
+            <Text style={[styles.summaryLabel, { color: TEXT_COLOR_SECONDARY }]}>TVA:</Text>
+            <Text style={[styles.summaryValue, { color: TEXT_COLOR }]}>{formatPrice(order.total_tva)} dhs</Text>
           </View>
-          
           <View style={[styles.divider, { backgroundColor: BORDER_COLOR }]} />
-          
           <View style={styles.summaryRow}>
-            <Text style={[styles.totalLabel, { color: TEXT_COLOR }]}>
-              Total TTC:
-            </Text>
-            <Text style={[styles.totalValue, { color: PRIMARY_COLOR }]}>
-              {formatPrice(order.total_ttc)} dhs
-            </Text>
+            <Text style={[styles.totalLabel, { color: TEXT_COLOR }]}>Total TTC:</Text>
+            <Text style={[styles.totalValue, { color: PRIMARY_COLOR }]}>{formatPrice(order.total_ttc)} dhs</Text>
           </View>
         </View>
 
         {/* Action Buttons */}
         {renderStatusActions().length > 0 && (
           <View style={[styles.card, { backgroundColor: CARD_BACKGROUND, borderColor: BORDER_COLOR }]}>
-            <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>
-              Actions
-            </Text>
-            
+            <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>Actions</Text>
             {renderStatusActions()}
           </View>
         )}
       </ScrollView>
+
+      {/* Modals */}
+      {renderCancellationModal()}
+      {renderFeedbackModal()}
     </View>
-  );
-};
+  )
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
   headerContainer: {
-    width: '100%',
-    flexDirection: 'row',
+    width: "100%",
+    flexDirection: "row",
     height: 60,
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 16,
     elevation: 5,
     shadowColor: "#000",
@@ -455,23 +722,23 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.1)',
+    borderBottomColor: "rgba(0,0,0,0.1)",
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.25)",
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: "rgba(255,255,255,0.3)",
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
-    textShadowColor: 'rgba(0,0,0,0.3)',
+    fontSize: getResponsiveDimension(16, 18, 20),
+    fontWeight: "600",
+    color: "#fff",
+    textShadowColor: "rgba(0,0,0,0.3)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
@@ -479,23 +746,23 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.25)",
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: "rgba(255,255,255,0.3)",
   },
   scrollContainer: {
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
+    padding: getResponsiveDimension(12, 16, 20),
     paddingBottom: 100,
   },
   card: {
-    borderRadius: 16,
-    marginBottom: 16,
-    padding: 16,
+    borderRadius: getResponsiveDimension(12, 16, 20),
+    marginBottom: getResponsiveDimension(12, 16, 20),
+    padding: getResponsiveDimension(12, 16, 20),
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -504,143 +771,145 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   orderHeaderSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 12,
   },
   orderRefContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
   },
   orderRef: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: getResponsiveDimension(16, 18, 20),
+    fontWeight: "bold",
     marginLeft: 8,
+    flexShrink: 1,
   },
   statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: getResponsiveDimension(8, 12, 16),
+    paddingVertical: getResponsiveDimension(4, 6, 8),
     borderRadius: 20,
     borderWidth: 1,
   },
   statusText: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: getResponsiveDimension(10, 12, 14),
+    fontWeight: "600",
   },
   orderInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 8,
   },
   orderDate: {
-    fontSize: 14,
+    fontSize: getResponsiveDimension(12, 14, 16),
     marginLeft: 6,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: getResponsiveDimension(14, 16, 18),
+    fontWeight: "bold",
     marginBottom: 16,
   },
   productItem: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginBottom: 16,
-    padding: 12,
+    padding: getResponsiveDimension(8, 12, 16),
     borderRadius: 12,
     borderWidth: 1,
   },
   imageContainer: {
-    width: 80,
-    height: 80,
+    width: getResponsiveDimension(60, 80, 100),
+    height: getResponsiveDimension(60, 80, 100),
     borderRadius: 12,
     borderWidth: 1,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
+    overflow: "hidden",
+    justifyContent: "center",
+    alignItems: "center",
   },
   productImage: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   noImageContainer: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: "100%",
+    height: "100%",
+    justifyContent: "center",
+    alignItems: "center",
   },
   productDetails: {
     flex: 1,
-    marginLeft: 12,
-    justifyContent: 'space-between',
+    marginLeft: getResponsiveDimension(8, 12, 16),
+    justifyContent: "space-between",
   },
   productName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: getResponsiveDimension(14, 16, 18),
+    fontWeight: "600",
     marginBottom: 4,
-    lineHeight: 22,
+    lineHeight: getResponsiveDimension(18, 22, 26),
   },
   productDescription: {
-    fontSize: 13,
+    fontSize: getResponsiveDimension(11, 13, 15),
     marginBottom: 8,
-    lineHeight: 18,
+    lineHeight: getResponsiveDimension(15, 18, 21),
   },
   productMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
   },
   quantityPriceContainer: {
     flex: 1,
   },
   quantityBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    alignSelf: "flex-start",
+    paddingHorizontal: getResponsiveDimension(6, 8, 10),
+    paddingVertical: getResponsiveDimension(2, 4, 6),
     borderRadius: 12,
     marginBottom: 4,
   },
   quantity: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: getResponsiveDimension(10, 12, 14),
+    fontWeight: "500",
   },
   unitPrice: {
-    fontSize: 12,
+    fontSize: getResponsiveDimension(10, 12, 14),
   },
   totalLinePrice: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    textAlign: 'right',
+    fontSize: getResponsiveDimension(14, 16, 18),
+    fontWeight: "bold",
+    textAlign: "right",
   },
   summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 8,
   },
   summaryLabel: {
-    fontSize: 14,
+    fontSize: getResponsiveDimension(12, 14, 16),
   },
   summaryValue: {
-    fontSize: 14,
+    fontSize: getResponsiveDimension(12, 14, 16),
   },
   totalLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: getResponsiveDimension(14, 16, 18),
+    fontWeight: "bold",
   },
   totalValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: getResponsiveDimension(16, 18, 20),
+    fontWeight: "bold",
   },
   divider: {
     height: 1,
     marginVertical: 12,
   },
   actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: getResponsiveDimension(12, 14, 16),
+    paddingHorizontal: getResponsiveDimension(16, 20, 24),
     borderRadius: 12,
     marginBottom: 12,
   },
@@ -648,11 +917,158 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   actionButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    color: "#fff",
+    fontSize: getResponsiveDimension(14, 16, 18),
+    fontWeight: "600",
     marginLeft: 8,
   },
-});
 
-export default OrderDetailsScreen;
+  // Enhanced Modal Styles
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: getResponsiveDimension(16, 20, 24),
+  },
+  modalKeyboardView: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+    maxWidth: 500,
+  },
+  modalScrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingVertical: getResponsiveDimension(16, 20, 24),
+  },
+  feedbackModalScrollContent: {
+    paddingVertical: getResponsiveDimension(16, 20, 24),
+  },
+  modalContainer: {
+    width: "100%",
+    borderRadius: getResponsiveDimension(16, 20, 24),
+    padding: getResponsiveDimension(16, 20, 24),
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+    maxWidth: 500,
+  },
+  cancelModalContainer: {
+    maxHeight: SCREEN_HEIGHT * 0.7,
+  },
+  feedbackModalContainer: {
+    maxHeight: SCREEN_HEIGHT * 0.85,
+  },
+  modalHeader: {
+    alignItems: "center",
+    marginBottom: getResponsiveDimension(16, 20, 24),
+  },
+  modalIconContainer: {
+    width: getResponsiveDimension(56, 64, 72),
+    height: getResponsiveDimension(56, 64, 72),
+    borderRadius: getResponsiveDimension(28, 32, 36),
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: getResponsiveDimension(12, 16, 20),
+  },
+  modalTitle: {
+    fontSize: getResponsiveDimension(18, 20, 22),
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  modalSubtitle: {
+    fontSize: getResponsiveDimension(12, 14, 16),
+    textAlign: "center",
+  },
+  modalContent: {
+    marginBottom: getResponsiveDimension(16, 20, 24),
+  },
+  inputLabel: {
+    fontSize: getResponsiveDimension(14, 16, 18),
+    fontWeight: "600",
+    marginBottom: getResponsiveDimension(6, 8, 10),
+  },
+  textInput: {
+    borderWidth: 1,
+    borderRadius: getResponsiveDimension(8, 12, 16),
+    paddingHorizontal: getResponsiveDimension(12, 16, 20),
+    paddingVertical: getResponsiveDimension(10, 12, 14),
+    fontSize: getResponsiveDimension(14, 16, 18),
+    textAlignVertical: "top",
+  },
+  multilineInput: {
+    textAlignVertical: "top",
+  },
+  feedbackTextInput: {
+    marginBottom: 4,
+  },
+  characterCount: {
+    fontSize: getResponsiveDimension(10, 12, 14),
+    textAlign: "right",
+    marginBottom: getResponsiveDimension(8, 12, 16),
+  },
+  modalActions: {
+    flexDirection: isSmallScreen ? "column" : "row",
+    justifyContent: "space-between",
+    gap: getResponsiveDimension(8, 12, 16),
+  },
+  modalButton: {
+    flex: isSmallScreen ? undefined : 1,
+    paddingVertical: getResponsiveDimension(12, 14, 16),
+    borderRadius: getResponsiveDimension(8, 12, 16),
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: getResponsiveDimension(44, 48, 52),
+  },
+  modalButtonSecondary: {
+    borderWidth: 1,
+  },
+  modalButtonPrimary: {
+    // backgroundColor will be set dynamically
+  },
+  modalButtonText: {
+    fontSize: getResponsiveDimension(14, 16, 18),
+    fontWeight: "600",
+  },
+  modalButtonTextPrimary: {
+    color: "#fff",
+    fontSize: getResponsiveDimension(14, 16, 18),
+    fontWeight: "600",
+  },
+
+  // Enhanced Feedback Modal Specific Styles
+  feedbackSection: {
+    marginBottom: getResponsiveDimension(20, 24, 28),
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: getResponsiveDimension(12, 16, 20),
+  },
+  ratingContainer: {
+    marginBottom: getResponsiveDimension(12, 16, 20),
+  },
+  ratingLabel: {
+    fontSize: getResponsiveDimension(12, 14, 16),
+    fontWeight: "500",
+    marginBottom: getResponsiveDimension(6, 8, 10),
+    textAlign: "center",
+  },
+  starsContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: getResponsiveDimension(8, 12, 16),
+    flexWrap: "wrap",
+  },
+  starButton: {
+    paddingHorizontal: getResponsiveDimension(2, 4, 6),
+    paddingVertical: getResponsiveDimension(4, 6, 8),
+  },
+})
+
+export default OrderDetailsScreen

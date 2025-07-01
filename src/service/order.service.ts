@@ -544,7 +544,7 @@ class OrderService {
 
       // Create or update public note with cancellation reason
       let publicNote = '';
-      
+
       // Preserve existing public note
       if (currentOrder.note_public) {
         publicNote = currentOrder.note_public + '\n\n';
@@ -553,13 +553,13 @@ class OrderService {
       // Add cancellation information to public note
       publicNote += `=== COMMANDE ANNULÉE ===\n`;
       publicNote += `Date d'annulation: ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}\n`;
-      
+
       if (cancelReason && cancelReason.trim()) {
         publicNote += `Raison: ${cancelReason.trim()}\n`;
       } else {
         publicNote += `Raison: Non spécifiée\n`;
       }
-      
+
       publicNote += `Statut: Commande annulée par le client`;
 
       updateData.note_public = publicNote;
@@ -816,7 +816,7 @@ class OrderService {
     onSuccess?: () => void,
     onError?: (error: string) => void
   ): Promise<void> {
-    
+
     // Show input dialog for cancellation comment
     this.showCancelCommentDialog(
       orderRef,
@@ -861,6 +861,26 @@ class OrderService {
   ): Promise<void> {
     setRefreshing(true);
     await this.fetchAllOrdersWithState(setOrders, () => { }, setRefreshing);
+  }
+
+  async cancelOrderWithReason(
+    orderId: number,
+    orderRef: string,
+    reason: string,
+    onSuccess?: () => void,
+    onError?: (error: string) => void
+  ): Promise<void> {
+    try {
+      const result = await this.cancelOrder(orderId, reason);
+
+      if (result.success) {
+        if (onSuccess) onSuccess();
+      } else {
+        if (onError) onError(result.error || 'Erreur');
+      }
+    } catch (error) {
+      if (onError) onError(error.message || 'Erreur inattendue');
+    }
   }
 }
 
