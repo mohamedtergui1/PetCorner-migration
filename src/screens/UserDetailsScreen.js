@@ -58,6 +58,51 @@ export default function UserDetailsScreen({ navigation }) {
   const TEXT_COLOR_SECONDARY = isDarkMode ? '#b3b3b3' : '#666666';
   const BORDER_COLOR = isDarkMode ? '#2c2c2c' : '#e0e0e0';
 
+  // Phone number formatting function - Same as LoginScreen
+  const formatPhoneNumber = (text) => {
+    // Remove all non-digit characters
+    let cleaned = text.replace(/[^\d]/g, '');
+    
+    // Always ensure it starts with 0
+    if (!cleaned.startsWith('0')) {
+      cleaned = '0';
+    }
+    
+    // Limit to 10 digits total (0 + 9 digits)
+    if (cleaned.length > 10) {
+      cleaned = cleaned.substring(0, 10);
+    }
+    
+    return cleaned;
+  };
+
+  // Validate Moroccan phone number - Same as LoginScreen
+  const isValidMoroccanPhone = (phone) => {
+    // Remove all non-digit characters
+    const cleaned = phone.replace(/[^\d]/g, '');
+    
+    // Should be 10 digits starting with 0, followed by 6 or 7
+    const regex = /^0[67]\d{8}$/;
+    return regex.test(cleaned);
+  };
+
+  // Convert international format (+212612345678) to local format (0612345678)
+  function convertInternationalToLocal(phone) {
+    if (phone && phone.startsWith('+212')) {
+      return '0' + phone.substring(4);
+    }
+    return phone;
+  }
+
+  // Convert local format (0612345678) to international format (+212612345678)
+  function convertLocalToInternational(phone) {
+    const cleaned = phone.replace(/[^\d]/g, '');
+    if (cleaned.startsWith('0') && cleaned.length === 10) {
+      return '+212' + cleaned.substring(1);
+    }
+    return phone;
+  }
+
   // Keyboard listeners
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
@@ -288,10 +333,13 @@ export default function UserDetailsScreen({ navigation }) {
     // Parse the address if it exists
     const addressParts = parseAddress(userData.address);
     
+    // Convert phone to local format for display/editing
+    const localPhone = convertInternationalToLocal(userData.phone || '');
+    
     const newInputs = {
       name: userData.name || '',
       email: userData.email || '',
-      phone: userData.phone || '',
+      phone: localPhone || '',
       address: addressParts.address || userData.address || '',
       city: addressParts.city || userData.town || '',
       postalCode: addressParts.postalCode || userData.zip || '',
@@ -353,7 +401,19 @@ export default function UserDetailsScreen({ navigation }) {
 
   // Handle input changes
   const handleOnchange = (text, input) => {
-    setInputs(prevState => ({ ...prevState, [input]: text }));
+    if (input === 'phone') {
+      // Apply phone number formatting - same as LoginScreen
+      const formattedPhone = formatPhoneNumber(text);
+      setInputs(prevState => ({ ...prevState, [input]: formattedPhone }));
+      
+      // Clear error when user starts typing
+      if (errors.phone) {
+        handleError(null, 'phone');
+      }
+    } else {
+      setInputs(prevState => ({ ...prevState, [input]: text }));
+    }
+    
     if (errors[input]) {
       setErrors(prevState => ({ ...prevState, [input]: null }));
     }
@@ -380,8 +440,12 @@ export default function UserDetailsScreen({ navigation }) {
       isValid = false;
     }
 
-    if (!inputs.phone.trim()) {
-      handleError('Le téléphone est requis', 'phone');
+    // Check if phone is empty or just '0'
+    if (!inputs.phone || inputs.phone.trim() === '0') {
+      handleError('Veuillez saisir votre numéro de téléphone complet', 'phone');
+      isValid = false;
+    } else if (!isValidMoroccanPhone(inputs.phone)) {
+      handleError('Numéro de téléphone marocain invalide (ex: 0612345678)', 'phone');
       isValid = false;
     }
 
@@ -399,13 +463,16 @@ export default function UserDetailsScreen({ navigation }) {
       const userData = JSON.parse(await AsyncStorage.getItem('userData'));
       const clientID = userData.id;
       
+      // Convert phone number to international format for API
+      const internationalPhone = convertLocalToInternational(inputs.phone);
+      
       // Combine address components for API
       const combinedAddress = combineAddress(inputs.address, inputs.city, inputs.postalCode);
       
       const updateData = {
         name: inputs.name.trim(),
         email: inputs.email.trim(),
-        phone: inputs.phone.trim(),
+        phone: internationalPhone,
         address: combinedAddress,
         town: inputs.city.trim(),
         zip: inputs.postalCode.trim(),
@@ -450,11 +517,12 @@ export default function UserDetailsScreen({ navigation }) {
   // Confirm cancel if user has made changes
   const handleCancelPress = () => {
     const originalAddressParts = parseAddress(userDetails?.address);
+    const originalLocalPhone = convertInternationalToLocal(userDetails?.phone || '');
     
     const hasChanges = 
       inputs.name !== (userDetails?.name || '') ||
       inputs.email !== (userDetails?.email || '') ||
-      inputs.phone !== (userDetails?.phone || '') ||
+      inputs.phone !== originalLocalPhone ||
       inputs.address !== (originalAddressParts.address || userDetails?.address || '') ||
       inputs.city !== (originalAddressParts.city || userDetails?.town || '') ||
       inputs.postalCode !== (originalAddressParts.postalCode || userDetails?.zip || '');
@@ -631,7 +699,7 @@ export default function UserDetailsScreen({ navigation }) {
                         {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
                       </View>
 
-                      {/* Phone Input */}
+                      {/* Phone Input with Mask */}
                       <View style={styles.inputContainer}>
                         <Text style={[styles.inputLabel, { color: TEXT_COLOR }]}>Téléphone</Text>
                         <View style={[styles.inputWrapper, { 
@@ -649,12 +717,20 @@ export default function UserDetailsScreen({ navigation }) {
                             value={inputs.phone}
                             onChangeText={text => handleOnchange(text, 'phone')}
                             onFocus={() => handleError(null, 'phone')}
-                            placeholder="Entrez votre numéro de téléphone"
+                            placeholder="0612345678"
                             placeholderTextColor={TEXT_COLOR_SECONDARY}
                             keyboardType="phone-pad"
+                            maxLength={10} // 10 digits total
                           />
                         </View>
                         {errors.phone && <Text style={styles.errorText}>{errors.phone}</Text>}
+                        
+                        {/* Phone format helper text */}
+                        {!keyboardVisible && (
+                          <Text style={[styles.phoneHelperText, { color: TEXT_COLOR_SECONDARY }]}>
+                            📱 Format: 0 suivi de 9 chiffres (mobile: 06/07)
+                          </Text>
+                        )}
                       </View>
 
                       {/* Address Input with GPS Button */}
@@ -814,7 +890,7 @@ export default function UserDetailsScreen({ navigation }) {
                             Téléphone
                           </Text>
                           <Text style={[styles.infoValue, { color: TEXT_COLOR }]}>
-                            {userDetails?.phone || 'Non renseigné'}
+                            {convertInternationalToLocal(userDetails?.phone) || 'Non renseigné'}
                           </Text>
                         </View>
                       </View>
@@ -1042,6 +1118,14 @@ const styles = StyleSheet.create({
     color: '#ff4444',
     fontSize: 14,
     marginTop: 5,
+  },
+  // Phone helper text
+  phoneHelperText: {
+    fontSize: 12,
+    marginBottom: 15,
+    marginTop: -10,
+    marginLeft: 5,
+    fontStyle: 'italic',
   },
   // Address Container with GPS Button
   addressContainer: {
