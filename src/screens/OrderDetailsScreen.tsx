@@ -281,7 +281,7 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
       // Serialize to JSON
       const serializedNote = serializeNoteData(cancellationNote)
 
-      // Call the order service with the JSON note
+      // Call the order service with the JSON note as PUBLIC note
       await OrderService.cancelOrderWithReason(
         order.id,
         order.ref,
@@ -357,7 +357,7 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
       const result = await OrderService.addOrderNote(
         order.id,
         serializedNote,
-        true, // true = private note for JSON data
+        false, // false = PUBLIC note for user visibility
       )
 
       if (result.success) {
@@ -1100,7 +1100,7 @@ const styles = StyleSheet.create({
   },
   feedbackDisplayHeader: {
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     marginBottom: 8,
   },
   feedbackDisplayTitle: {
