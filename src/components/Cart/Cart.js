@@ -292,11 +292,7 @@ export default function Cart({ navigation }) {
         status: error.response?.status
       });
       
-      if (Platform.OS === 'android') {
-        ToastAndroid.show('Erreur lors du chargement de l\'adresse', ToastAndroid.SHORT);
-      } else {
-        Toast.show('Erreur lors du chargement de l\'adresse', Toast.SHORT);
-      }
+      
     }
   };
 
