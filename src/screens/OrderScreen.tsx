@@ -235,9 +235,7 @@ const OrderScreen: React.FC<OrderScreenProps> = ({ navigation }) => {
             <Text style={[styles.date, { color: TEXT_COLOR_SECONDARY }]}>
               {formatDate(item.date_commande)}
             </Text>
-            <Text style={[styles.relativeTime, { color: TEXT_COLOR_SECONDARY }]}>
-              • {formatRelativeTime(item.date_commande)}
-            </Text>
+             
           </View>
 
           <View style={styles.itemsContainer}>
