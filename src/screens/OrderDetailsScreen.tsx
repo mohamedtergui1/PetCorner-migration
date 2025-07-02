@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   StyleSheet,
   Text,
@@ -38,6 +38,30 @@ const getResponsiveDimension = (small: number, medium: number, large: number) =>
   return large
 }
 
+// JSON Note Data Interfaces
+interface CancellationNote {
+  type: 'cancellation'
+  reason: string
+  timestamp: number
+  orderId: string
+  orderRef: string
+}
+
+interface FeedbackNote {
+  type: 'feedback'
+  delivery: {
+    rating: number
+    comment: string
+  }
+  product: {
+    rating: number
+    comment: string
+  }
+  timestamp: number
+  orderId: string
+  orderRef: string
+}
+
 interface OrderDetailsScreenProps {
   navigation: any
   route: {
@@ -55,6 +79,7 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
   // Modal states
   const [showCancelModal, setShowCancelModal] = useState<boolean>(false)
   const [showFeedbackModal, setShowFeedbackModal] = useState<boolean>(false)
+  const [showEditFeedbackModal, setShowEditFeedbackModal] = useState<boolean>(false)
   const [cancellationReason, setCancellationReason] = useState<string>("")
   const [deliveryFeedback, setDeliveryFeedback] = useState<string>("")
   const [productFeedback, setProductFeedback] = useState<string>("")
@@ -62,6 +87,10 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
   const [productRating, setProductRating] = useState<number>(0)
   const [isSubmittingCancel, setIsSubmittingCancel] = useState<boolean>(false)
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<boolean>(false)
+
+  // Existing feedback data
+  const [existingFeedback, setExistingFeedback] = useState<FeedbackNote | null>(null)
+  const [existingCancellation, setExistingCancellation] = useState<CancellationNote | null>(null)
 
   // Define theme colors
   const PRIMARY_COLOR = colorTheme === "blue" ? "#007afe" : "#fe9400"
@@ -76,6 +105,71 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
   const MODAL_BACKGROUND = isDarkMode ? "#1e1e1e" : "#ffffff"
   const OVERLAY_COLOR = isDarkMode ? "rgba(0,0,0,0.8)" : "rgba(0,0,0,0.5)"
 
+  // JSON Serialization Utilities
+  const serializeNoteData = (data: CancellationNote | FeedbackNote): string => {
+    try {
+      return JSON.stringify(data, null, 2)
+    } catch (error) {
+      console.error("❌ Error serializing note data:", error)
+      throw new Error("Failed to serialize note data")
+    }
+  }
+
+  const deserializeNoteData = (jsonString: string): CancellationNote | FeedbackNote | null => {
+    try {
+      if (!jsonString || typeof jsonString !== 'string') {
+        return null
+      }
+
+      // Clean the JSON string from potential formatting issues
+      const cleanedJson = jsonString.trim()
+      if (!cleanedJson.startsWith('{') || !cleanedJson.endsWith('}')) {
+        return null
+      }
+
+      const parsed = JSON.parse(cleanedJson)
+      
+      // Validate the structure
+      if (!parsed.type || !parsed.timestamp || !parsed.orderId) {
+        console.warn("⚠️ Invalid note structure:", parsed)
+        return null
+      }
+
+      return parsed as CancellationNote | FeedbackNote
+    } catch (error) {
+      console.error("❌ Error deserializing note data:", error)
+      return null
+    }
+  }
+
+  // Load existing notes from order
+  const loadExistingNotes = () => {
+    try {
+      // Check if order has notes and try to parse them
+      if (order.notes && Array.isArray(order.notes) && order.notes.length > 0) {
+        order.notes.forEach(note => {
+          if (note.note && typeof note.note === 'string') {
+            const noteData = deserializeNoteData(note.note)
+            if (noteData) {
+              if (noteData.type === 'cancellation') {
+                setExistingCancellation(noteData as CancellationNote)
+              } else if (noteData.type === 'feedback') {
+                setExistingFeedback(noteData as FeedbackNote)
+              }
+            }
+          }
+        })
+      }
+    } catch (error) {
+      console.error("❌ Error loading existing notes:", error)
+    }
+  }
+
+  // Load notes when component mounts or order changes
+  useEffect(() => {
+    loadExistingNotes()
+  }, [order])
+
   // Format price to show 2 decimal places
   const formatPrice = (price: number): string => {
     return Number.parseFloat(price.toString()).toFixed(2)
@@ -89,6 +183,18 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
     const month = String(date.getMonth() + 1).padStart(2, "0")
     const year = date.getFullYear()
     return `${day}/${month}/${year}`
+  }
+
+  // Format timestamp for notes display
+  const formatNoteTimestamp = (timestamp: number): string => {
+    const date = new Date(timestamp)
+    return date.toLocaleDateString("fr-FR", {
+      day: "2-digit",
+      month: "2-digit", 
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    })
   }
 
   // Get status text and color based on order status
@@ -142,6 +248,7 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
       (updatedOrder) => {
         if (updatedOrder) {
           setOrder(updatedOrder)
+          loadExistingNotes() // Reload notes after refresh
         }
       },
       setIsLoading,
@@ -153,7 +260,7 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
     setShowCancelModal(true)
   }
 
-  // Submit cancellation
+  // Submit cancellation with JSON note
   const submitCancellation = async () => {
     if (!cancellationReason.trim()) {
       Alert.alert("Erreur", "Veuillez indiquer la raison de l'annulation")
@@ -162,13 +269,26 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
 
     setIsSubmittingCancel(true)
     try {
-      // Call the order service with the cancellation reason
+      // Create structured cancellation note
+      const cancellationNote: CancellationNote = {
+        type: 'cancellation',
+        reason: cancellationReason.trim(),
+        timestamp: Date.now(),
+        orderId: order.id.toString(),
+        orderRef: order.ref
+      }
+
+      // Serialize to JSON
+      const serializedNote = serializeNoteData(cancellationNote)
+
+      // Call the order service with the JSON note
       await OrderService.cancelOrderWithReason(
         order.id,
         order.ref,
-        cancellationReason.trim(),
+        serializedNote,
         () => {
           console.log("✅ Order cancelled successfully")
+          setExistingCancellation(cancellationNote)
           setShowCancelModal(false)
           setCancellationReason("")
           refreshOrderData()
@@ -181,7 +301,7 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
       )
     } catch (error) {
       console.error("❌ Unexpected error:", error)
-      Alert.alert("Erreur", "Une erreur inattendue est survenue")
+      Alert.alert("Erreur", "Une erreur inattendue est survenue lors de la sérialisation")
     } finally {
       setIsSubmittingCancel(false)
     }
@@ -189,11 +309,25 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
 
   // Handle adding comprehensive feedback
   const handleAddComprehensiveFeedback = () => {
-    setShowFeedbackModal(true)
+    if (existingFeedback) {
+      // Load existing feedback for editing
+      setDeliveryRating(existingFeedback.delivery.rating)
+      setDeliveryFeedback(existingFeedback.delivery.comment)
+      setProductRating(existingFeedback.product.rating)
+      setProductFeedback(existingFeedback.product.comment)
+      setShowEditFeedbackModal(true)
+    } else {
+      // Clear form for new feedback
+      setDeliveryRating(0)
+      setDeliveryFeedback("")
+      setProductRating(0)
+      setProductFeedback("")
+      setShowFeedbackModal(true)
+    }
   }
 
-  // Submit comprehensive feedback
-  const submitComprehensiveFeedback = async () => {
+  // Submit comprehensive feedback with JSON note
+  const submitComprehensiveFeedback = async (isEdit: boolean = false) => {
     if (!deliveryFeedback.trim() && !productFeedback.trim() && deliveryRating === 0 && productRating === 0) {
       Alert.alert("Erreur", "Veuillez ajouter au moins un commentaire ou une note")
       return
@@ -201,36 +335,47 @@ const OrderDetailsScreen: React.FC<OrderDetailsScreenProps> = ({ navigation, rou
 
     setIsSubmittingFeedback(true)
     try {
-      const feedbackText = `Évaluation de la commande ${order.ref} - ${new Date().toLocaleDateString("fr-FR")} à ${new Date().toLocaleTimeString("fr-FR")}:
+      // Create structured feedback note
+      const feedbackNote: FeedbackNote = {
+        type: 'feedback',
+        delivery: {
+          rating: deliveryRating,
+          comment: deliveryFeedback.trim()
+        },
+        product: {
+          rating: productRating,
+          comment: productFeedback.trim()
+        },
+        timestamp: Date.now(),
+        orderId: order.id.toString(),
+        orderRef: order.ref
+      }
 
-📦 LIVRAISON:
-Note: ${deliveryRating}/5 étoiles
-Commentaire: ${deliveryFeedback.trim() || "Aucun commentaire"}
-
-🛍️ PRODUITS:
-Note: ${productRating}/5 étoiles
-Commentaire: ${productFeedback.trim() || "Aucun commentaire"}`
+      // Serialize to JSON
+      const serializedNote = serializeNoteData(feedbackNote)
 
       const result = await OrderService.addOrderNote(
         order.id,
-        feedbackText,
-        false, // false = public note
+        serializedNote,
+        true, // true = private note for JSON data
       )
 
       if (result.success) {
+        setExistingFeedback(feedbackNote)
         setShowFeedbackModal(false)
+        setShowEditFeedbackModal(false)
         setDeliveryFeedback("")
         setProductFeedback("")
         setDeliveryRating(0)
         setProductRating(0)
         refreshOrderData()
-        Alert.alert("Succès", "Votre évaluation a été ajoutée avec succès")
+        Alert.alert("Succès", isEdit ? "Votre évaluation a été mise à jour avec succès" : "Votre évaluation a été ajoutée avec succès")
       } else {
         Alert.alert("Erreur", result.error || "Erreur lors de l'ajout de l'évaluation")
       }
     } catch (error) {
       console.error("❌ Error adding comprehensive feedback:", error)
-      Alert.alert("Erreur", "Une erreur inattendue est survenue")
+      Alert.alert("Erreur", "Une erreur inattendue est survenue lors de la sérialisation")
     } finally {
       setIsSubmittingFeedback(false)
     }
@@ -258,6 +403,102 @@ Commentaire: ${productFeedback.trim() || "Aucun commentaire"}`
       </View>
     </View>
   )
+
+  // Render existing feedback display
+  const renderExistingFeedback = () => {
+    if (!existingFeedback) return null
+
+    return (
+      <View style={[styles.card, { backgroundColor: CARD_BACKGROUND, borderColor: BORDER_COLOR }]}>
+        <View style={styles.existingFeedbackHeader}>
+          <Text style={[styles.sectionTitle, { color: TEXT_COLOR }]}>Votre évaluation</Text>
+          <TouchableOpacity
+            style={[styles.editButton, { backgroundColor: PRIMARY_COLOR + '20', borderColor: PRIMARY_COLOR }]}
+            onPress={handleAddComprehensiveFeedback}
+          >
+            <MaterialCommunityIcons name="pencil" size={16} color={PRIMARY_COLOR} />
+            <Text style={[styles.editButtonText, { color: PRIMARY_COLOR }]}>Modifier</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Delivery Rating Display */}
+        <View style={styles.feedbackDisplaySection}>
+          <View style={styles.feedbackDisplayHeader}>
+            <MaterialCommunityIcons name="truck-delivery" size={18} color={PRIMARY_COLOR} />
+            <Text style={[styles.feedbackDisplayTitle, { color: TEXT_COLOR }]}>Livraison</Text>
+          </View>
+          <View style={styles.ratingDisplay}>
+            {[1, 2, 3, 4, 5].map((star) => (
+              <Ionicons
+                key={star}
+                name={star <= existingFeedback.delivery.rating ? "star" : "star-outline"}
+                size={20}
+                color={star <= existingFeedback.delivery.rating ? "#FFD700" : TEXT_COLOR_SECONDARY}
+              />
+            ))}
+            <Text style={[styles.ratingText, { color: TEXT_COLOR_SECONDARY }]}>
+              ({existingFeedback.delivery.rating}/5)
+            </Text>
+          </View>
+          {existingFeedback.delivery.comment && (
+            <Text style={[styles.feedbackComment, { color: TEXT_COLOR_SECONDARY }]}>
+              "{existingFeedback.delivery.comment}"
+            </Text>
+          )}
+        </View>
+
+        {/* Product Rating Display */}
+        <View style={styles.feedbackDisplaySection}>
+          <View style={styles.feedbackDisplayHeader}>
+            <MaterialCommunityIcons name="package-variant" size={18} color={PRIMARY_COLOR} />
+            <Text style={[styles.feedbackDisplayTitle, { color: TEXT_COLOR }]}>Produits</Text>
+          </View>
+          <View style={styles.ratingDisplay}>
+            {[1, 2, 3, 4, 5].map((star) => (
+              <Ionicons
+                key={star}
+                name={star <= existingFeedback.product.rating ? "star" : "star-outline"}
+                size={20}
+                color={star <= existingFeedback.product.rating ? "#FFD700" : TEXT_COLOR_SECONDARY}
+              />
+            ))}
+            <Text style={[styles.ratingText, { color: TEXT_COLOR_SECONDARY }]}>
+              ({existingFeedback.product.rating}/5)
+            </Text>
+          </View>
+          {existingFeedback.product.comment && (
+            <Text style={[styles.feedbackComment, { color: TEXT_COLOR_SECONDARY }]}>
+              "{existingFeedback.product.comment}"
+            </Text>
+          )}
+        </View>
+
+        <Text style={[styles.feedbackTimestamp, { color: TEXT_COLOR_SECONDARY }]}>
+          Évalué le {formatNoteTimestamp(existingFeedback.timestamp)}
+        </Text>
+      </View>
+    )
+  }
+
+  // Render existing cancellation display
+  const renderExistingCancellation = () => {
+    if (!existingCancellation) return null
+
+    return (
+      <View style={[styles.card, { backgroundColor: CARD_BACKGROUND, borderColor: "#f44336" }]}>
+        <View style={styles.cancellationHeader}>
+          <MaterialCommunityIcons name="cancel" size={24} color="#f44336" />
+          <Text style={[styles.cancellationTitle, { color: "#f44336" }]}>Commande annulée</Text>
+        </View>
+        <Text style={[styles.cancellationReason, { color: TEXT_COLOR }]}>
+          Raison: {existingCancellation.reason}
+        </Text>
+        <Text style={[styles.cancellationTimestamp, { color: TEXT_COLOR_SECONDARY }]}>
+          Annulée le {formatNoteTimestamp(existingCancellation.timestamp)}
+        </Text>
+      </View>
+    )
+  }
 
   // Enhanced cancellation modal with better responsiveness
   const renderCancellationModal = () => (
@@ -365,10 +606,13 @@ Commentaire: ${productFeedback.trim() || "Aucun commentaire"}`
   // Enhanced feedback modal with better responsiveness
   const renderFeedbackModal = () => (
     <Modal
-      visible={showFeedbackModal}
+      visible={showFeedbackModal || showEditFeedbackModal}
       transparent={true}
       animationType="fade"
-      onRequestClose={() => setShowFeedbackModal(false)}
+      onRequestClose={() => {
+        setShowFeedbackModal(false)
+        setShowEditFeedbackModal(false)
+      }}
     >
       <View style={[styles.modalOverlay, { backgroundColor: OVERLAY_COLOR }]}>
         <KeyboardAvoidingView 
@@ -390,7 +634,9 @@ Commentaire: ${productFeedback.trim() || "Aucun commentaire"}`
                     color="#4caf50" 
                   />
                 </View>
-                <Text style={[styles.modalTitle, { color: TEXT_COLOR }]}>Évaluer votre commande</Text>
+                <Text style={[styles.modalTitle, { color: TEXT_COLOR }]}>
+                  {showEditFeedbackModal ? "Modifier votre évaluation" : "Évaluer votre commande"}
+                </Text>
                 <Text style={[styles.modalSubtitle, { color: TEXT_COLOR_SECONDARY }]}>
                   Commande {order.ref}
                 </Text>
@@ -480,6 +726,7 @@ Commentaire: ${productFeedback.trim() || "Aucun commentaire"}`
                 ]}
                 onPress={() => {
                   setShowFeedbackModal(false)
+                  setShowEditFeedbackModal(false)
                   setDeliveryFeedback("")
                   setProductFeedback("")
                   setDeliveryRating(0)
@@ -497,13 +744,15 @@ Commentaire: ${productFeedback.trim() || "Aucun commentaire"}`
                   styles.modalButtonPrimary, 
                   { backgroundColor: "#4caf50" }
                 ]}
-                onPress={submitComprehensiveFeedback}
+                onPress={() => submitComprehensiveFeedback(showEditFeedbackModal)}
                 disabled={isSubmittingFeedback}
               >
                 {isSubmittingFeedback ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={styles.modalButtonTextPrimary}>Envoyer</Text>
+                  <Text style={styles.modalButtonTextPrimary}>
+                    {showEditFeedbackModal ? "Mettre à jour" : "Envoyer"}
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -520,21 +769,23 @@ Commentaire: ${productFeedback.trim() || "Aucun commentaire"}`
       typeof order.statut === "string" ? Number.parseInt(order.statut, 10) : order.statut || order.status
 
     switch (currentStatus) {
-      case 0: // Draft - User can ONLY cancel
-        actions.push(
-          <TouchableOpacity
-            key="cancel"
-            style={[styles.actionButton, styles.cancelActionButton, { backgroundColor: "#f44336" }]}
-            onPress={handleCancelOrder}
-            activeOpacity={0.8}
-          >
-            <MaterialCommunityIcons name="cancel" size={20} color="#fff" />
-            <Text style={styles.actionButtonText}>Annuler la commande</Text>
-          </TouchableOpacity>,
-        )
+      case 0: // Draft - User can ONLY cancel (if not already cancelled)
+        if (!existingCancellation) {
+          actions.push(
+            <TouchableOpacity
+              key="cancel"
+              style={[styles.actionButton, styles.cancelActionButton, { backgroundColor: "#f44336" }]}
+              onPress={handleCancelOrder}
+              activeOpacity={0.8}
+            >
+              <MaterialCommunityIcons name="cancel" size={20} color="#fff" />
+              <Text style={styles.actionButtonText}>Annuler la commande</Text>
+            </TouchableOpacity>,
+          )
+        }
         break
 
-      case 3: // Delivered - Can add comprehensive feedback
+      case 3: // Delivered - Can add/edit comprehensive feedback
         actions.push(
           <TouchableOpacity
             key="feedback"
@@ -542,8 +793,14 @@ Commentaire: ${productFeedback.trim() || "Aucun commentaire"}`
             onPress={handleAddComprehensiveFeedback}
             activeOpacity={0.8}
           >
-            <MaterialCommunityIcons name="star-outline" size={20} color="#fff" />
-            <Text style={styles.actionButtonText}>Évaluer la commande</Text>
+            <MaterialCommunityIcons 
+              name={existingFeedback ? "pencil" : "star-outline"} 
+              size={20} 
+              color="#fff" 
+            />
+            <Text style={styles.actionButtonText}>
+              {existingFeedback ? "Modifier l'évaluation" : "Évaluer la commande"}
+            </Text>
           </TouchableOpacity>,
         )
         break
@@ -662,6 +919,12 @@ Commentaire: ${productFeedback.trim() || "Aucun commentaire"}`
             </Text>
           </View>
         </View>
+
+        {/* Existing Cancellation Display */}
+        {renderExistingCancellation()}
+
+        {/* Existing Feedback Display */}
+        {renderExistingFeedback()}
 
         {/* Products List */}
         <View style={[styles.card, { backgroundColor: CARD_BACKGROUND, borderColor: BORDER_COLOR }]}>
@@ -811,6 +1074,81 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginBottom: 16,
   },
+
+  // Existing Feedback Display Styles
+  existingFeedbackHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  editButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  editButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginLeft: 4,
+  },
+  feedbackDisplaySection: {
+    marginBottom: 16,
+  },
+  feedbackDisplayHeader: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    marginBottom: 8,
+  },
+  feedbackDisplayTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginLeft: 6,
+  },
+  ratingDisplay: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  ratingText: {
+    fontSize: 12,
+    marginLeft: 6,
+  },
+  feedbackComment: {
+    fontSize: 13,
+    fontStyle: "italic",
+    marginLeft: 4,
+  },
+  feedbackTimestamp: {
+    fontSize: 11,
+    textAlign: "right",
+    marginTop: 8,
+  },
+
+  // Existing Cancellation Display Styles
+  cancellationHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  cancellationTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginLeft: 8,
+  },
+  cancellationReason: {
+    fontSize: 14,
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  cancellationTimestamp: {
+    fontSize: 11,
+    textAlign: "right",
+  },
+
   productItem: {
     flexDirection: "row",
     marginBottom: 16,
