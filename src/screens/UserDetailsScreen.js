@@ -175,17 +175,22 @@ export default function UserDetailsScreen({ navigation }) {
     return parts.join(', ') || 'Non renseigné';
   };
 
-  // Request location permission
+  // Fixed location permission request for Android
   const requestLocationPermission = async () => {
     if (Platform.OS === 'android') {
       try {
-        const checkResult = await PermissionsAndroid.check(
+        // Check if permission is already granted
+        const granted = await PermissionsAndroid.check(
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
         );
         
-        if (checkResult === true) return true;
+        if (granted) {
+          console.log('Location permission already granted');
+          return true;
+        }
 
-        const granted = await PermissionsAndroid.request(
+        // Request permission
+        const result = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
           {
             title: 'Permission de localisation',
@@ -196,12 +201,38 @@ export default function UserDetailsScreen({ navigation }) {
           }
         );
         
-        return granted === PermissionsAndroid.RESULTS.GRANTED;
+        console.log('Permission result:', result);
+        
+        if (result === PermissionsAndroid.RESULTS.GRANTED) {
+          console.log('Location permission granted');
+          return true;
+        } else if (result === PermissionsAndroid.RESULTS.DENIED) {
+          console.log('Location permission denied');
+          return false;
+        } else if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+          console.log('Location permission denied permanently');
+          Alert.alert(
+            'Permission requise',
+            'Pour utiliser la localisation GPS, veuillez activer la permission dans les paramètres de l\'application.',
+            [
+              { text: 'Annuler', style: 'cancel' },
+              { text: 'Paramètres', onPress: () => {
+                // You can add code here to open app settings
+                console.log('Should open app settings');
+              }}
+            ]
+          );
+          return false;
+        }
+        
+        return false;
       } catch (err) {
         console.warn('Permission error:', err);
         return false;
       }
     }
+    
+    // For iOS, permissions are handled differently
     return true;
   };
 
@@ -253,75 +284,119 @@ export default function UserDetailsScreen({ navigation }) {
     }
   };
 
-  // Get current location
+  // Fixed getCurrentLocationAddress function
   const getCurrentLocationAddress = async () => {
     setGettingLocation(true);
     
     try {
+      console.log('Requesting location permission...');
       const hasPermission = await requestLocationPermission();
       
       if (!hasPermission) {
+        console.log('Permission denied');
         Toast.show({
           type: 'error',
           text1: 'Permission refusée',
-          text2: 'Permission de localisation requise',
-          visibilityTime: 3000,
+          text2: 'Permission de localisation requise pour utiliser le GPS',
+          visibilityTime: 4000,
           topOffset: 60,
         });
         setGettingLocation(false);
         return;
       }
 
-      Geolocation.getCurrentPosition(
-        async (position) => {
-          try {
-            const { latitude, longitude } = position.coords;
-            const addressInfo = await getAddressFromCoordinates(latitude, longitude);
-            
-            setInputs(prevState => ({
-              ...prevState, 
-              address: addressInfo.streetAddress || addressInfo.displayName,
-              city: addressInfo.city,
-              postalCode: addressInfo.postalCode
-            }));
-            
-            handleError(null, 'address');
-            handleError(null, 'city');
-            handleError(null, 'postalCode');
-            
-            Toast.show({
-              type: 'success',
-              text1: 'Adresse récupérée! 📍',
-              text2: `${addressInfo.city || 'Ville'} ${addressInfo.postalCode || 'Code postal'}`,
-              visibilityTime: 3000,
-              topOffset: 60,
-            });
-            
-            setGettingLocation(false);
-          } catch (error) {
-            console.error('Error getting address:', error);
-            setGettingLocation(false);
+      console.log('Getting current position...');
+      
+      // Use a Promise wrapper for better error handling
+      const getCurrentPosition = () => {
+        return new Promise((resolve, reject) => {
+          Geolocation.getCurrentPosition(
+            (position) => {
+              console.log('Position obtained:', position);
+              resolve(position);
+            },
+            (error) => {
+              console.log('Geolocation error:', error);
+              reject(error);
+            },
+            {
+              enableHighAccuracy: Platform.OS === 'android' ? false : true, // Use network location on Android first
+              timeout: Platform.OS === 'android' ? 15000 : 20000,
+              maximumAge: 60000, // Accept cached location up to 1 minute old
+              forceRequestLocation: true, // Force location request
+              showLocationDialog: true, // Show location dialog on Android
+            }
+          );
+        });
+      };
+
+      try {
+        const position = await getCurrentPosition();
+        const { latitude, longitude } = position.coords;
+        
+        console.log('Coordinates:', latitude, longitude);
+        
+        const addressInfo = await getAddressFromCoordinates(latitude, longitude);
+        
+        setInputs(prevState => ({
+          ...prevState, 
+          address: addressInfo.streetAddress || addressInfo.displayName,
+          city: addressInfo.city,
+          postalCode: addressInfo.postalCode
+        }));
+        
+        handleError(null, 'address');
+        handleError(null, 'city');
+        handleError(null, 'postalCode');
+        
+        Toast.show({
+          type: 'success',
+          text1: 'Adresse récupérée! 📍',
+          text2: `${addressInfo.city || 'Ville'} ${addressInfo.postalCode || 'Code postal'}`,
+          visibilityTime: 3000,
+          topOffset: 60,
+        });
+        
+      } catch (locationError) {
+        console.error('Error getting location:', locationError);
+        
+        let errorMessage = 'Impossible d\'obtenir votre position';
+        
+        if (locationError.code) {
+          switch (locationError.code) {
+            case 1: // PERMISSION_DENIED
+              errorMessage = 'Permission de localisation refusée';
+              break;
+            case 2: // POSITION_UNAVAILABLE
+              errorMessage = 'Position non disponible. Vérifiez votre GPS';
+              break;
+            case 3: // TIMEOUT
+              errorMessage = 'Délai d\'attente dépassé. Réessayez';
+              break;
+            default:
+              errorMessage = 'Erreur de localisation';
           }
-        },
-        (error) => {
-          console.error('Geolocation error:', error);
-          Toast.show({
-            type: 'error',
-            text1: 'Erreur de localisation',
-            text2: 'Impossible d\'obtenir votre position',
-            visibilityTime: 4000,
-            topOffset: 60,
-          });
-          setGettingLocation(false);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 20000,
-          maximumAge: 10000,
         }
-      );
+        
+        Toast.show({
+          type: 'error',
+          text1: 'Erreur GPS',
+          text2: errorMessage,
+          visibilityTime: 4000,
+          topOffset: 60,
+        });
+      }
+      
     } catch (error) {
-      console.error('Permission error:', error);
+      console.error('Permission/Location error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Erreur',
+        text2: 'Problème avec les permissions ou la localisation',
+        visibilityTime: 4000,
+        topOffset: 60,
+      });
+    } finally {
       setGettingLocation(false);
     }
   };

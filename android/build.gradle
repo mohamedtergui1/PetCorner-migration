@@ -6,6 +6,11 @@ buildscript {
         targetSdkVersion = 35
         ndkVersion = "27.1.12297006"
         kotlinVersion = "2.0.21"
+        
+        // Add Google Play Services versions to fix location crash
+        googlePlayServicesVersion = "21.0.1"
+        googlePlayServicesLocationVersion = "21.0.1"
+        googlePlayServicesBaseVersion = "18.2.0"
     }
     repositories {
         google()
@@ -17,5 +22,4 @@ buildscript {
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
     }
 }
-
 apply plugin: "com.facebook.react.rootproject"
